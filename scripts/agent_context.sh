@@ -82,9 +82,11 @@ load_topic() {
       SEARCH_HINT='applicationDidFinishLaunching|openFiles|showLibrary|HotKey|validateMenuItem'
       ;;
     macos-library)
-      DESCRIPTION="macOS three-pane library, source/list/gallery projection, and file monitoring"
+      DESCRIPTION="macOS two-pane library, icon navigation, folder/search pickers, and list/gallery projection"
       FILES=(
         Sources/Mudsnote/LibraryWindowController.swift
+        Sources/Mudsnote/Chrome/LibraryPaneSurface.swift
+        Sources/Mudsnote/Chrome/LibraryFolderShortcutButton.swift
         Sources/Mudsnote/LibrarySourceProjection.swift
         Sources/Mudsnote/LibraryNotesLayout.swift
         Sources/Mudsnote/LibraryNoteListProjection.swift

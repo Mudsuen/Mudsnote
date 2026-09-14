@@ -1,4 +1,5 @@
 import AppKit
+import QuartzCore
 import MudsnoteCore
 
 final class NoteLinksView: NSView {
@@ -90,123 +91,55 @@ final class NoteLinksView: NSView {
     var onAcceptSuggestion: ((KnowledgeRelationItem) -> Void)?
     var onGoBack: (() -> Void)?
     var onGoForward: (() -> Void)?
-    var onGenerateHigherLayer: ((KnowledgeLayer) -> Void)?
-    var onShowGraph: (() -> Void)?
     private(set) var knowledgeRelations = KnowledgeRelations.empty
-    private var hasRenderedRelations = false
-    private var synthesisTargetLayer: KnowledgeLayer?
-
-    private let titleLabel = NSTextField(labelWithString: "知识关系")
-    private let layerLabel = NSTextField(labelWithString: "")
-    private let emptyLabel = NSTextField(labelWithString: "尚无关系；添加层级标签后可生成上层草案")
-    private lazy var backButton = navigationButton(
-        title: "‹",
-        accessibilityLabel: "返回上一条知识关系",
-        action: #selector(backPressed(_:))
-    )
-    private lazy var forwardButton = navigationButton(
-        title: "›",
-        accessibilityLabel: "前进到下一条知识关系",
-        action: #selector(forwardPressed(_:))
-    )
-    private lazy var synthesisButton: NSButton = {
-        let button = NSButton(title: "", target: self, action: #selector(generateHigherLayerPressed(_:)))
-        button.bezelStyle = .inline
-        button.controlSize = .small
-        button.font = .systemFont(ofSize: 10, weight: .semibold)
-        button.setAccessibilityHelp("使用当前笔记与关联笔记生成待审核草案")
-        button.isHidden = true
-        return button
-    }()
-    private lazy var graphButton: NSButton = {
-        let image = NSImage(
-            systemSymbolName: "point.3.connected.trianglepath.dotted",
-            accessibilityDescription: "打开知识图谱"
-        ) ?? NSImage()
-        let button = NSButton(
-            image: image,
-            target: self,
-            action: #selector(showGraphPressed(_:))
-        )
-        button.bezelStyle = .inline
-        button.controlSize = .small
-        button.toolTip = "查看当前笔记的可视化知识图谱"
-        button.setAccessibilityLabel("打开当前笔记知识图谱")
-        button.setAccessibilityHelp("在独立窗口查看已确认的知识关系")
-        return button
-    }()
+    private(set) var isExpanded = false
+    private let disclosure = NSButton()
     private let parentsContent = NSStackView()
     private let childrenContent = NSStackView()
-    private let relatedContent = NSStackView()
     private let suggestedContent = NSStackView()
-    private lazy var parentsRow = relationRow(
-        title: "上层",
-        accessibilityPrefix: "打开上层笔记",
-        content: parentsContent
-    )
-    private lazy var childrenRow = relationRow(
-        title: "下层",
-        accessibilityPrefix: "打开下层笔记",
-        content: childrenContent
-    )
-    private lazy var relatedRow = relationRow(
-        title: "明确关联",
-        accessibilityPrefix: "打开明确关联笔记",
-        content: relatedContent
-    )
-    private lazy var suggestedRow = relationRow(
-        title: "建议关联",
-        accessibilityPrefix: "打开建议关联笔记",
-        content: suggestedContent
-    )
+    private let details = NSStackView()
+    private let detailsClip = NSView()
+    private var detailsHeight: NSLayoutConstraint!
+    private lazy var backButton = navigationButton(title: "‹", accessibilityLabel: "返回上一条笔记", action: #selector(backPressed(_:)))
+    private lazy var forwardButton = navigationButton(title: "›", accessibilityLabel: "前进到下一条笔记", action: #selector(forwardPressed(_:)))
+    private lazy var incomingRow = relationRow(title: "被引用", accessibilityPrefix: "引用当前笔记", content: parentsContent)
+    private lazy var outgoingRow = relationRow(title: "链接到", accessibilityPrefix: "当前笔记链接", content: childrenContent)
+    private lazy var suggestedRow = relationRow(title: "建议链接", accessibilityPrefix: "相关笔记", content: suggestedContent)
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
         identifier = NSUserInterfaceItemIdentifier("LibraryNoteLinksView")
-        setAccessibilityLabel("知识关系")
-        wantsLayer = true
-        layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.08).cgColor
-        layer?.cornerRadius = 8
-
-        titleLabel.font = .systemFont(ofSize: 12, weight: .semibold)
-        titleLabel.textColor = .secondaryLabelColor
-        layerLabel.font = .systemFont(ofSize: 10, weight: .semibold)
-        layerLabel.textColor = .tertiaryLabelColor
-        emptyLabel.font = .systemFont(ofSize: 10)
-        emptyLabel.textColor = .tertiaryLabelColor
-
-        [parentsContent, childrenContent, relatedContent, suggestedContent].forEach {
-            configureContentStack($0)
-        }
-
+        setAccessibilityLabel("双链")
+        disclosure.bezelStyle = .inline
+        disclosure.font = .systemFont(ofSize: 11, weight: .medium)
+        disclosure.target = self
+        disclosure.action = #selector(toggleExpanded)
+        disclosure.setAccessibilityLabel("展开或收起双链")
         let spacer = NSView()
         spacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        spacer.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        let header = NSStackView(views: [
-            titleLabel,
-            layerLabel,
-            spacer,
-            synthesisButton,
-            graphButton,
-            backButton,
-            forwardButton
-        ])
-        header.orientation = .horizontal
-        header.alignment = .centerY
+        let header = NSStackView(views: [disclosure, spacer, backButton, forwardButton])
         header.spacing = 6
-
-        let stack = NSStackView(views: [
-            header,
-            emptyLabel,
-            parentsRow,
-            childrenRow,
-            relatedRow,
-            suggestedRow
+        details.orientation = .vertical
+        details.alignment = .leading
+        details.spacing = 8
+        [parentsContent, childrenContent, suggestedContent].forEach(configureContentStack)
+        [incomingRow, outgoingRow, suggestedRow].forEach(details.addArrangedSubview)
+        detailsClip.wantsLayer = true
+        detailsClip.layer?.masksToBounds = true
+        detailsClip.addSubview(details)
+        details.translatesAutoresizingMaskIntoConstraints = false
+        detailsHeight = detailsClip.heightAnchor.constraint(equalToConstant: 0)
+        NSLayoutConstraint.activate([
+            detailsHeight,
+            details.topAnchor.constraint(equalTo: detailsClip.topAnchor),
+            details.leadingAnchor.constraint(equalTo: detailsClip.leadingAnchor),
+            details.trailingAnchor.constraint(equalTo: detailsClip.trailingAnchor)
         ])
+        details.isHidden = true
+        let stack = NSStackView(views: [header, detailsClip])
         stack.orientation = .vertical
         stack.alignment = .leading
-        stack.spacing = 5
-        stack.edgeInsets = NSEdgeInsets(top: 9, left: 10, bottom: 9, right: 10)
+        stack.spacing = 8
         addSubview(stack)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
@@ -214,69 +147,90 @@ final class NoteLinksView: NSView {
             stack.trailingAnchor.constraint(equalTo: trailingAnchor),
             stack.topAnchor.constraint(equalTo: topAnchor),
             stack.bottomAnchor.constraint(equalTo: bottomAnchor),
-            header.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20),
-            parentsRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20),
-            childrenRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20),
-            relatedRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20),
-            suggestedRow.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -20)
+            header.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            detailsClip.widthAnchor.constraint(equalTo: stack.widthAnchor),
+            incomingRow.widthAnchor.constraint(equalTo: details.widthAnchor),
+            outgoingRow.widthAnchor.constraint(equalTo: details.widthAnchor),
+            suggestedRow.widthAnchor.constraint(equalTo: details.widthAnchor)
         ])
-
-        update(.empty)
+        update(links: .empty, suggestions: [])
     }
 
     @available(*, unavailable)
-    required init?(coder: NSCoder) {
-        fatalError("init(coder:) has not been implemented")
-    }
+    required init?(coder: NSCoder) { fatalError("init(coder:) has not been implemented") }
 
     func update(_ relations: KnowledgeRelations) {
-        guard !hasRenderedRelations || knowledgeRelations != relations else { return }
-        hasRenderedRelations = true
         knowledgeRelations = relations
-        layerLabel.stringValue = relations.currentLayer.map {
-            "当前：\($0.displayName)"
-        } ?? "未分层"
-        populate(parentsContent, with: relations.parents, accessibilityPrefix: "打开上层笔记")
-        populate(childrenContent, with: relations.children, accessibilityPrefix: "打开下层笔记")
-        populate(relatedContent, with: relations.related, accessibilityPrefix: "打开明确关联笔记")
-        populateSuggestions(suggestedContent, with: relations.suggested)
+        let items = relations.parents + relations.children + relations.related
+        update(links: NoteLinkRelations(incoming: [], outgoing: items.map {
+            NoteLinkItem(url: $0.url, title: $0.title)
+        }), suggestions: relations.suggested)
+    }
 
-        parentsRow.isHidden = relations.parents.isEmpty
-        childrenRow.isHidden = relations.children.isEmpty
-        relatedRow.isHidden = relations.related.isEmpty
-        suggestedRow.isHidden = relations.suggested.isEmpty
-        let hasRelations = !relations.parents.isEmpty
-            || !relations.children.isEmpty
-            || !relations.related.isEmpty
-            || !relations.suggested.isEmpty
-        emptyLabel.isHidden = hasRelations
-        isHidden = false
-        if let targetLayer = relations.currentLayer?.nextHigher,
-           targetLayer == .line || targetLayer == .plane {
-            synthesisButton.title = "生成\(targetLayer.displayName)层草案"
-            synthesisButton.setAccessibilityLabel("生成\(targetLayer.displayName)层草案")
-            synthesisTargetLayer = targetLayer
-            synthesisButton.isHidden = false
+    func update(links: NoteLinkRelations, suggestions: [KnowledgeRelationItem]) {
+        populate(parentsContent, with: links.incoming.map { KnowledgeRelationItem(url: $0.url, title: $0.title) }, accessibilityPrefix: "打开引用笔记")
+        populate(childrenContent, with: links.outgoing.map { KnowledgeRelationItem(url: $0.url, title: $0.title) }, accessibilityPrefix: "打开链接笔记")
+        populateSuggestions(suggestedContent, with: suggestions)
+        incomingRow.isHidden = links.incoming.isEmpty
+        outgoingRow.isHidden = links.outgoing.isEmpty
+        suggestedRow.isHidden = suggestions.isEmpty
+        let count = Set((links.incoming + links.outgoing).map { $0.url.standardizedFileURL }).count
+        disclosure.title = "双链 · \(count)  \(isExpanded ? "⌃" : "⌄")"
+        disclosure.setAccessibilityValue(isExpanded ? "已展开" : "已收起")
+        updateExpansion(animated: false)
+    }
+
+    @objc func toggleExpanded() {
+        isExpanded.toggle()
+        updateExpansion(animated: true)
+        disclosure.title = disclosure.title.replacingOccurrences(of: isExpanded ? "⌄" : "⌃", with: isExpanded ? "⌃" : "⌄")
+        disclosure.setAccessibilityValue(isExpanded ? "已展开" : "已收起")
+    }
+
+    private func updateExpansion(animated: Bool) {
+        detailsClip.isHidden = !isExpanded
+        if !isExpanded, let responder = window?.firstResponder as? NSView,
+           responder.isDescendant(of: details) {
+            window?.makeFirstResponder(disclosure)
+        }
+        details.isHidden = false
+        details.layoutSubtreeIfNeeded()
+        let targetHeight = isExpanded ? details.fittingSize.height : 0
+        let shouldAnimate = animated && window?.isVisible == true
+            && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        guard shouldAnimate else {
+            detailsHeight.constant = targetHeight
+            details.alphaValue = isExpanded ? 1 : 0
+            details.isHidden = !isExpanded
+            superview?.layoutSubtreeIfNeeded()
+            return
+        }
+        // Keep NSTextView's layout synchronous: animating its clip geometry can
+        // blank glyph tiles during live edits. Only the auxiliary links fade.
+        detailsHeight.constant = targetHeight
+        superview?.layoutSubtreeIfNeeded()
+        details.wantsLayer = true
+        if isExpanded {
+            details.alphaValue = 1
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = 0
+            fade.toValue = 1
+            fade.duration = 0.18
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            details.layer?.add(fade, forKey: "links.disclosure")
         } else {
-            synthesisTargetLayer = nil
-            synthesisButton.isHidden = true
+            details.layer?.removeAnimation(forKey: "links.disclosure")
+            details.isHidden = true
         }
     }
 
     func updateNavigation(canGoBack: Bool, canGoForward: Bool) {
         backButton.isEnabled = canGoBack
         forwardButton.isEnabled = canGoForward
+        backButton.isHidden = !canGoBack && !canGoForward
+        forwardButton.isHidden = !canGoBack && !canGoForward
     }
 
-    func setSynthesisInProgress(_ isInProgress: Bool) {
-        synthesisButton.isEnabled = !isInProgress
-        if isInProgress {
-            synthesisButton.title = "正在生成…"
-        } else if let targetLayer = knowledgeRelations.currentLayer?.nextHigher,
-                  targetLayer == .line || targetLayer == .plane {
-            synthesisButton.title = "生成\(targetLayer.displayName)层草案"
-        }
-    }
 
     private func navigationButton(
         title: String,
@@ -300,17 +254,6 @@ final class NoteLinksView: NSView {
     @objc
     private func forwardPressed(_ sender: NSButton) {
         onGoForward?()
-    }
-
-    @objc
-    private func generateHigherLayerPressed(_ sender: NSButton) {
-        guard let targetLayer = synthesisTargetLayer else { return }
-        onGenerateHigherLayer?(targetLayer)
-    }
-
-    @objc
-    private func showGraphPressed(_ sender: NSButton) {
-        onShowGraph?()
     }
 
     private func configureContentStack(_ stack: NSStackView) {

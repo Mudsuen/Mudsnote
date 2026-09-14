@@ -42,6 +42,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
+        if launchArguments.contains("--visual-qa-notes-dir"),
+           launchArguments.contains("--visual-qa-light-appearance") {
+            NSApp.appearance = NSAppearance(named: .aqua)
+        }
         let opensExternalMarkdown = !pendingExternalMarkdownURLs.isEmpty
         let opensLibrary = Self.shouldOpenLibraryOnLaunch(arguments: launchArguments) && !opensExternalMarkdown
         NSApp.setActivationPolicy(opensLibrary || opensExternalMarkdown ? .regular : .accessory)
@@ -369,8 +373,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         fileMenu.addItem(restoreNoteItem)
         fileMenu.addItem(.separator())
 
-        let closeItem = NSMenuItem(title: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        closeItem.target = nil
+        let tabItem = NSMenuItem(title: "新标签页", action: #selector(newLibraryTabFromMainMenu), keyEquivalent: "t")
+        tabItem.target = self
+        fileMenu.addItem(tabItem)
+        let closeItem = NSMenuItem(title: "关闭标签页或窗口", action: #selector(closeLibraryTabOrWindow), keyEquivalent: "w")
+        closeItem.target = self
         closeItem.keyEquivalentModifierMask = [.command]
         fileMenu.addItem(closeItem)
 
@@ -409,23 +416,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
         let findItem = NSMenuItem(title: "搜索笔记", action: #selector(focusLibrarySearchFromMainMenu), keyEquivalent: "f")
         findItem.target = self
-        findItem.keyEquivalentModifierMask = [.command]
+        findItem.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(findItem)
+        let findInNote = NSMenuItem(title: "在笔记中查找", action: #selector(findInLibraryDocument), keyEquivalent: "f")
+        findInNote.target = self
+        viewMenu.addItem(findInNote)
 
-        let sidebarItem = NSMenuItem(title: "显示或隐藏资料库", action: #selector(toggleLibrarySidebarFromMainMenu), keyEquivalent: "s")
+        let sidebarItem = NSMenuItem(title: "展开或收起侧栏", action: #selector(toggleLibrarySidebarFromMainMenu), keyEquivalent: "s")
         sidebarItem.target = self
         sidebarItem.keyEquivalentModifierMask = [.command, .control]
         viewMenu.addItem(sidebarItem)
 
-        let knowledgeGraphItem = NSMenuItem(
-            title: "显示知识图谱",
-            action: #selector(showKnowledgeGraphFromMainMenu),
-            keyEquivalent: "g"
-        )
-        knowledgeGraphItem.target = self
-        knowledgeGraphItem.keyEquivalentModifierMask = [.command, .option]
-        viewMenu.addItem(knowledgeGraphItem)
-        viewMenu.addItem(.separator())
+        let quickMenu = NSMenuItem(title: "快速菜单", action: #selector(showLibraryQuickMenu), keyEquivalent: "p")
+        quickMenu.target = self
+        quickMenu.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(quickMenu)
+        let links = NSMenuItem(title: "展开或收起双链", action: #selector(toggleLibraryLinks), keyEquivalent: "l")
+        links.target = self
+        links.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(links)
+
+        let sourceMode = NSMenuItem(title: "切换 Markdown 源码", action: #selector(toggleLibrarySourceMode), keyEquivalent: "m")
+        sourceMode.target = self
+        sourceMode.keyEquivalentModifierMask = [.command, .shift]
+        viewMenu.addItem(sourceMode)
 
         let sortItem = NSMenuItem(title: "排序方式", action: nil, keyEquivalent: "")
         let sortMenu = NSMenu(title: "排序方式")
@@ -458,6 +472,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         let windowMenu = NSMenu(title: "窗口")
         windowMenuItem.submenu = windowMenu
         mainMenu.addItem(windowMenuItem)
+        let nextTab = NSMenuItem(title: "下一个标签页", action: #selector(nextLibraryTab), keyEquivalent: "\t")
+        nextTab.keyEquivalentModifierMask = [.control]
+        nextTab.target = self
+        windowMenu.addItem(nextTab)
+        let previousTab = NSMenuItem(title: "上一个标签页", action: #selector(previousLibraryTab), keyEquivalent: "\t")
+        previousTab.keyEquivalentModifierMask = [.control, .shift]
+        previousTab.target = self
+        windowMenu.addItem(previousTab)
+        windowMenu.addItem(.separator())
         addResponderMenuItem(title: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m", to: windowMenu)
         addResponderMenuItem(title: "缩放", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "", to: windowMenu)
 
@@ -838,6 +861,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         }
     }
 
+    @objc private func newLibraryTabFromMainMenu() {
+        showLibraryWindow()
+        libraryWindowController?.newDocumentTabForLibrary()
+    }
+
+    @objc private func findInLibraryDocument() { libraryWindowController?.findInCurrentDocumentForLibrary() }
+    @objc private func nextLibraryTab() { libraryWindowController?.selectAdjacentDocumentTabForLibrary(1) }
+    @objc private func previousLibraryTab() { libraryWindowController?.selectAdjacentDocumentTabForLibrary(-1) }
+
+    @objc private func closeLibraryTabOrWindow() {
+        if NSApp.keyWindow === libraryWindowController?.window {
+            libraryWindowController?.closeActiveDocumentTabForLibrary()
+        } else { NSApp.keyWindow?.performClose(nil) }
+    }
+
     @objc
     func focusLibrarySearchFromMainMenu() {
         showLibraryWindow()
@@ -847,14 +885,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     @objc
     func toggleLibrarySidebarFromMainMenu() {
         showLibraryWindow()
-        libraryWindowController?.toggleSourceListForLibrary()
+        libraryWindowController?.toggleSidebarForLibrary()
     }
 
-    @objc
-    func showKnowledgeGraphFromMainMenu() {
-        showLibraryWindow()
-        libraryWindowController?.showKnowledgeGraphForLibrary()
-    }
+    @objc private func showLibraryQuickMenu() { libraryWindowController?.showQuickMenu(nil) }
+    @objc private func toggleLibrarySourceMode() { libraryWindowController?.toggleEditorSourceModePressed() }
+    @objc private func toggleLibraryLinks() { libraryWindowController?.toggleLinksPanel() }
 
     @objc
     func setLibraryNoteViewModeFromMainMenu(_ sender: NSMenuItem) {
@@ -887,8 +923,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             return libraryWindowController?.canDeleteSelectedNotesFromMenuForLibrary ?? false
         case #selector(restoreSelectedNotesFromMainMenu):
             return libraryWindowController?.canRestoreSelectedNotesFromMenuForLibrary ?? false
-        case #selector(showKnowledgeGraphFromMainMenu):
-            return libraryWindowController?.canShowKnowledgeGraphForLibrary ?? false
         case #selector(sortLibraryNotesFromMainMenu(_:)):
             let currentOrder = libraryWindowController?.noteListSortOrder
                 ?? LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue)

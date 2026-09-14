@@ -124,7 +124,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     var noteSuggestionQuery: String?
     var noteSuggestions: [NoteLinkItem] = []
     var linkEditorSheetController: LinkEditorSheetController?
-    weak var backdropView: GradientBackdropView?
+    weak var backdropView: MaterialBackdropView?
     weak var shellContentView: NSView?
     weak var overlayScrollIndicator: ScrollIndicatorOverlay?
     let initialWindowFrame: NSRect?

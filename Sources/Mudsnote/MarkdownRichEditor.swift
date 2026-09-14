@@ -426,6 +426,9 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     private var metadataTags: [String] = []
     private var metadataTagScrollView: NSScrollView?
 
+    var documentUndoManager: UndoManager?
+    override var undoManager: UndoManager? { documentUndoManager ?? super.undoManager }
+
     func replaceAllContent(with attributedString: NSAttributedString) {
         textStorage?.setAttributedString(attributedString)
         metadataTags = []
@@ -652,6 +655,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var selectionFormattingPanelFrame: NSRect? { selectionFormattingPanel?.frame }
     var pasteboardForPaste: () -> NSPasteboard = { .general }
     var markdownPasteTheme: MarkdownEditorTheme?
+    var usesUnifiedTitleLine = false
     private var isInterpretingShiftReturn = false
 
     private func updateHoverCursor(with event: NSEvent) {
@@ -984,6 +988,19 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             return true
         }
         guard let string = pasteboard.string(forType: .string) else { return false }
+        if usesUnifiedTitleLine, let theme = markdownPasteTheme,
+           (self.string as NSString).paragraphRange(for: selectedRange()).location == 0 {
+            let pasted = NSMutableAttributedString(string: string, attributes: typingAttributes)
+            let firstParagraph = (string as NSString).paragraphRange(for: NSRange(location: 0, length: 0))
+            if NSMaxRange(firstParagraph) < pasted.length {
+                // A plain-text paste spanning the title boundary starts normal body paragraphs.
+                pasted.setAttributes(theme.baseAttributes(for: .paragraph), range: NSRange(
+                    location: NSMaxRange(firstParagraph), length: pasted.length - NSMaxRange(firstParagraph)
+                ))
+            }
+            insertText(pasted, replacementRange: selectedRange())
+            return true
+        }
         insertText(string, replacementRange: selectedRange())
         return true
     }
@@ -3232,7 +3249,8 @@ enum MarkdownRichTextCodec {
     ) -> NSAttributedString? {
         guard let fileURL = localFileURL(path: path, baseURL: baseURL),
               FileManager.default.fileExists(atPath: fileURL.path),
-              !isImageFile(fileURL) else {
+              !isImageFile(fileURL),
+              !["md", "markdown"].contains(fileURL.pathExtension.lowercased()) else {
             return nil
         }
         let metadata = attachmentMetadataText(for: fileURL)

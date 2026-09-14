@@ -7,16 +7,38 @@ cd "$ROOT_DIR"
 
 PERFORMANCE_TESTS='StaysInteractiveAtSnapshotLimit|richMarkdownSerializationStaysInteractiveForDenseFormatting|cachedNoteVersionValidationDoesNotBlockKeyboardNavigation'
 
+# SwiftPM's generated async-main host can exit 0 after AppKit posts a
+# nested-loop stop event. Load the same test bundle in a synchronous AppKit host.
+run_tests() {
+  local configuration="$1"
+  shift
+  if [[ "$configuration" == "release" ]]; then
+    swift build -c release --build-tests -Xswiftc -enable-testing
+  else
+    swift build -c debug --build-tests
+  fi
+  local bin_dir
+  bin_dir="$(swift build -c "$configuration" --show-bin-path)"
+  local frameworks
+  frameworks="$(xcode-select -p)/Platforms/MacOSX.platform/Developer/Library/Frameworks"
+  swiftc -parse-as-library scripts/MacOSTestRunner.swift \
+    -module-cache-path "$bin_dir/ModuleCache" \
+    -F "$frameworks" -Xlinker -rpath -Xlinker "$frameworks" \
+    -o "$bin_dir/MudsnoteAppKitTestHost"
+  "$bin_dir/MudsnoteAppKitTestHost" \
+    --test-bundle-path "$bin_dir/MudsnotePackageTests.xctest/Contents/MacOS/MudsnotePackageTests" "$@"
+}
+
 case "$MODE" in
   pr)
-    swift test --skip "$PERFORMANCE_TESTS"
+    run_tests debug --skip "$PERFORMANCE_TESTS"
     ;;
   full)
-    swift test --skip "$PERFORMANCE_TESTS"
+    run_tests debug --skip "$PERFORMANCE_TESTS"
     if [[ -n "${CI:-}" ]]; then
       swift build -c release
     else
-      swift test -c release --filter "$PERFORMANCE_TESTS"
+      run_tests release --filter "$PERFORMANCE_TESTS"
     fi
     ;;
   live)

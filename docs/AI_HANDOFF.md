@@ -16,8 +16,14 @@ relative attachments are canonical across separate macOS and iPhone apps.
 
 ### macOS
 
-- Native three-pane library with source outline, bounded note projection,
-  list/gallery modes, and rich editor.
+- Native two-pane library shares a single native sidebar material, with subtle list
+  shading and restrained Flodo-inspired icon chrome. Pane-aligned navigation and
+  document title sit above the editor/list; first-level folder icons stay in the
+  compact list action row, while search opens from its icon. Nested
+  folders/tags remain in a keyboard-accessible popover. List/gallery
+  share bounded projection and selection. Shift-Command-P opens the quick menu.
+- Smart backlinks expose incoming/outgoing references and suggestions without
+  knowledge-layer UI; existing Markdown links and legacy metadata remain readable.
 - Finder/Open Markdown routes into the library without registering an external
   file's parent. Registered roots are never moved or deleted on removal.
 - Quick capture remains a separate compact title/body flow.

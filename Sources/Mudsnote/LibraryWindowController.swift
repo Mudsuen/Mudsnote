@@ -155,6 +155,7 @@ private typealias LoadedLibraryNote = LoadedNoteDocument
 
 private struct LibraryBackgroundSaveSnapshot: Sendable {
     let generation: Int
+    let documentID: UUID
     let editorRevision: Int
     let previousURL: URL?
     let title: String
@@ -641,13 +642,6 @@ final class LibrarySourceScrollView: NSScrollView {
     }
 }
 
-private enum LibraryNotesPalette {
-    static let windowBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
-    static let sourceBackground = NSColor(calibratedWhite: 0.045, alpha: 1)
-    static let noteListBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
-    static let editorBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
-}
-
 @MainActor
 enum LibrarySourceSelectionPalette {
     static let backgroundColor = NSColor(calibratedWhite: 0.20, alpha: 0.86)
@@ -794,7 +788,7 @@ private struct LibraryFormattingUndoSnapshot {
 final class LibraryGroupHeaderCellView: NSTableCellView {
     static let titleLeadingInset: CGFloat = 16
     static let titleTrailingInset: CGFloat = 10
-    static let firstTitleBottomInset: CGFloat = 15
+    static let firstTitleBottomInset: CGFloat = 5
     static let followingTitleBottomInset: CGFloat = 2
 
     let titleLabel = NSTextField(labelWithString: "")
@@ -842,9 +836,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 4.5
-    static let contentLeadingInset: CGFloat = 35
+    static let contentLeadingInset: CGFloat = 16
     static let contentBottomInset: CGFloat = 7.5
-    static let contentTrailingInset: CGFloat = 39
+    static let contentTrailingInset: CGFloat = 16
     static let selectionTextTrailingPadding: CGFloat = 10
     static let stackTextTrailingAdjustment: CGFloat = 2
     static let minimumTextWidth: CGFloat = 40
@@ -956,17 +950,17 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
-    static let selectionLeadingInset: CGFloat = 10
-    static let selectionTrailingInset: CGFloat = 27
-    static let selectionTopInset: CGFloat = 6
-    static let selectionBottomInset: CGFloat = 4
+    static let selectionLeadingInset: CGFloat = 4
+    static let selectionTrailingInset: CGFloat = 4
+    static let selectionTopInset: CGFloat = 2
+    static let selectionBottomInset: CGFloat = 2
     static let selectionCornerRadius: CGFloat = 8
     static var selectionFillColor = LibrarySourceSelectionPalette.noteBackgroundColor
     static let hoverLeadingInset: CGFloat = selectionLeadingInset
     static let hoverTrailingInset: CGFloat = selectionTrailingInset
     static let hoverVerticalInset: CGFloat = 3
     static let hoverCornerRadius: CGFloat = 8
-    static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
+    static let hoverFillColor = NSColor.labelColor.withAlphaComponent(0.045)
     static let separatorLeadingInset: CGFloat = 37
     static let separatorTrailingInset: CGFloat = 28
     static let separatorAlpha: CGFloat = 0.28
@@ -1024,19 +1018,6 @@ final class LibraryNoteRowView: NSTableRowView {
         super.drawBackground(in: dirtyRect)
         guard !isGroupRow else { return }
 
-        if !isSelected {
-            let y = bounds.minY + 0.5
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: Self.separatorLeadingInset, y: y))
-            path.line(to: NSPoint(
-                x: max(Self.separatorLeadingInset, bounds.maxX - Self.separatorTrailingInset),
-                y: y
-            ))
-            panelSeparatorColor(alpha: Self.separatorAlpha).setStroke()
-            path.lineWidth = 1
-            path.stroke()
-        }
-
         guard isPointerHovered, !isSelected else { return }
 
         let hoverRect = insetRect(
@@ -1054,6 +1035,8 @@ final class LibraryNoteRowView: NSTableRowView {
         path.fill()
     }
 
+    override var interiorBackgroundStyle: NSView.BackgroundStyle { .normal }
+
     override func drawSelection(in dirtyRect: NSRect) {
         guard !isGroupRow else { return }
         let selectionRect = insetRect(
@@ -1067,7 +1050,8 @@ final class LibraryNoteRowView: NSTableRowView {
             xRadius: Self.selectionCornerRadius,
             yRadius: Self.selectionCornerRadius
         )
-        Self.selectionFillColor.setFill()
+        let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+        Self.selectionFillColor.withAlphaComponent(isDark ? 0.30 : 0.18).setFill()
         path.fill()
     }
 
@@ -1099,6 +1083,7 @@ final class LibraryNoteRowView: NSTableRowView {
 
 enum LibraryNoteKeyCommand {
     case open
+    case openInNewTab
     case delete
     case moveDown
     case moveUp
@@ -1144,6 +1129,8 @@ final class LibraryNoteTableView: NSTableView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command],
+           [36, 76].contains(event.keyCode), onKeyCommand?(.openInNewTab) == true { return }
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
             super.keyDown(with: event)
             return
@@ -1291,7 +1278,6 @@ final class LibraryWindowController: NSWindowController,
     let statusLabel = NSTextField(labelWithString: "")
     let wordCountLabel = NSTextField(labelWithString: "")
     private var attachmentManagerWindowController: LibraryAttachmentManagerWindowController?
-    private var knowledgeGraphWindowController: KnowledgeGraphWindowController?
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
     private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
@@ -1379,8 +1365,6 @@ final class LibraryWindowController: NSWindowController,
     private var editorSearchHighlightRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshGeneration = 0
-    private var knowledgeSynthesisTask: Task<Void, Never>?
-    private var knowledgeSynthesisGeneration = 0
     private var knowledgeBackStack: [URL] = []
     private var knowledgeForwardStack: [URL] = []
     private var searchResultsGeneration = 0
@@ -1468,7 +1452,31 @@ final class LibraryWindowController: NSWindowController,
     private var windowFramePersistenceWorkItem: DispatchWorkItem?
     private weak var librarySplitView: NSSplitView?
     private var librarySplitViewController: NSSplitViewController?
-    private weak var sourceSplitViewItem: NSSplitViewItem?
+    private let folderShortcutStack = NSStackView()
+    private let folderNavigationRow = NSStackView()
+    private let documentTabTitle = NSTextField(labelWithString: "新笔记")
+    private var documentTabs = [LibraryDocumentTab()]
+    private var activeDocumentTabID: UUID?
+    private var retainedSavingTabs: [UUID: LibraryDocumentTab] = [:]
+    private var backgroundSavingTab: LibraryDocumentTab?
+    private let documentTabsStack = NSStackView()
+    private var documentTabsWidthConstraint: NSLayoutConstraint?
+    private let emptyTabActions = NSStackView()
+    private var tabBarSignature = ""
+    private var isActivatingDocumentTab = false
+    private var activeDocumentTab: LibraryDocumentTab {
+        documentTabs.first { $0.id == activeDocumentTabID } ?? documentTabs[0]
+    }
+    private var folderShortcutWidthConstraint: NSLayoutConstraint?
+    private let sidebarSearchPanel = NSStackView()
+    private let sidebarToggleButton = NSButton()
+    private let filesModeButton = NSButton()
+    private var sidebarSearchQuery = ""
+    private(set) var sidebarShowsSearchForLibrary = false
+    private let searchButton = NSButton()
+    private let sourcePopover = NSPopover()
+    private let sourceButton = NSButton()
+    private let commandButton = NSButton()
     private weak var noteListSplitViewItem: NSSplitViewItem?
     private weak var sourceListView: NSView?
     private weak var editorStackView: NSStackView?
@@ -1554,6 +1562,9 @@ final class LibraryWindowController: NSWindowController,
         window.title = "\(MudsnoteBrand.appName) 笔记"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.isOpaque = false
+        window.backgroundColor = .clear
+        window.isMovableByWindowBackground = true
         window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize
         window.toolbarStyle = .unified
@@ -1741,11 +1752,6 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func selectedNoteStillMatchesInitialLoad(_ note: NoteSearchResult) -> Bool {
-        if let selectedNote = self.note(at: tableView.selectedRow),
-           selectedNote.url.standardizedFileURL.path != note.url.standardizedFileURL.path {
-            return false
-        }
-
         if let selectedURL,
            selectedURL.standardizedFileURL.path != note.url.standardizedFileURL.path {
             return false
@@ -1940,6 +1946,10 @@ final class LibraryWindowController: NSWindowController,
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            drainBackgroundAutosaves()
+            guard !documentTabs.contains(where: { $0.isDirty }) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
             return true
         } catch {
             presentErrorAlert(message: "无法关闭资料库", details: error.localizedDescription)
@@ -1972,8 +1982,6 @@ final class LibraryWindowController: NSWindowController,
         attachmentQuickLookController.dismiss()
         attachmentManagerWindowController?.close()
         attachmentManagerWindowController = nil
-        knowledgeGraphWindowController?.close()
-        knowledgeGraphWindowController = nil
         cancelSourceSnapshotValidation()
         sourceCountRefreshTask?.cancel()
         sourceCountRefreshTask = nil
@@ -1982,9 +1990,6 @@ final class LibraryWindowController: NSWindowController,
         searchReloadWorkItem = nil
         editorSearchHighlightRefreshTask?.cancel()
         editorSearchHighlightRefreshTask = nil
-        knowledgeSynthesisTask?.cancel()
-        knowledgeSynthesisTask = nil
-        knowledgeSynthesisGeneration += 1
         cancelActiveSearchResultReload()
         hasPendingSearchReload = false
         splitLayoutPersistenceWorkItem?.cancel()
@@ -2093,7 +2098,6 @@ final class LibraryWindowController: NSWindowController,
                 URL(fileURLWithPath: $0)
             })
         }
-        knowledgeGraphWindowController?.reload()
         activeSearchSession = nil
 
         for path in markdownPaths {
@@ -2173,6 +2177,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func buildUI() {
         let sourceList = buildSourceList()
+        let navigation = buildNavigationBar()
         let sidebar = buildSidebar()
         let editor = buildEditor()
 
@@ -2183,13 +2188,11 @@ final class LibraryWindowController: NSWindowController,
         let editorController = NSViewController()
         editorController.view = editor
 
-        let sourceItem = NSSplitViewItem(sidebarWithViewController: sourceController)
-        sourceItem.minimumThickness = LibraryNotesLayout.sourceColumnMinimumWidth
-        sourceItem.maximumThickness = LibraryNotesLayout.sourceColumnMaximumWidth
-        sourceItem.canCollapse = true
-        sourceItem.allowsFullHeightLayout = true
-        sourceItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
-        sourceItem.isCollapsed = !noteStore.librarySourceListVisible
+        sourceController.preferredContentSize = NSSize(width: 280, height: 420)
+        sourcePopover.contentViewController = sourceController
+        sourcePopover.contentSize = NSSize(width: 280, height: 420)
+        sourcePopover.behavior = .transient
+        sourcePopover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
 
         let noteListItem = NSSplitViewItem(contentListWithViewController: noteListController)
         noteListItem.minimumThickness = LibraryNotesLayout.noteColumnMinimumWidth
@@ -2202,20 +2205,46 @@ final class LibraryWindowController: NSWindowController,
         editorItem.minimumThickness = LibraryNotesLayout.editorColumnMinimumWidth
 
         let splitController = NSSplitViewController()
-        splitController.addSplitViewItem(sourceItem)
         splitController.addSplitViewItem(noteListItem)
         splitController.addSplitViewItem(editorItem)
         splitController.splitView.isVertical = true
         splitController.splitView.dividerStyle = .thin
         splitController.view.wantsLayer = true
-        splitController.view.layer?.backgroundColor = LibraryNotesPalette.windowBackground.cgColor
+        splitController.view.layer?.backgroundColor = NSColor.clear.cgColor
 
         librarySplitViewController = splitController
-        sourceSplitViewItem = sourceItem
         noteListSplitViewItem = noteListItem
         librarySplitView = splitController.splitView
-        window?.contentViewController = splitController
-        hostEditorSuggestionView(in: splitController.view)
+        let rootController = NSViewController()
+        let root = LibraryPaneSurface(role: .document)
+        rootController.view = makeLibraryWindowMaterial(content: root)
+        rootController.addChild(splitController)
+        root.addSubview(splitController.view)
+        root.addSubview(navigation)
+        let documentHeader = buildDocumentHeader()
+        root.addSubview(documentHeader)
+        documentHeader.translatesAutoresizingMaskIntoConstraints = false
+        splitController.view.translatesAutoresizingMaskIntoConstraints = false
+        navigation.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            navigation.topAnchor.constraint(equalTo: root.topAnchor),
+            navigation.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 80),
+            navigation.trailingAnchor.constraint(equalTo: documentHeader.leadingAnchor, constant: -8),
+            documentHeader.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: 124),
+            documentHeader.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
+            documentHeader.topAnchor.constraint(equalTo: root.topAnchor),
+            documentHeader.heightAnchor.constraint(equalToConstant: 32),
+            navigation.heightAnchor.constraint(equalToConstant: 32),
+            splitController.view.topAnchor.constraint(equalTo: root.topAnchor, constant: 40),
+            splitController.view.leadingAnchor.constraint(equalTo: root.leadingAnchor),
+            splitController.view.trailingAnchor.constraint(equalTo: root.trailingAnchor),
+            splitController.view.bottomAnchor.constraint(equalTo: root.bottomAnchor)
+        ])
+        let paneAlignedHeader = documentHeader.leadingAnchor.constraint(equalTo: editor.leadingAnchor, constant: 8)
+        paneAlignedHeader.priority = .defaultHigh
+        paneAlignedHeader.isActive = true
+        window?.contentViewController = rootController
+        hostEditorSuggestionView(in: root)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(librarySplitViewDidResize(_:)),
@@ -2234,24 +2263,10 @@ final class LibraryWindowController: NSWindowController,
         sourceList.identifier = NSUserInterfaceItemIdentifier("LibrarySourceSurface")
         sourceList.setAccessibilityLabel("资料库")
         sourceList.material = .sidebar
-        sourceList.blendingMode = .withinWindow
-        sourceList.state = .active
+        sourceList.blendingMode = .behindWindow
+        sourceList.state = .followsWindowActiveState
         sourceList.wantsLayer = true
-        sourceList.layer?.backgroundColor = LibraryNotesPalette.sourceBackground
-            .withAlphaComponent(0.86)
-            .cgColor
-        sourceList.layer?.cornerRadius = LibraryNotesLayout.sourceSurfaceCornerRadius
-        sourceList.layer?.masksToBounds = true
         sourceListView = sourceList
-
-        let darkeningView = NSView()
-        darkeningView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceDarkeningTint")
-        darkeningView.wantsLayer = true
-        darkeningView.layer?.backgroundColor = NSColor.black.withAlphaComponent(
-            LibraryNotesLayout.sourceSurfaceDarkeningAlpha
-        ).cgColor
-        sourceList.addSubview(darkeningView)
-        pin(darkeningView, to: sourceList)
         sourceFolderTreeRows = rootFolderRowsForSourceList()
         sourceFolderRows = sourceFolderTreeRows
 
@@ -2314,10 +2329,353 @@ final class LibraryWindowController: NSWindowController,
         return sourceList
     }
 
+    private func buildNavigationBar() -> NSView {
+        configureCompactButton(sourceButton, symbol: "folder.badge.gearshape", label: "文件夹与标签", action: #selector(toggleSourceListPressed))
+        configureCompactButton(sidebarToggleButton, symbol: "sidebar.left", label: "收起侧栏（⌃⌘S）", action: #selector(toggleSidebarPressed))
+        sidebarToggleButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarToggle")
+        configureCompactButton(filesModeButton, symbol: "folder", label: "文件", action: #selector(showFilesPressed))
+        filesModeButton.identifier = NSUserInterfaceItemIdentifier("LibraryFilesMode")
+        sourceButton.identifier = NSUserInterfaceItemIdentifier("LibraryFolderPicker")
+        configureCompactButton(searchButton, symbol: "magnifyingglass", label: "搜索笔记（⇧⌘F）", action: #selector(searchPressed))
+        searchButton.identifier = NSUserInterfaceItemIdentifier("LibrarySearchButton")
+        let newButton = NSButton()
+        configureCompactButton(newButton, symbol: "square.and.pencil", label: "新建笔记（⌘N）", action: #selector(newNotePressed))
+        configureCompactButton(commandButton, symbol: "ellipsis", label: "快速菜单（⇧⌘P）", action: #selector(showQuickMenu(_:)))
+        commandButton.identifier = NSUserInterfaceItemIdentifier("LibraryQuickMenu")
+
+        folderShortcutStack.orientation = .horizontal
+        folderShortcutStack.spacing = 4
+        folderShortcutStack.alignment = .centerY
+        let folderScroll = NSScrollView()
+        folderScroll.identifier = NSUserInterfaceItemIdentifier("LibraryFolderShortcuts")
+        folderScroll.setAccessibilityLabel("一级文件夹")
+        folderScroll.drawsBackground = false
+        folderScroll.contentView.drawsBackground = false
+        folderScroll.hasHorizontalScroller = true
+        folderScroll.autohidesScrollers = true
+        folderScroll.scrollerStyle = .overlay
+        folderScroll.documentView = folderShortcutStack
+        folderShortcutStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            folderShortcutStack.leadingAnchor.constraint(equalTo: folderScroll.contentView.leadingAnchor),
+            folderShortcutStack.topAnchor.constraint(equalTo: folderScroll.contentView.topAnchor),
+            folderShortcutStack.heightAnchor.constraint(equalTo: folderScroll.heightAnchor),
+            folderScroll.heightAnchor.constraint(equalToConstant: 32)
+        ])
+        rebuildFolderShortcuts()
+        let dragHandle = LibraryWindowDragHandle()
+        dragHandle.identifier = NSUserInterfaceItemIdentifier("LibraryWindowDragHandle")
+        dragHandle.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        dragHandle.widthAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
+        dragHandle.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        let preferredFolderWidth = folderScroll.widthAnchor.constraint(equalToConstant: CGFloat(folderShortcutStack.arrangedSubviews.count * 34 - 4))
+        preferredFolderWidth.priority = .defaultLow
+        preferredFolderWidth.isActive = true
+        folderShortcutWidthConstraint = preferredFolderWidth
+        folderNavigationRow.setViews([folderScroll, sourceButton, newButton], in: .leading)
+        folderNavigationRow.spacing = 4
+        folderNavigationRow.alignment = .centerY
+        folderNavigationRow.heightAnchor.constraint(equalToConstant: 34).isActive = true
+        let bar = NSStackView(views: [sidebarToggleButton, filesModeButton, searchButton, dragHandle])
+        bar.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationBar")
+        bar.spacing = 8
+        bar.alignment = .centerY
+        bar.distribution = .fill
+        folderScroll.setContentCompressionResistancePriority(.fittingSizeCompression, for: .horizontal)
+        folderScroll.widthAnchor.constraint(lessThanOrEqualTo: folderNavigationRow.widthAnchor, constant: -76).isActive = true
+
+        sidebarSearchPanel.orientation = .vertical
+        sidebarSearchPanel.setViews([searchField, searchScopeControl], in: .top)
+        sidebarSearchPanel.alignment = .leading
+        sidebarSearchPanel.spacing = 6
+        sidebarSearchPanel.edgeInsets = NSEdgeInsets(top: 4, left: 6, bottom: 8, right: 6)
+        sidebarSearchPanel.isHidden = true
+        searchField.widthAnchor.constraint(equalTo: sidebarSearchPanel.widthAnchor, constant: -12).isActive = true
+
+        filesModeButton.contentTintColor = .controlAccentColor
+        return bar
+    }
+
+    private func buildDocumentHeader() -> NSView {
+        documentTabsStack.orientation = .horizontal
+        documentTabsStack.spacing = 3
+        let scroll = NSScrollView()
+        scroll.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabs")
+        scroll.drawsBackground = false
+        scroll.contentView.drawsBackground = false
+        scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.documentView = documentTabsStack
+        documentTabsStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            documentTabsStack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            documentTabsStack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            documentTabsStack.heightAnchor.constraint(equalTo: scroll.heightAnchor),
+            scroll.heightAnchor.constraint(equalToConstant: 32),
+            scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 100)
+        ])
+        let add = NSButton()
+        configureCompactButton(add, symbol: "plus", label: "新标签页（⌘T）", action: #selector(newDocumentTabPressed))
+        add.identifier = NSUserInterfaceItemIdentifier("LibraryNewTab")
+        let preferredWidth = scroll.widthAnchor.constraint(equalToConstant: 170)
+        preferredWidth.priority = .defaultHigh
+        preferredWidth.isActive = true
+        documentTabsWidthConstraint = preferredWidth
+        let spacer = LibraryWindowDragHandle()
+        spacer.setContentHuggingPriority(NSLayoutConstraint.Priority(1), for: .horizontal)
+        spacer.widthAnchor.constraint(greaterThanOrEqualToConstant: 0).isActive = true
+        let header = NSStackView(views: [scroll, add, spacer, commandButton])
+        header.spacing = 6
+        header.alignment = .centerY
+        header.distribution = .fill
+        updateDocumentTabBar()
+        return header
+    }
+
+    private func updateDocumentTabBar() {
+        let active = activeDocumentTab.id
+        let signature = documentTabs.map { "\($0.id):\($0.title):\($0.isDirty):\($0.saveFailed):\($0.id == active)" }.joined(separator: "|")
+        guard signature != tabBarSignature else { return }
+        tabBarSignature = signature
+        documentTabsWidthConstraint?.constant = CGFloat(documentTabs.count * 173 - 3)
+        documentTabsStack.arrangedSubviews.forEach { documentTabsStack.removeArrangedSubview($0); $0.removeFromSuperview() }
+        for tab in documentTabs {
+            let view = LibraryDocumentTabView(tab: tab, selected: tab.id == active)
+            view.onSelect = { [weak self] in self?.activateDocumentTab(tab.id) }
+            view.onClose = { [weak self] in self?.closeDocumentTab(tab.id) }
+            view.onCloseOthers = { [weak self] in
+                guard let self else { return }
+                for id in self.documentTabs.map(\.id) where id != tab.id { self.closeDocumentTab(id) }
+            }
+            documentTabsStack.addArrangedSubview(view)
+        }
+        documentTabsStack.layoutSubtreeIfNeeded()
+        if let selectedView = documentTabsStack.arrangedSubviews.first(where: { ($0 as? LibraryDocumentTabView)?.tabID == active }) {
+            selectedView.scrollToVisible(selectedView.bounds)
+        }
+    }
+
+    private func captureActiveDocumentTab() {
+        guard !isLoadingInitialNote else { return }
+        editorTextView.breakUndoCoalescing()
+        let tab = activeDocumentTab
+        tab.url = selectedURL
+        let title = visibleEditorMetadata().title
+        tab.title = title.isEmpty ? (selectedURL == nil ? "新标签页" : "新笔记") : title
+        tab.buffer = editorTextView.attributedString().copy() as? NSAttributedString
+        tab.sourceContents = selectedSourceContents
+        tab.tags = selectedTags
+        tab.selection = editorTextView.selectedRange()
+        tab.scrollOrigin = editorTextView.enclosingScrollView?.contentView.bounds.origin ?? .zero
+        tab.revision = editorContentRevision
+        tab.isDirty = isDirty
+        tab.isSourceMode = isEditorShowingMarkdownSource
+        tab.isCreatingNote = isCreatingNewNote
+        tab.targetDirectory = selectedURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote()
+    }
+
+
+
+    @objc private func newDocumentTabPressed() { newDocumentTabForLibrary() }
+
+    func newDocumentTabForLibrary() {
+        do {
+            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            captureActiveDocumentTab()
+            let tab = LibraryDocumentTab()
+            documentTabs.append(tab)
+            activateDocumentTab(tab.id)
+        } catch { presentErrorAlert(message: "无法打开标签页", details: error.localizedDescription) }
+    }
+
+    private func activateDocumentTab(_ id: UUID) {
+        guard let tab = documentTabs.first(where: { $0.id == id }), tab.id != activeDocumentTab.id else { return }
+        do {
+            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            captureActiveDocumentTab()
+        } catch { presentErrorAlert(message: "无法切换标签页", details: error.localizedDescription); return }
+        cancelActiveNoteLoad()
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        activeDocumentTabID = tab.id
+        editorTextView.documentUndoManager = tab.undoManager
+        isLoadingInitialNote = false
+        selectedURL = tab.url
+        selectedSourceContents = tab.sourceContents
+        selectedTags = tab.tags
+        editorContentRevision = tab.revision
+        isCreatingNewNote = tab.isCreatingNote
+        isDirty = tab.isDirty
+        restoreNoteBrowserSelection(to: tab.url)
+        if let buffer = tab.buffer {
+            tab.undoManager.disableUndoRegistration()
+            applyDocument(title: tab.title == "新标签页" ? "" : tab.title, body: "", tags: tab.tags,
+                          renderedBody: buffer, preservedSelection: tab.selection)
+            tab.undoManager.enableUndoRegistration()
+            isEditorShowingMarkdownSource = tab.isSourceMode
+            editorTextView.isRichText = !tab.isSourceMode
+            isDirty = tab.isDirty
+            setEditorEditable(!activeDocumentIsReadOnly)
+            editorTextView.enclosingScrollView?.contentView.scroll(to: tab.scrollOrigin)
+            if let url = tab.url {
+                refreshNoteLinks(for: url, body: currentEditorMarkdownBody())
+                if !tab.isDirty, let note = sourceCountSnapshot.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }),
+                   !pendingDeletionPaths.contains(url.standardizedFileURL.path) {
+                    if let cached = cachedLoadedNote(for: note) { scheduleCachedNoteValidation(cached, for: note) }
+                    else { reloadSelectedNoteAfterExternalChange(note) }
+                }
+            }
+            else { noteLinksView.update(.empty) }
+            if tab.saveFailed { updateEditorStatus("保存失败，编辑仍保留", kind: .failure) }
+            else { updateEditorStatus("") }
+        } else if let url = tab.url {
+            applyDocument(title: "", body: "", tags: [])
+            let note = sourceCountSnapshot.first { $0.url.standardizedFileURL == url.standardizedFileURL }
+                ?? NoteSearchResult(url: url, title: tab.title, snippet: "", modifiedAt: Date())
+            isActivatingDocumentTab = true
+            load(note: note)
+            isActivatingDocumentTab = false
+        } else {
+            tab.isCreatingNote = true
+            isCreatingNewNote = true
+            applyDocument(title: "", body: "", tags: [])
+            isDirty = false
+            setEditorEditable(true)
+            noteLinksView.update(.empty)
+            updateEditorStatus("")
+        }
+        updateDocumentTabBar()
+        updateToolbarActionState()
+        window?.makeFirstResponder(editorTextView)
+    }
+
+    private func prepareDocumentTab(for note: NoteSearchResult) -> Bool {
+        guard !isActivatingDocumentTab else { return false }
+        if let existing = documentTabs.first(where: { $0.url?.standardizedFileURL == note.url.standardizedFileURL }),
+           existing.id != activeDocumentTab.id {
+            activateDocumentTab(existing.id)
+            return true
+        }
+        let active = activeDocumentTab
+        if active.url?.standardizedFileURL != note.url.standardizedFileURL {
+            captureActiveDocumentTab()
+            if active.isDirty { retainedSavingTabs[active.id] = active }
+            let replacement = LibraryDocumentTab(url: note.url, title: note.title)
+            let index = documentTabs.firstIndex { $0.id == active.id } ?? 0
+            documentTabs[index] = replacement
+            activeDocumentTabID = replacement.id
+        }
+        editorTextView.documentUndoManager = activeDocumentTab.undoManager
+        activeDocumentTab.url = note.url
+        activeDocumentTab.title = note.title
+        updateDocumentTabBar()
+        return false
+    }
+
+    func openNoteInNewTabForLibrary(at url: URL, activate: Bool = true) {
+        if let existing = documentTabs.first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
+            if activate { activateDocumentTab(existing.id) }
+            return
+        }
+        captureActiveDocumentTab()
+        let note = sourceCountSnapshot.first { $0.url.standardizedFileURL == url.standardizedFileURL }
+        let tab = LibraryDocumentTab(url: url, title: note?.title ?? url.deletingPathExtension().lastPathComponent)
+        documentTabs.append(tab)
+        if activate { activateDocumentTab(tab.id) }
+        else { updateDocumentTabBar() }
+    }
+
+    @objc private func openContextNoteInNewTab(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        openNoteInNewTabForLibrary(at: url, activate: sender.tag != 1)
+    }
+
+    func closeActiveDocumentTabForLibrary() { closeDocumentTab(activeDocumentTab.id) }
+
+    private func closeDocumentTab(_ id: UUID) {
+        guard let tab = documentTabs.first(where: { $0.id == id }) else { return }
+        if tab.id == activeDocumentTab.id { captureActiveDocumentTab() }
+        if tab.isDirty {
+            tab.closeAfterSave = true
+            tab.saveFailed = false
+            retainedSavingTabs[tab.id] = tab
+            if !backgroundAutosaveIsActive { enqueueBackgroundAutosave(for: tab) }
+            return
+        }
+        removeDocumentTab(id)
+    }
+
+    private func removeDocumentTab(_ id: UUID) {
+        guard let index = documentTabs.firstIndex(where: { $0.id == id }) else { return }
+        let wasActive = activeDocumentTab.id == id
+        if documentTabs.count == 1 { documentTabs.append(LibraryDocumentTab()) }
+        if wasActive {
+            let next = documentTabs[index + 1 < documentTabs.count ? index + 1 : index - 1]
+            activateDocumentTab(next.id)
+        }
+        documentTabs.removeAll { $0.id == id }
+        updateDocumentTabBar()
+    }
+
+    func selectAdjacentDocumentTabForLibrary(_ delta: Int) {
+        let index = documentTabs.firstIndex { $0.id == activeDocumentTab.id } ?? 0
+        let next = (index + delta + documentTabs.count) % documentTabs.count
+        activateDocumentTab(documentTabs[next].id)
+    }
+
+    private var activeDocumentIsReadOnly: Bool { selectedURL.map(isTrashURL) ?? false }
+    var activeDocumentURLForLibrary: URL? { selectedURL }
+    var openDocumentURLsForLibrary: [URL] { documentTabs.compactMap(\.url) }
+    var documentTabCountForLibrary: Int { documentTabs.count }
+
+    private func rebuildFolderShortcuts() {
+        let previous = folderShortcutStack.arrangedSubviews.compactMap { ($0 as? LibraryFolderShortcutButton)?.folderURL }
+        // The library root plus its immediate folders, and separately added roots.
+        let mainRoot = noteStore.notesDirectory.standardizedFileURL
+        var seen = Set<String>()
+        let folders = (sourceFolderTreeRows.filter {
+            $0.depth == 0 || $0.url.deletingLastPathComponent().standardizedFileURL == mainRoot
+        }.map(\.url) + externalPreviewFolderURLs()).filter {
+            seen.insert($0.standardizedFileURL.path).inserted
+        }
+        if previous != folders || folderShortcutStack.arrangedSubviews.isEmpty {
+            folderShortcutStack.arrangedSubviews.forEach { folderShortcutStack.removeArrangedSubview($0); $0.removeFromSuperview() }
+            folderShortcutStack.addArrangedSubview(LibraryFolderShortcutButton(
+                folderURL: nil, symbol: "house", label: "首页", target: self, action: #selector(folderShortcutPressed(_:))))
+            for folder in folders {
+                folderShortcutStack.addArrangedSubview(LibraryFolderShortcutButton(
+                    folderURL: folder, symbol: sourceSymbolName(for: .folder(folder)),
+                    label: folderTitle(for: folder), target: self, action: #selector(folderShortcutPressed(_:))))
+            }
+        }
+        folderShortcutWidthConstraint?.constant = CGFloat(folderShortcutStack.arrangedSubviews.count * 34 - 4)
+        refreshFolderShortcutSelection()
+    }
+
+    private func refreshFolderShortcutSelection() {
+        for case let button as LibraryFolderShortcutButton in folderShortcutStack.arrangedSubviews {
+            let selected: Bool
+            if let folder = button.folderURL, case .folder(let current) = selectedScope {
+                selected = current.standardizedFileURL == folder.standardizedFileURL
+                    || (current.path.hasPrefix(folder.path + "/") && folder.standardizedFileURL != noteStore.notesDirectory.standardizedFileURL)
+            } else {
+                selected = button.folderURL == nil && selectedScope == .all
+            }
+            button.state = selected ? .on : .off
+            button.contentTintColor = selected ? .controlAccentColor : .secondaryLabelColor
+        }
+    }
+
+    @objc private func folderShortcutPressed(_ sender: LibraryFolderShortcutButton) {
+        _ = activateSourceScope(sender.folderURL.map(LibraryScope.folder) ?? .all)
+        refreshFolderShortcutSelection()
+        window?.makeFirstResponder(tableView)
+    }
+
     private func buildSidebar() -> NSView {
-        let sidebar = NSView()
-        sidebar.wantsLayer = true
-        sidebar.layer?.backgroundColor = LibraryNotesPalette.noteListBackground.cgColor
+        let sidebar = LibraryPaneSurface(role: .navigation)
+        sidebar.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSurface")
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
         configureNoteListHeaderLabels()
@@ -2396,35 +2754,33 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        let stack = NSStackView(views: [listContainer])
+        let stack = NSStackView(views: [folderNavigationRow, sidebarSearchPanel, listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 0
         stack.edgeInsets = NSEdgeInsets(
-            top: LibraryNotesLayout.noteListTopInset,
+            top: 0,
             left: LibraryNotesLayout.noteListLeadingInset,
             bottom: LibraryNotesLayout.noteListBottomInset,
             right: LibraryNotesLayout.noteListTrailingInset
         )
         sidebar.addSubview(stack)
-        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryNoteListTitlebarSeparator")
-        sidebar.addSubview(titlebarSeparator)
+
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
             stack.topAnchor.constraint(
-                equalTo: sidebar.safeAreaLayoutGuide.topAnchor,
+                equalTo: sidebar.topAnchor,
                 constant: LibraryNotesLayout.noteListStackTopOffset
             ),
             stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
-            titlebarSeparator.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
-            titlebarSeparator.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            titlebarSeparator.bottomAnchor.constraint(equalTo: sidebar.safeAreaLayoutGuide.topAnchor),
-            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
+
         ])
-        listContainer.widthAnchor.constraint(equalTo: stack.widthAnchor).isActive = true
+        for view in [listContainer, sidebarSearchPanel, folderNavigationRow] {
+            view.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -(LibraryNotesLayout.noteListLeadingInset + LibraryNotesLayout.noteListTrailingInset)).isActive = true
+        }
 
         return sidebar
     }
@@ -2473,10 +2829,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildEditor() -> NSView {
-        let editor = NSView()
+        let editor = LibraryPaneSurface(role: .document)
+        editor.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentSurface")
         editor.translatesAutoresizingMaskIntoConstraints = false
-        editor.wantsLayer = true
-        editor.layer?.backgroundColor = LibraryNotesPalette.editorBackground.cgColor
 
         titleField.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTitleField")
         titleField.setAccessibilityLabel("笔记标题")
@@ -2495,7 +2850,7 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
         statusLabel.setAccessibilityLabel("编辑时间或保存状态")
         statusLabel.font = .systemFont(ofSize: LibraryNotesLayout.editorStatusFontSize, weight: .semibold)
-        statusLabel.textColor = panelTertiaryTextColor()
+        statusLabel.textColor = .secondaryLabelColor
         statusLabel.alignment = .center
         statusLabel.lineBreakMode = .byTruncatingTail
         wordCountLabel.setAccessibilityLabel("字数")
@@ -2503,7 +2858,7 @@ final class LibraryWindowController: NSWindowController,
             ofSize: LibraryNotesLayout.editorStatusFontSize,
             weight: .medium
         )
-        wordCountLabel.textColor = panelTertiaryTextColor()
+        wordCountLabel.textColor = .secondaryLabelColor
         wordCountLabel.alignment = .right
 
         configureEditorTextView()
@@ -2513,31 +2868,13 @@ final class LibraryWindowController: NSWindowController,
             ofSize: LibraryNotesLayout.editorStatusFontSize,
             weight: .semibold
         )
-        createdDateLabel.textColor = panelTertiaryTextColor()
+        createdDateLabel.textColor = .secondaryLabelColor
         createdDateLabel.alignment = .center
         createdDateLabel.lineBreakMode = .byTruncatingTail
         createdDateLabel.translatesAutoresizingMaskIntoConstraints = false
-        editorTextView.addSubview(createdDateLabel)
-        NSLayoutConstraint.activate([
-            createdDateLabel.topAnchor.constraint(equalTo: editorTextView.topAnchor, constant: 4),
-            createdDateLabel.centerXAnchor.constraint(
-                equalTo: editorTextView.centerXAnchor,
-                constant: LibraryNotesLayout.editorStatusHorizontalOffset
-            ),
-            createdDateLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: editorTextView.leadingAnchor,
-                constant: 20
-            ),
-            createdDateLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: editorTextView.trailingAnchor,
-                constant: -20
-            ),
-            createdDateLabel.heightAnchor.constraint(
-                equalToConstant: LibraryNotesLayout.editorDateRowHeight
-            )
-        ])
-        editorTextView.addSubview(statusLabel)
-        editorTextView.addSubview(wordCountLabel)
+        // Dates remain available in note information, without reserving editor chrome.
+        createdDateLabel.isHidden = true
+        statusLabel.isHidden = true
         let scrollView = LibraryEditorScrollView()
         let clipView = EditorClipView()
         scrollView.drawsBackground = false
@@ -2547,8 +2884,8 @@ final class LibraryWindowController: NSWindowController,
         scrollView.horizontalScrollElasticity = .none
         scrollView.autohidesScrollers = true
         scrollView.automaticallyAdjustsContentInsets = false
-        clipView.drawsBackground = true
-        clipView.backgroundColor = LibraryNotesPalette.editorBackground
+        clipView.drawsBackground = false
+        clipView.backgroundColor = .clear
         scrollView.contentView = clipView
         scrollView.documentView = editorTextView
         scrollView.contentInsets = NSEdgeInsets(
@@ -2562,6 +2899,20 @@ final class LibraryWindowController: NSWindowController,
         let bodyContainer = NSView()
         bodyContainer.identifier = NSUserInterfaceItemIdentifier("LibraryEditorBodyContainer")
         bodyContainer.addSubview(scrollView)
+        let create = NSButton(title: "新建笔记", target: self, action: #selector(newNotePressed))
+        let open = NSButton(title: "搜索笔记", target: self, action: #selector(searchPressed))
+        create.bezelStyle = .rounded
+        open.bezelStyle = .rounded
+        emptyTabActions.setViews([create, open], in: .leading)
+        emptyTabActions.spacing = 12
+        emptyTabActions.identifier = NSUserInterfaceItemIdentifier("LibraryEmptyTabActions")
+        emptyTabActions.isHidden = true
+        bodyContainer.addSubview(emptyTabActions)
+        emptyTabActions.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            emptyTabActions.centerXAnchor.constraint(equalTo: bodyContainer.centerXAnchor),
+            emptyTabActions.centerYAnchor.constraint(equalTo: bodyContainer.centerYAnchor)
+        ])
         scrollView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor),
@@ -2582,22 +2933,23 @@ final class LibraryWindowController: NSWindowController,
         noteLinksView.onGoForward = { [weak self] in
             self?.goForwardInKnowledgeRelations()
         }
-        noteLinksView.onGenerateHigherLayer = { [weak self] layer in
-            self?.generateHigherLayerDraft(targetLayer: layer)
-        }
-        noteLinksView.onShowGraph = { [weak self] in
-            self?.showKnowledgeGraphForLibrary()
-        }
-
-        let stack = NSStackView(views: [bodyContainer, noteLinksView])
+        let footer = NSStackView(views: [noteLinksView, statusLabel, wordCountLabel])
+        footer.alignment = .top
+        footer.distribution = .fill
+        footer.spacing = 8
+        noteLinksView.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        statusLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        wordCountLabel.setContentHuggingPriority(.required, for: .horizontal)
+        wordCountLabel.trailingAnchor.constraint(equalTo: footer.trailingAnchor).isActive = true
+        let stack = NSStackView(views: [bodyContainer, footer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .leading
         stack.distribution = .fill
         stack.spacing = 0
-        stack.setCustomSpacing(8, after: bodyContainer)
+        stack.setCustomSpacing(2, after: bodyContainer)
         stack.edgeInsets = NSEdgeInsets(
-            top: 0,
+            top: 4,
             left: LibraryNotesLayout.editorHorizontalInset,
             bottom: LibraryNotesLayout.editorBottomInset,
             right: LibraryNotesLayout.editorHorizontalInset
@@ -2625,28 +2977,24 @@ final class LibraryWindowController: NSWindowController,
         editor.addSubview(stack)
         editor.addSubview(galleryScrollView)
         editor.addSubview(galleryEmptyLabel)
-        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryEditorTitlebarSeparator")
-        editor.addSubview(titlebarSeparator)
+
         stack.translatesAutoresizingMaskIntoConstraints = false
         galleryScrollView.translatesAutoresizingMaskIntoConstraints = false
         galleryEmptyLabel.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
             stack.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
-            stack.topAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
+            stack.topAnchor.constraint(equalTo: editor.topAnchor),
             stack.bottomAnchor.constraint(equalTo: editor.bottomAnchor),
             galleryScrollView.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
             galleryScrollView.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
-            galleryScrollView.topAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
+            galleryScrollView.topAnchor.constraint(equalTo: editor.topAnchor),
             galleryScrollView.bottomAnchor.constraint(equalTo: editor.bottomAnchor),
             galleryEmptyLabel.centerXAnchor.constraint(equalTo: editor.centerXAnchor),
             galleryEmptyLabel.centerYAnchor.constraint(equalTo: editor.centerYAnchor, constant: -20),
             galleryEmptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: editor.leadingAnchor, constant: 24),
             galleryEmptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: editor.trailingAnchor, constant: -24),
-            titlebarSeparator.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
-            titlebarSeparator.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
-            titlebarSeparator.bottomAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
-            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
+
         ])
         let editorContentWidthOffset = -(LibraryNotesLayout.editorHorizontalInset * 2)
         NSLayoutConstraint.activate([
@@ -2654,7 +3002,7 @@ final class LibraryWindowController: NSWindowController,
                 equalTo: stack.widthAnchor,
                 constant: -LibraryNotesLayout.editorHorizontalInset
             ),
-            noteLinksView.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset)
+            footer.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset)
         ])
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
@@ -2679,29 +3027,61 @@ final class LibraryWindowController: NSWindowController,
         searchField.placeholderString = LibraryCopy.search
         searchField.toolTip = LibraryCopy.searchNotes
         searchField.setAccessibilityLabel(LibraryCopy.searchNotes)
-        searchField.font = .systemFont(ofSize: 14)
+        searchField.font = .systemFont(ofSize: 13)
         searchField.delegate = self
-        searchField.isBordered = true
+        searchField.isBordered = false
+        searchField.isBezeled = true
         searchField.bezelStyle = .roundedBezel
         searchField.focusRingType = .default
         searchField.translatesAutoresizingMaskIntoConstraints = false
-        searchField.frame = NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarSearchWidth,
-            height: LibraryNotesLayout.toolbarSearchHeight
-        )
-        searchField.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWidth).isActive = true
-        searchField.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchHeight).isActive = true
-
-        let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
-        toolbar.delegate = self
-        toolbar.displayMode = .iconOnly
-        toolbar.allowsUserCustomization = false
-        toolbar.autosavesConfiguration = false
-        window?.toolbar = toolbar
-        applyNoteListViewModeToolbarChrome()
+        searchField.heightAnchor.constraint(equalToConstant: 30).isActive = true
+        window?.toolbar = nil
     }
+
+    private func configureCompactButton(_ button: NSButton, symbol: String, label: String, action: Selector) {
+        button.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)?
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+        button.contentTintColor = .secondaryLabelColor
+        button.target = self
+        button.action = action
+        button.bezelStyle = .inline
+        button.isBordered = false
+        button.toolTip = label
+        button.setAccessibilityLabel(label)
+        button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+    }
+
+    @objc func showQuickMenu(_ sender: Any?) {
+        let menu = makeMoreActionsMenuForLibrary()
+        let format = NSMenuItem(title: "格式", action: nil, keyEquivalent: "")
+        format.submenu = makeFormatMenuForLibrary()
+        menu.insertItem(format, at: 0)
+        let links = NSMenuItem(title: "展开或收起双链", action: #selector(toggleLinksPanel), keyEquivalent: "l")
+        links.keyEquivalentModifierMask = [.command, .shift]
+        links.target = self
+        menu.insertItem(links, at: 1)
+        let source = NSMenuItem(title: "切换 Markdown 源码", action: #selector(toggleEditorSourceModePressed), keyEquivalent: "m")
+        source.keyEquivalentModifierMask = [.command, .shift]
+        source.target = self
+        menu.insertItem(source, at: 2)
+        let listActions = NSMenuItem(title: "列表与排序", action: nil, keyEquivalent: "")
+        listActions.submenu = makeNoteListActionsMenuForLibrary()
+        menu.insertItem(listActions, at: 3)
+        menu.insertItem(.separator(), at: 4)
+        let information = NSMenuItem(title: "笔记信息", action: nil, keyEquivalent: "")
+        let details = NSMenu()
+        for value in [createdDateLabel.stringValue, statusLabel.stringValue, wordCountLabel.stringValue] where !value.isEmpty {
+            let item = NSMenuItem(title: value, action: nil, keyEquivalent: "")
+            item.isEnabled = false
+            details.addItem(item)
+        }
+        information.submenu = details
+        menu.addItem(information)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: commandButton.bounds.maxY), in: commandButton)
+    }
+
+    @objc func toggleLinksPanel() { noteLinksView.toggleExpanded() }
 
     private func configureSearchScopeControl() {
         searchScopeControl.identifier = NSUserInterfaceItemIdentifier("LibrarySearchScopeControl")
@@ -2728,236 +3108,6 @@ final class LibraryWindowController: NSWindowController,
         noteListCountLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderCountFontSize, weight: .semibold)
         noteListCountLabel.textColor = panelTertiaryTextColor()
         noteListCountLabel.lineBreakMode = .byTruncatingTail
-    }
-
-    func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [
-            Self.addFolderToolbarItemIdentifier,
-            Self.toggleSidebarToolbarItemIdentifier,
-            Self.sourceTrackingSeparatorToolbarItemIdentifier,
-            Self.noteListTitleToolbarItemIdentifier,
-            Self.noteTrackingSeparatorToolbarItemIdentifier,
-            Self.newNoteToolbarItemIdentifier,
-            .space,
-            Self.editorToolsToolbarItemIdentifier,
-            .flexibleSpace,
-            Self.searchToolbarItemIdentifier
-        ]
-    }
-
-    func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        toolbarDefaultItemIdentifiers(toolbar) + [
-            Self.sourceTrackingSeparatorToolbarItemIdentifier,
-            Self.noteTrackingSeparatorToolbarItemIdentifier,
-            Self.openSeparateToolbarItemIdentifier,
-            Self.moveToolbarItemIdentifier,
-            Self.saveToolbarItemIdentifier,
-            Self.deleteToolbarItemIdentifier,
-            Self.restoreToolbarItemIdentifier,
-            Self.formatToolbarItemIdentifier,
-            Self.checklistToolbarItemIdentifier,
-            Self.linkToolbarItemIdentifier,
-            Self.sourceModeToolbarItemIdentifier
-        ]
-    }
-
-    func toolbar(
-        _ toolbar: NSToolbar,
-        itemForItemIdentifier itemIdentifier: NSToolbarItem.Identifier,
-        willBeInsertedIntoToolbar flag: Bool
-    ) -> NSToolbarItem? {
-        switch itemIdentifier {
-        case Self.sourceTrackingSeparatorToolbarItemIdentifier:
-            return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 0)
-        case Self.noteTrackingSeparatorToolbarItemIdentifier:
-            return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 1)
-        case Self.noteListTitleToolbarItemIdentifier:
-            return toolbarNoteListTitleItem(identifier: itemIdentifier)
-        case Self.addFolderToolbarItemIdentifier:
-            return toolbarAddFolderItem(
-                identifier: itemIdentifier,
-                label: "添加文件夹",
-                symbolName: "folder.badge.plus",
-                action: #selector(addFolderPressed)
-            )
-        case Self.toggleSidebarToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "隐藏资料库",
-                symbolName: "sidebar.left",
-                action: #selector(toggleSourceListPressed),
-                symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
-            )
-        case Self.newNoteToolbarItemIdentifier:
-            return toolbarCircularButtonItem(
-                identifier: itemIdentifier,
-                label: "新建笔记",
-                symbolName: "square.and.pencil",
-                action: #selector(newNotePressed)
-            )
-        case Self.openSeparateToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "独立窗口打开",
-                symbolName: "rectangle.on.rectangle",
-                action: #selector(openSelectedInSeparateWindow),
-                visibilityPriority: .low
-            )
-        case Self.editorToolsToolbarItemIdentifier:
-            return toolbarEditorToolsItem(identifier: itemIdentifier)
-        case Self.formatToolbarItemIdentifier:
-            let item = toolbarImageItem(
-                identifier: itemIdentifier,
-                label: "格式",
-                image: makeFormatToolbarImage(),
-                action: #selector(formatPressed(_:))
-            )
-            return item
-        case Self.checklistToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "待办列表",
-                symbolName: "checklist",
-                action: #selector(checklistPressed)
-            )
-        case Self.revealToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "打开文件位置",
-                symbolName: "folder",
-                action: #selector(revealSelectedNoteInFinderPressed)
-            )
-        case Self.linkToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "插入链接",
-                symbolName: "link",
-                action: #selector(linkPressed)
-            )
-        case Self.sourceModeToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "显示 Markdown 源码",
-                symbolName: "chevron.left.forwardslash.chevron.right",
-                action: #selector(toggleEditorSourceModePressed)
-            )
-        case Self.moveToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "移动到文件夹",
-                symbolName: "folder",
-                action: #selector(moveSelectedNotePressed(_:)),
-                visibilityPriority: .low
-            )
-        case Self.saveToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "保存",
-                symbolName: "checkmark.circle",
-                action: #selector(savePressed),
-                visibilityPriority: .low
-            )
-        case Self.deleteToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "删除",
-                symbolName: "trash",
-                action: #selector(deleteSelectedNotePressed),
-                visibilityPriority: .low
-            )
-        case Self.restoreToolbarItemIdentifier:
-            return toolbarButtonItem(
-                identifier: itemIdentifier,
-                label: "恢复",
-                symbolName: "arrow.uturn.backward",
-                action: #selector(restoreSelectedNotePressed),
-                visibilityPriority: .low
-            )
-        case Self.searchToolbarItemIdentifier:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = LibraryCopy.search
-            item.paletteLabel = LibraryCopy.search
-            item.toolTip = LibraryCopy.searchNotes
-            item.visibilityPriority = .high
-            let wrapper = NSView(frame: NSRect(
-                x: 0,
-                y: 0,
-                width: LibraryNotesLayout.toolbarSearchWrapperWidth,
-                height: LibraryNotesLayout.toolbarSearchWrapperHeight
-            ))
-            wrapper.addSubview(searchField)
-            NSLayoutConstraint.activate([
-                searchField.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
-                searchField.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
-            ])
-            item.view = wrapper
-            return item
-        default:
-            return nil
-        }
-    }
-
-    private func toolbarTrackingSeparatorItem(
-        identifier: NSToolbarItem.Identifier,
-        dividerIndex: Int
-    ) -> NSToolbarItem {
-        guard let librarySplitView else {
-            return NSToolbarItem(itemIdentifier: identifier)
-        }
-        return NSTrackingSeparatorToolbarItem(
-            identifier: identifier,
-            splitView: librarySplitView,
-            dividerIndex: dividerIndex
-        )
-    }
-
-    private func toolbarNoteListTitleItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "笔记列表标题"
-        item.paletteLabel = "笔记列表标题"
-        item.visibilityPriority = .high
-        item.isBordered = false
-
-        let titleStack = NSStackView(views: [noteListTitleLabel, noteListCountLabel])
-        titleStack.orientation = .vertical
-        titleStack.alignment = .leading
-        titleStack.spacing = 0
-        titleStack.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        titleStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-
-        let headerStack = NSStackView(views: [titleStack, searchScopeControl])
-        headerStack.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNoteListHeaderStack")
-        headerStack.orientation = .horizontal
-        headerStack.alignment = .centerY
-        headerStack.spacing = 8
-        searchScopeControl.setContentHuggingPriority(.required, for: .horizontal)
-        searchScopeControl.setContentCompressionResistancePriority(.required, for: .horizontal)
-
-        let wrapper = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarNoteListTitleWidth,
-            height: LibraryNotesLayout.toolbarNoteListTitleHeight
-        ))
-        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNoteListTitle")
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(headerStack)
-        headerStack.translatesAutoresizingMaskIntoConstraints = false
-        let titleLeadingConstraint = headerStack.leadingAnchor.constraint(
-            equalTo: wrapper.leadingAnchor,
-            constant: LibraryNotesLayout.toolbarExpandedTitleLeadingOffset
-        )
-        noteListToolbarTitleLeadingConstraint = titleLeadingConstraint
-        NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleWidth),
-            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNoteListTitleHeight),
-            titleLeadingConstraint,
-            headerStack.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor, constant: -6),
-            headerStack.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
-        ])
-
-        item.view = wrapper
-        return item
     }
 
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
@@ -2988,294 +3138,6 @@ final class LibraryWindowController: NSWindowController,
         default:
             return true
         }
-    }
-
-    private func toolbarButtonItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector,
-        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard,
-        symbolPointSize: CGFloat = LibraryNotesLayout.toolbarSymbolPointSize
-    ) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = label
-        item.image = toolbarSymbolImage(
-            symbolName: symbolName,
-            label: label,
-            pointSize: symbolPointSize
-        )
-        item.target = self
-        item.action = action
-        item.visibilityPriority = visibilityPriority
-        item.isBordered = false
-        return item
-    }
-
-    private func toolbarAddFolderItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector
-    ) -> NSToolbarItem {
-        let item = toolbarButtonItem(
-            identifier: identifier,
-            label: label,
-            symbolName: symbolName,
-            action: action,
-            symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
-        )
-        let button = NSButton(
-            image: item.image ?? NSImage(),
-            target: self,
-            action: action
-        )
-        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = .toolbar
-        button.isBordered = true
-        button.showsBorderOnlyWhileMouseInside = true
-        button.focusRingType = .none
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        updateToolbarEditorTextButtonAppearance(button, isEnabled: true, isWindowFocused: true)
-        button.translatesAutoresizingMaskIntoConstraints = false
-
-        let wrapper = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarAddFolderWrapperWidth,
-            height: LibraryNotesLayout.toolbarCircularButtonSize
-        ))
-        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarAddFolderWrapper")
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(button)
-        NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarAddFolderWrapperWidth),
-            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
-            button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize)
-        ])
-        item.view = wrapper
-        return item
-    }
-
-    private func toolbarEditorToolsItem(identifier: NSToolbarItem.Identifier) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = "编辑工具"
-        item.paletteLabel = "编辑工具"
-        item.toolTip = "编辑工具"
-        item.visibilityPriority = .high
-        item.isBordered = false
-
-        let stack = NSStackView()
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.distribution = .fillEqually
-        stack.spacing = 0
-        stack.translatesAutoresizingMaskIntoConstraints = false
-
-        let capsule = toolbarGlassSurface(
-            identifier: "LibraryToolbarEditorTools",
-            content: stack,
-            size: NSSize(
-                width: LibraryNotesLayout.toolbarEditorToolsWidth,
-                height: LibraryNotesLayout.toolbarEditorToolsHeight
-            ),
-            cornerRadius: LibraryNotesLayout.toolbarEditorToolsHeight / 2
-        )
-        let buttons = [
-            toolbarEditorFormatButton(
-                identifier: Self.formatToolbarItemIdentifier,
-                label: "格式",
-                action: #selector(formatPressed(_:))
-            ),
-            toolbarEditorToolButton(
-                identifier: Self.checklistToolbarItemIdentifier,
-                label: "待办列表",
-                symbolName: "checklist",
-                action: #selector(checklistPressed)
-            ),
-            toolbarEditorToolButton(
-                identifier: Self.linkToolbarItemIdentifier,
-                label: "插入链接",
-                symbolName: "link",
-                action: #selector(linkPressed)
-            ),
-            toolbarEditorToolButton(
-                identifier: Self.sourceModeToolbarItemIdentifier,
-                label: "显示 Markdown 源码",
-                symbolName: "chevron.left.forwardslash.chevron.right",
-                action: #selector(toggleEditorSourceModePressed)
-            ),
-            toolbarEditorToolButton(
-                identifier: Self.revealToolbarItemIdentifier,
-                label: "打开文件位置",
-                symbolName: "folder",
-                action: #selector(revealSelectedNoteInFinderPressed)
-            )
-        ]
-        buttons.forEach { stack.addArrangedSubview($0) }
-
-        NSLayoutConstraint.activate([
-            stack.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonHeight)
-        ])
-
-        let slot = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarEditorToolsSlotWidth,
-            height: LibraryNotesLayout.toolbarEditorToolsHeight
-        ))
-        slot.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarEditorToolsSlot")
-        slot.translatesAutoresizingMaskIntoConstraints = false
-        slot.addSubview(capsule)
-        NSLayoutConstraint.activate([
-            slot.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsSlotWidth),
-            slot.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolsHeight),
-            capsule.trailingAnchor.constraint(equalTo: slot.trailingAnchor),
-            capsule.centerYAnchor.constraint(equalTo: slot.centerYAnchor)
-        ])
-
-        item.view = slot
-        updateEditorToolsToolbarGroupState(in: item)
-        return item
-    }
-
-    private func toolbarEditorFormatButton(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        action: Selector
-    ) -> NSButton {
-        let button = NSButton(title: "Aa", target: self, action: action)
-        button.font = .systemFont(ofSize: LibraryNotesLayout.toolbarEditorFormatFontSize, weight: .regular)
-        return configureToolbarEditorToolButton(button, identifier: identifier, label: label)
-    }
-
-    private func toolbarEditorToolButton(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector
-    ) -> NSButton {
-        let image = toolbarEditorToolSymbolImage(symbolName: symbolName, label: label)
-        image?.isTemplate = true
-        return toolbarEditorToolButton(identifier: identifier, label: label, image: image, action: action)
-    }
-
-    private func toolbarEditorToolButton(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        image: NSImage?,
-        action: Selector
-    ) -> NSButton {
-        let button = NSButton(image: image ?? NSImage(), target: self, action: action)
-        return configureToolbarEditorToolButton(button, identifier: identifier, label: label)
-    }
-
-    private func configureToolbarEditorToolButton(
-        _ button: NSButton,
-        identifier: NSToolbarItem.Identifier,
-        label: String
-    ) -> NSButton {
-        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = .toolbar
-        button.isBordered = true
-        button.showsBorderOnlyWhileMouseInside = true
-        button.focusRingType = .none
-        button.imagePosition = button.image == nil ? .noImage : .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonWidth).isActive = true
-        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarEditorToolButtonHeight).isActive = true
-        return button
-    }
-
-    private func toolbarImageItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        image: NSImage,
-        action: Selector,
-        visibilityPriority: NSToolbarItem.VisibilityPriority = .standard
-    ) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = label
-        item.image = image
-        item.target = self
-        item.action = action
-        item.visibilityPriority = visibilityPriority
-        return item
-    }
-
-    private func toolbarCircularButtonItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector
-    ) -> NSToolbarItem {
-        let item = NSToolbarItem(itemIdentifier: identifier)
-        item.label = label
-        item.paletteLabel = label
-        item.toolTip = label
-        item.target = self
-        item.action = action
-        item.isBordered = false
-
-        let configuredImage = toolbarCompactGlassSymbolImage(
-            symbolName: symbolName,
-            label: label,
-            pointSize: LibraryNotesLayout.toolbarNewNoteSymbolPointSize
-        )
-        configuredImage?.isTemplate = true
-
-        let button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
-        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = .glass
-        button.isBordered = true
-        button.focusRingType = .none
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleNone
-        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.setContentHuggingPriority(.required, for: .horizontal)
-        button.setContentCompressionResistancePriority(.required, for: .horizontal)
-        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
-        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
-
-        let wrapper = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarNewNoteWrapperWidth,
-            height: LibraryNotesLayout.toolbarCircularButtonSize
-        ))
-        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNewNoteWrapper")
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(button)
-        NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNewNoteWrapperWidth),
-            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
-        ])
-
-        item.image = configuredImage
-        item.view = wrapper
-        return item
     }
 
     private func toolbarSymbolImage(
@@ -3323,43 +3185,8 @@ final class LibraryWindowController: NSWindowController,
             : LibraryNotesLayout.toolbarEditorToolIconDisabledAlpha
         )
     }
-
-    private func toolbarGlassSurface(
-        identifier: String,
-        content: NSView,
-        size: NSSize,
-        cornerRadius: CGFloat
-    ) -> NSGlassEffectView {
-        let glass = NSGlassEffectView(frame: NSRect(origin: .zero, size: size))
-        glass.identifier = NSUserInterfaceItemIdentifier(identifier)
-        glass.style = .regular
-        glass.cornerRadius = cornerRadius
-        glass.contentView = content
-        glass.translatesAutoresizingMaskIntoConstraints = false
-        glass.setContentHuggingPriority(.required, for: .horizontal)
-        glass.setContentCompressionResistancePriority(.required, for: .horizontal)
-        NSLayoutConstraint.activate([
-            glass.widthAnchor.constraint(equalToConstant: size.width),
-            glass.heightAnchor.constraint(equalToConstant: size.height)
-        ])
-        return glass
-    }
-
-    private func makeFormatToolbarImage() -> NSImage {
-        let image = NSImage(size: NSSize(width: 21, height: 16))
-        image.lockFocus()
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-            .foregroundColor: NSColor.labelColor
-        ]
-        ("Aa" as NSString).draw(at: NSPoint(x: 1, y: 0), withAttributes: attributes)
-        image.unlockFocus()
-        image.isTemplate = true
-        image.accessibilityDescription = "格式"
-        return image
-    }
-
     private func configureEditorTextView() {
+        editorTextView.usesUnifiedTitleLine = true
         editorTextView.setAccessibilityLabel("笔记内容")
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
@@ -3391,6 +3218,7 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.isAutomaticTextReplacementEnabled = false
         editorTextView.isContinuousSpellCheckingEnabled = noteStore.spellCheckingEnabled
         editorTextView.allowsUndo = true
+        editorTextView.documentUndoManager = activeDocumentTab.undoManager
         editorTextView.font = theme.bodyFont
         editorTextView.backgroundColor = .clear
         editorTextView.drawsBackground = false
@@ -3403,9 +3231,7 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.isHorizontallyResizable = false
         editorTextView.textContainerInset = NSSize(
             width: LibraryNotesLayout.editorTextContainerHorizontalInset,
-            height: LibraryNotesLayout.editorDateRowHeight
-                + LibraryNotesLayout.editorDateToTitleSpacing
-                + 4
+            height: 4
         )
         editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
@@ -3484,6 +3310,7 @@ final class LibraryWindowController: NSWindowController,
 
         sourceOutlineRootItems = roots
         sourceOutlineView.reloadData()
+        rebuildFolderShortcuts()
         restoreSourceOutlineExpansion()
         if hasLoadedSourceCounts {
             refreshSourceCounts(using: sourceCountSnapshot)
@@ -3975,6 +3802,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func refreshSourceSelection() {
+        refreshFolderShortcutSelection()
         guard let item = sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: selectedScope)] else {
             return
         }
@@ -4302,7 +4130,7 @@ final class LibraryWindowController: NSWindowController,
         cancelActiveSearchResultReload()
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let allNotes = allNotesSnapshot ?? sourceCountSnapshot
-        searchScopeControl.isHidden = query.isEmpty
+        searchScopeControl.isHidden = query.isEmpty && !sidebarShowsSearchForLibrary
         let previousRows = listRows
         notes = query.isEmpty
             ? notesForSelectedScope(limit: Self.noteListResultLimit, allNotes: allNotes)
@@ -4320,7 +4148,7 @@ final class LibraryWindowController: NSWindowController,
            let row = rowIndex(for: preferredPath) {
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             noteToLoad = note(at: row)
-        } else if loadFirstIfNeeded,
+        } else if loadFirstIfNeeded, !isCreatingNewNote,
                   let firstNoteRow = listRows.firstIndex(where: { $0.note != nil }) {
             tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
             noteToLoad = note(at: firstNoteRow)
@@ -4332,7 +4160,7 @@ final class LibraryWindowController: NSWindowController,
         synchronizeGallerySelectionFromTable()
         stabilizeVisualQASelectionIfNeeded()
 
-        if loadFirstIfNeeded, let noteToLoad {
+        if loadFirstIfNeeded, !isCreatingNewNote, let noteToLoad {
             load(note: noteToLoad)
         }
         if refreshCounts {
@@ -4446,6 +4274,9 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateNoteListHeader(query: String) {
+        searchButton.contentTintColor = query.isEmpty ? .secondaryLabelColor : .controlAccentColor
+        searchButton.toolTip = query.isEmpty ? "搜索笔记（⇧⌘F）" : "搜索：\(query)"
+        refreshFolderShortcutSelection()
         let title = query.isEmpty
             ? noteListTitle(for: selectedScope)
             : (searchScopeControl.selectedSegment == 1 ? noteListTitle(for: .all) : noteListTitle(for: selectedScope))
@@ -5157,8 +4988,9 @@ final class LibraryWindowController: NSWindowController,
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             selectedScope = scope
+            if NSApp.currentEvent?.type != .keyDown { sourcePopover.performClose(nil) }
             reloadNotesForNavigation(loadFirstIfNeeded: true)
-            refreshVisibleSourceOutlinePresentation()
+            refreshSourceSelection()
             return true
         } catch {
             presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
@@ -6020,6 +5852,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func handleGalleryKeyCommand(_ command: LibraryNoteKeyCommand) -> Bool {
         switch command {
+        case .openInNewTab:
+            synchronizeTableSelectionFromGallery()
+            return handleNoteListKeyCommand(.openInNewTab)
         case .open:
             guard !galleryCollectionView.selectionIndexPaths.isEmpty else { return false }
             openSelectedGalleryNoteInList()
@@ -6045,6 +5880,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         if object === searchField {
+            guard (searchField.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }
             scheduleSearchReloadFromTyping()
             return
         }
@@ -6082,7 +5918,10 @@ final class LibraryWindowController: NSWindowController,
         flushPendingSearchReload()
 
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
-            return clearSearchFromKeyboard()
+            _ = clearSearchFromKeyboard()
+            sidebarSearchQuery = ""
+            window?.makeFirstResponder(searchButton)
+            return true
         }
 
         if commandSelector == #selector(NSResponder.moveDown(_:)) {
@@ -6116,9 +5955,13 @@ final class LibraryWindowController: NSWindowController,
 
     func textDidChange(_ notification: Notification) {
         if let object = notification.object as AnyObject?, object === editorTextView {
+            emptyTabActions.isHidden = selectedURL != nil || !editorTextView.string.isEmpty
             normalizeUnifiedTitleLineFormatting()
             let metadata = visibleEditorMetadata()
             titleField.stringValue = metadata.title
+            documentTabTitle.stringValue = metadata.title.isEmpty ? "新笔记" : metadata.title
+            activeDocumentTab.title = documentTabTitle.stringValue
+            updateDocumentTabBar()
             updateWordCount(in: metadata.body)
             layoutEditorStatusLabel()
             libraryUserDidEdit()
@@ -6234,6 +6077,13 @@ final class LibraryWindowController: NSWindowController,
     private func newNotePressed() {
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            captureActiveDocumentTab()
+            // An empty tab is already a destination; creating a note fills it.
+            if selectedURL != nil || !editorTextView.string.isEmpty || isDirty {
+                let tab = LibraryDocumentTab()
+                documentTabs.append(tab)
+                activateDocumentTab(tab.id)
+            }
             if noteListViewMode == .gallery {
                 noteListViewMode = .list
                 noteStore.libraryNoteViewModeRawValue = LibraryNoteViewMode.list.rawValue
@@ -6254,6 +6104,7 @@ final class LibraryWindowController: NSWindowController,
             suppressSelectionChanges = false
             setEditorEditable(true)
             applyDocument(title: "", body: "", tags: [])
+            emptyTabActions.isHidden = true
             isDirty = true
             updateEditorCreatedDate(Date())
             if backgroundAutosaveIsActive {
@@ -6300,13 +6151,66 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    func focusSearchForLibrary() {
-        window?.makeFirstResponder(searchField)
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.window?.makeFirstResponder(self.searchField)
-        }
+    func findInCurrentDocumentForLibrary() {
+        editorTextView.usesFindBar = true
+        editorTextView.isIncrementalSearchingEnabled = true
+        window?.makeFirstResponder(editorTextView)
+        let sender = NSMenuItem()
+        sender.tag = NSTextFinder.Action.showFindInterface.rawValue
+        editorTextView.performTextFinderAction(sender)
     }
+
+    func focusSearchForLibrary() {
+        setSidebarVisibleForLibrary(true)
+        if !sidebarShowsSearchForLibrary {
+            sidebarShowsSearchForLibrary = true
+            searchScopeControl.selectedSegment = 1
+            searchScopeControl.isHidden = false
+            folderNavigationRow.isHidden = true
+            sidebarSearchPanel.isHidden = false
+            filesModeButton.contentTintColor = .secondaryLabelColor
+            searchButton.contentTintColor = .controlAccentColor
+            if searchField.stringValue != sidebarSearchQuery {
+                searchField.stringValue = sidebarSearchQuery
+                controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+            }
+        }
+        window?.contentView?.layoutSubtreeIfNeeded()
+        window?.makeFirstResponder(searchField)
+    }
+
+    @objc private func showFilesPressed() {
+        setSidebarVisibleForLibrary(true)
+        sidebarSearchQuery = searchField.stringValue
+        sidebarShowsSearchForLibrary = false
+        sidebarSearchPanel.isHidden = true
+        folderNavigationRow.isHidden = false
+        filesModeButton.contentTintColor = .controlAccentColor
+        searchButton.contentTintColor = .secondaryLabelColor
+        _ = clearSearchFromKeyboard()
+        window?.makeFirstResponder(tableView)
+    }
+
+    @objc private func toggleSidebarPressed() { toggleSidebarForLibrary() }
+
+    @discardableResult
+    func toggleSidebarForLibrary() -> Bool {
+        setSidebarVisibleForLibrary(noteListSplitViewItem?.isCollapsed == true)
+        return noteListSplitViewItem?.isCollapsed == false
+    }
+
+    private func setSidebarVisibleForLibrary(_ visible: Bool) {
+        guard let item = noteListSplitViewItem else { return }
+        item.isCollapsed = !visible
+        filesModeButton.isHidden = !visible
+        searchButton.isHidden = false
+        sidebarToggleButton.toolTip = visible ? "收起侧栏（⌃⌘S）" : "展开侧栏（⌃⌘S）"
+        sidebarToggleButton.setAccessibilityLabel(sidebarToggleButton.toolTip)
+        librarySplitView?.adjustSubviews()
+        if !visible { window?.makeFirstResponder(editorTextView) }
+    }
+
+    @objc private func searchPressed() { focusSearchForLibrary() }
 
     @objc
     private func savePressed() {
@@ -6325,6 +6229,10 @@ final class LibraryWindowController: NSWindowController,
 
     private func handleNoteListKeyCommand(_ command: LibraryNoteKeyCommand) -> Bool {
         switch command {
+        case .openInNewTab:
+            guard let url = selectedMarkdownFileURLForLibrary() else { return false }
+            openNoteInNewTabForLibrary(at: url)
+            return true
         case .open:
             guard selectedURL != nil else { return false }
             openSelectedInSeparateWindow()
@@ -6673,7 +6581,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @objc
-    private func toggleEditorSourceModePressed() {
+    func toggleEditorSourceModePressed() {
         guard canEditCurrentDocument, let storage = editorTextView.textStorage else { return }
         let selection = editorTextView.selectedRange()
         suppressEditorChanges = true
@@ -6865,6 +6773,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func load(note: NoteSearchResult) {
+        if prepareDocumentTab(for: note) { return }
         isLoadingInitialNote = false
         persistedLaunchFallbackURL = nil
         isCreatingNewNote = false
@@ -6990,7 +6899,7 @@ final class LibraryWindowController: NSWindowController,
             let fallbackURL = noteLoadFallbackURL
             noteLoadFallbackURL = nil
             setSelectedURLForLibrary(fallbackURL)
-            setEditorEditable(selectedScope != .trash)
+            setEditorEditable(!activeDocumentIsReadOnly)
             restoreNoteBrowserSelection(to: fallbackURL)
             updateToolbarActionState()
             presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
@@ -7008,7 +6917,7 @@ final class LibraryWindowController: NSWindowController,
     ) {
         setSelectedURLForLibrary(note.url)
         selectedSourceContents = cached.loaded.sourceContents
-        setEditorEditable(selectedScope != .trash)
+        setEditorEditable(!activeDocumentIsReadOnly)
 
         let preservedSelection = preservingEditorSelection ? editorTextView.selectedRange() : nil
         if preservingEditorSelection,
@@ -7043,6 +6952,7 @@ final class LibraryWindowController: NSWindowController,
             }
         }
 
+        editorTextView.undoManager?.removeAllActions()
         applyDocument(
             title: cached.loaded.title,
             body: cached.loaded.body,
@@ -7066,7 +6976,7 @@ final class LibraryWindowController: NSWindowController,
         let noteStore = noteStore
         let roots = noteStore.preferredDirectories + [noteURL.deletingLastPathComponent()]
         let task = Task.detached(priority: .utility) { [weak self] in
-            let relations = noteStore.knowledgeRelations(
+            let relations = noteStore.smartLinkRelations(
                 for: noteURL,
                 currentBody: body,
                 roots: roots,
@@ -7081,7 +6991,7 @@ final class LibraryWindowController: NSWindowController,
                     return
                 }
                 self.noteLinksRefreshTask = nil
-                self.noteLinksView.update(relations)
+                self.noteLinksView.update(links: relations.links, suggestions: relations.suggestions)
                 self.updateKnowledgeNavigationControls()
             }
         }
@@ -7094,7 +7004,6 @@ final class LibraryWindowController: NSWindowController,
         body: String
     ) {
         refreshNoteLinks(for: noteURL, body: body)
-        knowledgeGraphWindowController?.reload()
     }
 
     private func acceptKnowledgeSuggestion(_ item: KnowledgeRelationItem) {
@@ -7140,36 +7049,6 @@ final class LibraryWindowController: NSWindowController,
         } catch {
             presentErrorAlert(message: "无法打开 Markdown 文件", details: error.localizedDescription)
         }
-    }
-
-    var canShowKnowledgeGraphForLibrary: Bool {
-        selectedURL != nil
-    }
-
-    func showKnowledgeGraphForLibrary() {
-        guard let selectedURL else { return }
-        let controller: KnowledgeGraphWindowController
-        if let existing = knowledgeGraphWindowController {
-            controller = existing
-        } else {
-            let noteStore = noteStore
-            let created = KnowledgeGraphWindowController(
-                noteStore: noteStore,
-                rootsProvider: {
-                    noteStore.preferredDirectories
-                }
-            )
-            created.onOpenNode = { [weak self] url in
-                self?.openKnowledgeRelation(at: url)
-            }
-            created.onClose = { [weak self, weak created] in
-                guard self?.knowledgeGraphWindowController === created else { return }
-                self?.knowledgeGraphWindowController = nil
-            }
-            knowledgeGraphWindowController = created
-            controller = created
-        }
-        controller.show(rootURL: selectedURL)
     }
 
     private func goBackInKnowledgeRelations() {
@@ -7222,218 +7101,9 @@ final class LibraryWindowController: NSWindowController,
         )
     }
 
-    private func cancelKnowledgeSynthesisForSelectionChange(to nextURL: URL?) {
-        let currentPath = selectedURL?.standardizedFileURL.path
-        let nextPath = nextURL?.standardizedFileURL.path
-        guard currentPath != nextPath, knowledgeSynthesisTask != nil else { return }
-        knowledgeSynthesisTask?.cancel()
-        knowledgeSynthesisTask = nil
-        knowledgeSynthesisGeneration += 1
-        noteLinksView.setSynthesisInProgress(false)
-    }
-
     private func setSelectedURLForLibrary(_ nextURL: URL?) {
-        cancelKnowledgeSynthesisForSelectionChange(to: nextURL)
         selectedURL = nextURL
-        knowledgeGraphWindowController?.setRoot(nextURL, reload: true)
-    }
-
-    private func generateHigherLayerDraft(targetLayer: KnowledgeLayer) {
-        guard selectedScope != .trash,
-              targetLayer == .line || targetLayer == .plane else {
-            return
-        }
-        guard noteStore.aiEnabled else {
-            presentErrorAlert(message: "AI 功能未启用", details: AIError.disabled.localizedDescription)
-            return
-        }
-        guard let executableURL = CodexRuntimeLocator.resolve(
-            configuredPath: noteStore.aiCodexExecutablePath
-        ) else {
-            presentErrorAlert(
-                message: "未找到本机 Codex",
-                details: AIError.providerNotConfigured.localizedDescription
-            )
-            return
-        }
-
-        do {
-            try saveCurrentNoteIfNeeded()
-        } catch {
-            presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
-            return
-        }
-        guard let currentURL = selectedURL?.standardizedFileURL else { return }
-
-        let currentBody: String
-        do {
-            currentBody = try noteStore.loadNote(at: currentURL).body
-        } catch {
-            presentErrorAlert(message: "无法读取当前笔记", details: error.localizedDescription)
-            return
-        }
-        let roots = noteStore.preferredDirectories + [currentURL.deletingLastPathComponent()]
-        let relations = noteStore.knowledgeRelations(
-            for: currentURL,
-            currentBody: currentBody,
-            roots: roots,
-            suggestionLimit: 0
-        )
-        let relationItems = relations.related
-            + relations.children
-        var sourceURLs = [currentURL]
-        var seenPaths = Set([currentURL.path])
-        for item in relationItems where seenPaths.insert(item.url.standardizedFileURL.path).inserted {
-            sourceURLs.append(item.url.standardizedFileURL)
-            if sourceURLs.count == 6 { break }
-        }
-        let synthesisSourceURLs = sourceURLs
-        let sourceNames = synthesisSourceURLs.map {
-            $0.deletingPathExtension().lastPathComponent
-        }.joined(separator: "、")
-        let confirmation = NSAlert()
-        confirmation.messageText = "将 \(synthesisSourceURLs.count) 篇笔记交给 Codex 生成草案？"
-        confirmation.informativeText = "发送范围：\(sourceNames)。只包含当前笔记和已明确关联的下层/同层笔记；Codex 进程会被系统限制在临时目录，不能读取知识库中的其他文件。"
-        confirmation.addButton(withTitle: "开始生成")
-        confirmation.addButton(withTitle: "取消")
-        guard confirmation.runModal() == .alertFirstButtonReturn else { return }
-
-        let noteStore = noteStore
-        let provider = CodexAIProvider(executableURL: executableURL)
-        knowledgeSynthesisTask?.cancel()
-        knowledgeSynthesisGeneration += 1
-        let generation = knowledgeSynthesisGeneration
-        let previousStatus = statusLabel.stringValue
-        noteLinksView.setSynthesisInProgress(true)
-        updateEditorStatus("正在生成\(targetLayer.displayName)层草案…")
-        knowledgeSynthesisTask = Task { [weak self] in
-            do {
-                let sources = try await Task.detached(priority: .userInitiated) {
-                    try synthesisSourceURLs.map { url -> KnowledgeSynthesisSource in
-                        let note = try noteStore.loadNote(at: url)
-                        return KnowledgeSynthesisSource(
-                            title: note.title.isEmpty
-                                ? url.deletingPathExtension().lastPathComponent
-                                : note.title,
-                            markdown: note.body
-                        )
-                    }
-                }.value
-                try Task.checkCancellation()
-                let output = try await provider.generate(request: KnowledgeSynthesisRequest(
-                    targetLayer: targetLayer,
-                    sources: sources
-                ))
-                try Task.checkCancellation()
-                await MainActor.run {
-                    guard let self,
-                          generation == self.knowledgeSynthesisGeneration,
-                          self.selectedURL?.standardizedFileURL == currentURL else {
-                        return
-                    }
-                    self.knowledgeSynthesisTask = nil
-                    self.noteLinksView.setSynthesisInProgress(false)
-                    self.updateEditorStatus(previousStatus)
-                    self.presentKnowledgeSynthesis(
-                        output,
-                        targetLayer: targetLayer,
-                        sourceURLs: synthesisSourceURLs
-                    )
-                }
-            } catch is CancellationError {
-                await MainActor.run {
-                    guard let self,
-                          generation == self.knowledgeSynthesisGeneration else {
-                        return
-                    }
-                    self.knowledgeSynthesisTask = nil
-                    self.noteLinksView.setSynthesisInProgress(false)
-                    self.updateEditorStatus(previousStatus)
-                }
-            } catch {
-                await MainActor.run {
-                    guard let self,
-                          generation == self.knowledgeSynthesisGeneration,
-                          self.selectedURL?.standardizedFileURL == currentURL else {
-                        return
-                    }
-                    self.knowledgeSynthesisTask = nil
-                    self.noteLinksView.setSynthesisInProgress(false)
-                    self.updateEditorStatus("草案生成失败", kind: .failure)
-                    self.presentErrorAlert(message: "无法生成上层草案", details: error.localizedDescription)
-                }
-            }
-        }
-    }
-
-    private func presentKnowledgeSynthesis(
-        _ output: String,
-        targetLayer: KnowledgeLayer,
-        sourceURLs: [URL]
-    ) {
-        let document = MarkdownEditorDocument.parse(editorText: output)
-        guard !document.title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
-              !document.body.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else {
-            presentErrorAlert(message: "无法创建草案", details: AIError.invalidResponse.localizedDescription)
-            return
-        }
-
-        let alert = NSAlert()
-        alert.messageText = "生成\(targetLayer.displayName)层草案"
-        alert.informativeText = "AI 基于 \(sourceURLs.count) 篇笔记生成。只有点击“创建草案”后才会写入，原笔记不会被改动。"
-        alert.alertStyle = .informational
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 560, height: 280))
-        let textView = NSTextView(frame: scrollView.bounds)
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.string = output
-        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        alert.accessoryView = scrollView
-        alert.addButton(withTitle: "创建草案")
-        alert.addButton(withTitle: "取消")
-        guard alert.runModal() == .alertFirstButtonReturn else {
-            window?.makeFirstResponder(editorTextView)
-            return
-        }
-
-        let referenceSourceURL = noteStore.notesDirectory
-            .appendingPathComponent("Knowledge-Synthesis.md")
-        let sourceLinks = sourceURLs.enumerated().map { index, url in
-            let title = (try? noteStore.loadNote(at: url).title)
-                .flatMap {
-                    $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : $0
-                }
-                ?? url.deletingPathExtension().lastPathComponent
-            let link = noteStore.markdownKnowledgeLink(
-                from: referenceSourceURL,
-                to: url,
-                title: title
-            )
-            return "- S\(index + 1): \(link)"
-        }.joined(separator: "\n")
-        let body = """
-        \(document.body)
-
-        ## 来源笔记
-
-        \(sourceLinks)
-        """
-        do {
-            let savedURL = try noteStore.saveNewNote(
-                title: document.title,
-                body: body,
-                tags: ["层级/\(targetLayer.displayName)", "AI草案", "待审核"],
-                in: noteStore.notesDirectory
-            )
-            recordInternalFileSystemChanges(for: [savedURL])
-            onSave(savedURL)
-            try openMarkdownDocumentForLibrary(at: savedURL)
-            announceKnowledgeNavigation(title: document.title)
-        } catch {
-            presentErrorAlert(message: "无法创建草案", details: error.localizedDescription)
-        }
+        activeDocumentTab.url = nextURL
     }
 
     private func applyDocument(
@@ -7450,6 +7120,9 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.isRichText = true
         editorTextView.markdownPasteTheme = theme
         titleField.stringValue = title
+        documentTabTitle.stringValue = title.isEmpty ? "新笔记" : title
+        activeDocumentTab.title = title.isEmpty ? (selectedURL == nil ? "新标签页" : "新笔记") : title
+        updateDocumentTabBar()
         selectedTags = tags
         let unifiedMarkdown = MarkdownEditorDocument.composeEditorText(
             title: title,
@@ -7474,6 +7147,7 @@ final class LibraryWindowController: NSWindowController,
         let length = min(requestedSelection.length, max(contentLength - location, 0))
         editorTextView.setSelectedRange(NSRange(location: location, length: length))
         suppressEditorChanges = false
+        emptyTabActions.isHidden = selectedURL != nil || !editorTextView.string.isEmpty
         updateWordCount()
         layoutEditorStatusLabel()
     }
@@ -7810,10 +7484,13 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func markDirty() {
-        guard !suppressEditorChanges, selectedScope != .trash else { return }
+        guard !suppressEditorChanges, !activeDocumentIsReadOnly else { return }
         editorContentRevision &+= 1
         let becameDirty = !isDirty
         isDirty = true
+        activeDocumentTab.isDirty = true
+        activeDocumentTab.saveFailed = false
+        updateDocumentTabBar()
         if becameDirty {
             updateToolbarActionState()
         }
@@ -7834,40 +7511,42 @@ final class LibraryWindowController: NSWindowController,
     private func autosaveCurrentNote() {
         autosaveTask?.cancel()
         autosaveTask = nil
-        guard isDirty, selectedScope != .trash else { return }
+        guard isDirty, !activeDocumentIsReadOnly else { return }
 
         enqueueBackgroundAutosave()
     }
 
     private func enqueueBackgroundAutosave() {
+        captureActiveDocumentTab()
+        let tab = activeDocumentTab
+        retainedSavingTabs[tab.id] = tab
         if backgroundAutosaveIsActive {
             backgroundAutosaveNeedsLatest = true
             return
         }
-        let editorSnapshot: LibraryBackgroundEditorSnapshot
-        if isEditorShowingMarkdownSource {
-            editorSnapshot = LibraryBackgroundEditorSnapshot(
-                sourceMarkdown: editorTextView.string,
-                theme: theme
-            )
-        } else {
-            editorSnapshot = LibraryBackgroundEditorSnapshot(
-                attributedMarkdown: editorTextView.attributedString(),
-                theme: theme
-            )
-        }
+        enqueueBackgroundAutosave(for: tab)
+    }
 
+    private func enqueueBackgroundAutosave(for tab: LibraryDocumentTab) {
+        guard !backgroundAutosaveIsActive, tab.isDirty, let buffer = tab.buffer else { return }
+        let editorSnapshot: LibraryBackgroundEditorSnapshot
+        if tab.isSourceMode {
+            editorSnapshot = LibraryBackgroundEditorSnapshot(sourceMarkdown: buffer.string, theme: theme)
+        } else {
+            editorSnapshot = LibraryBackgroundEditorSnapshot(attributedMarkdown: buffer, theme: theme)
+        }
         backgroundAutosaveGeneration &+= 1
         backgroundAutosaveIsActive = true
+        backgroundSavingTab = tab
+        retainedSavingTabs[tab.id] = tab
         let generation = backgroundAutosaveGeneration
-        let editorRevision = editorContentRevision
-        let previousURL = selectedURL
-        let tags = selectedTags
-        let targetDirectory = previousURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote()
-        let updatesInPlace = previousURL.map {
-            externallyOpenedDocumentsByPath[$0.path] != nil
-        } ?? false
-        let expectedContents = selectedSourceContents
+        let documentID = tab.id
+        let editorRevision = tab.revision
+        let previousURL = tab.url
+        let tags = tab.tags
+        let targetDirectory = tab.targetDirectory ?? noteStore.notesDirectory
+        let updatesInPlace = previousURL.map { externallyOpenedDocumentsByPath[$0.path] != nil } ?? false
+        let expectedContents = tab.sourceContents
         backgroundAutosaveActiveEditorRevision = editorRevision
         backgroundAutosaveActivePreviousURL = previousURL
         cancelSourceSnapshotValidation()
@@ -7884,6 +7563,7 @@ final class LibraryWindowController: NSWindowController,
                 let title = document.title
                 let snapshot = LibraryBackgroundSaveSnapshot(
                     generation: generation,
+                    documentID: documentID,
                     editorRevision: editorRevision,
                     previousURL: previousURL,
                     title: title,
@@ -7953,36 +7633,49 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func finishBackgroundAutosave(generation: Int) {
-        let boxedResult = backgroundAutosaveResultStore.remove(generation: generation)
-        guard let boxedResult else { return }
+        guard let boxedResult = backgroundAutosaveResultStore.remove(generation: generation) else { return }
+        let completedTab = backgroundSavingTab
+        backgroundSavingTab = nil
         backgroundAutosaveIsActive = false
         backgroundAutosaveActiveEditorRevision = nil
         backgroundAutosaveActivePreviousURL = nil
-
+        backgroundAutosaveNeedsLatest = false
         switch boxedResult.result {
         case .success(let success):
             applyBackgroundSaveSuccess(success)
-            if backgroundAutosaveNeedsLatest, isDirty {
-                backgroundAutosaveNeedsLatest = false
-                enqueueBackgroundAutosave()
-            } else {
-                backgroundAutosaveNeedsLatest = false
+            if let tab = completedTab {
+                if tab.id == activeDocumentTab.id { captureActiveDocumentTab() }
+                if !tab.isDirty {
+                    retainedSavingTabs.removeValue(forKey: tab.id)
+                    if tab.closeAfterSave { removeDocumentTab(tab.id) }
+                }
             }
         case .failure:
-            backgroundAutosaveNeedsLatest = false
-            updateEditorStatus(
-                "自动保存失败，编辑仍保留",
-                kind: .failure,
-                toolTip: "按 Command-S 重试保存",
-                announcesChange: true
-            )
+            if let tab = completedTab {
+                tab.saveFailed = true
+                tab.closeAfterSave = false
+                if !documentTabs.contains(where: { $0.id == tab.id }) { documentTabs.append(tab) }
+            }
+            updateEditorStatus("“\(completedTab?.title ?? "笔记")”保存失败，编辑仍保留", kind: .failure,
+                              toolTip: "打开该标签页，按 Command-S 重试", announcesChange: true)
             NSSound.beep()
+        }
+        updateDocumentTabBar()
+        if let next = retainedSavingTabs.values.first(where: { $0.isDirty && !$0.saveFailed }) {
+            enqueueBackgroundAutosave(for: next)
         }
         flushDeferredFileSystemChangesAfterAutosave()
     }
 
     private func applyBackgroundSaveSuccess(_ success: LibraryBackgroundSaveSuccess) {
         let snapshot = success.snapshot
+        if let tab = retainedSavingTabs[snapshot.documentID] ?? documentTabs.first(where: { $0.id == snapshot.documentID }) {
+            tab.url = success.savedURL
+            tab.sourceContents = success.sourceContents
+            tab.isCreatingNote = false
+            tab.saveFailed = false
+            if tab.revision == snapshot.editorRevision { tab.isDirty = false }
+        }
         let changedURLs = [snapshot.previousURL, success.savedURL].compactMap { $0 }
         recordInternalFileSystemChanges(for: changedURLs)
         if let previousURL = snapshot.previousURL {
@@ -8006,7 +7699,8 @@ final class LibraryWindowController: NSWindowController,
            }) {
             externallyOpenedDocumentsByPath[success.savedURL.standardizedFileURL.path] = recoveryNote
         }
-        let isCurrentDocument = selectedScope != .trash
+        let isCurrentDocument = activeDocumentTab.id == snapshot.documentID
+            && !activeDocumentIsReadOnly
             && selectedURL?.path == snapshot.previousURL?.path
         guard isCurrentDocument else {
             onSave(success.savedURL)
@@ -8053,20 +7747,21 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func saveCurrentNoteIfNeeded(allowBackgroundHandoff: Bool = false) throws {
+        if !allowBackgroundHandoff {
+            drainBackgroundAutosaves()
+            if retainedSavingTabs.values.contains(where: { $0.isDirty && $0.saveFailed }) {
+                throw CocoaError(.fileWriteUnknown)
+            }
+        }
         guard isDirty else { return }
-        if allowBackgroundHandoff, handOffCurrentEditorToBackgroundAutosave() {
+        if allowBackgroundHandoff {
+            captureActiveDocumentTab()
+            activeDocumentTab.saveFailed = false
+            retainedSavingTabs[activeDocumentTab.id] = activeDocumentTab
+            autosaveCurrentNote()
             return
         }
         _ = try saveCurrentNote(force: false)
-    }
-
-    private func handOffCurrentEditorToBackgroundAutosave() -> Bool {
-        if !backgroundAutosaveIsActive {
-            autosaveCurrentNote()
-        }
-        return backgroundAutosaveIsActive
-            && backgroundAutosaveActiveEditorRevision == editorContentRevision
-            && backgroundAutosaveActivePreviousURL?.path == selectedURL?.path
     }
 
     private func serializedEditorMarkdown() -> String {
@@ -8098,14 +7793,15 @@ final class LibraryWindowController: NSWindowController,
         statusLabel.setAccessibilityValue(text)
         switch kind {
         case .normal:
-            statusLabel.textColor = panelTertiaryTextColor()
+            statusLabel.textColor = .secondaryLabelColor
+            statusLabel.isHidden = true
         case .failure:
             statusLabel.textColor = .systemRed
+            statusLabel.isHidden = false
         }
         if announcesChange {
             NSAccessibility.post(element: statusLabel, notification: .valueChanged)
         }
-        layoutEditorStatusLabel()
     }
 
     private func layoutEditorStatusLabel() {
@@ -8113,24 +7809,9 @@ final class LibraryWindowController: NSWindowController,
               let textContainer = editorTextView.textContainer else { return }
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let horizontalInset: CGFloat = 20
         let contentBottom = editorTextView.textContainerInset.height + usedRect.maxY
         let viewportHeight = editorTextView.enclosingScrollView?.contentView.bounds.height ?? 0
-        let rowHeight = LibraryNotesLayout.editorDateRowHeight
-        let topGap = LibraryNotesLayout.editorBottomInset
-        let bottomGap = LibraryNotesLayout.editorStatusBottomGap
-        // Pin the label to the bottom of the visible editor area when the
-        // content is short; otherwise let the label flow after the content.
-        let pinToBottom = viewportHeight > 0 && contentBottom + topGap + rowHeight + bottomGap < viewportHeight
-        let statusTop: CGFloat
-        let documentHeight: CGFloat
-        if pinToBottom {
-            statusTop = viewportHeight - rowHeight - bottomGap
-            documentHeight = viewportHeight
-        } else {
-            statusTop = contentBottom + topGap
-            documentHeight = statusTop + rowHeight + bottomGap
-        }
+        let documentHeight = max(viewportHeight, contentBottom + 4)
         editorTextView.minimumScrollableContentHeight = documentHeight
         editorTextView.minSize = NSSize(width: 0, height: documentHeight)
         if abs(editorTextView.frame.height - documentHeight) > 0.5 {
@@ -8138,25 +7819,13 @@ final class LibraryWindowController: NSWindowController,
             frame.size.height = documentHeight
             editorTextView.frame = frame
         }
-        statusLabel.frame = NSRect(
-            x: horizontalInset + LibraryNotesLayout.editorStatusHorizontalOffset,
-            y: statusTop,
-            width: max(0, editorTextView.bounds.width - (horizontalInset * 2)),
-            height: rowHeight
-        )
-        wordCountLabel.frame = NSRect(
-            x: max(horizontalInset, editorTextView.bounds.width - 112),
-            y: statusTop,
-            width: 88,
-            height: rowHeight
-        )
     }
 
     @discardableResult
     private func saveCurrentNote(force: Bool) throws -> URL? {
         drainBackgroundAutosaves()
         guard force || isDirty else { return selectedURL }
-        guard selectedScope != .trash else { return selectedURL }
+        guard !activeDocumentIsReadOnly else { return selectedURL }
         autosaveTask?.cancel()
         autosaveTask = nil
         cancelSourceSnapshotValidation()
@@ -8206,6 +7875,9 @@ final class LibraryWindowController: NSWindowController,
         activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = false
+        captureActiveDocumentTab()
+        activeDocumentTab.saveFailed = false
+        updateDocumentTabBar()
         let savedAt = (try? FileManager.default.attributesOfItem(atPath: savedURL.path)[.modificationDate])
             as? Date ?? Date()
         let sourceCountsChanged = updateSourceCountSnapshotAfterSave(
@@ -8355,6 +8027,12 @@ final class LibraryWindowController: NSWindowController,
         let destinationBySourcePath = Dictionary(uniqueKeysWithValues: zip(sourceURLs, destinationURLs).map {
             ($0.standardizedFileURL.path, $1.standardizedFileURL)
         })
+        for tab in documentTabs {
+            if let path = tab.url?.standardizedFileURL.path, let destination = destinationBySourcePath[path] {
+                tab.url = destination
+                tab.targetDirectory = destination.deletingLastPathComponent()
+            }
+        }
         for (sourcePath, destinationURL) in destinationBySourcePath {
             guard let externalNote = externallyOpenedDocumentsByPath.removeValue(forKey: sourcePath),
                   !isInsideConfiguredLibraryRoot(destinationURL) else { continue }
@@ -8370,6 +8048,11 @@ final class LibraryWindowController: NSWindowController,
     private func remapSourceSnapshotFolder(from sourceURL: URL, to destinationURL: URL) {
         let sourcePath = sourceURL.standardizedFileURL.path
         let destination = destinationURL.standardizedFileURL
+        for tab in documentTabs {
+            guard let path = tab.url?.standardizedFileURL.path, path.hasPrefix(sourcePath + "/") else { continue }
+            tab.url = destination.appendingPathComponent(String(path.dropFirst(sourcePath.count + 1)))
+            tab.targetDirectory = tab.url?.deletingLastPathComponent()
+        }
         sourceCountSnapshot = sourceCountSnapshot.map { note in
             let notePath = note.url.standardizedFileURL.path
             guard notePath.hasPrefix(sourcePath + "/") else { return note }
@@ -8480,7 +8163,7 @@ final class LibraryWindowController: NSWindowController,
             removeNotesFromSourceSnapshot(at: urls)
         }
         activeSearchSession = nil
-        clearCurrentDocumentAfterRemoval()
+        discardDocumentTabs(at: urls)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(loadFirstIfNeeded: true, mutationAnimation: .deletion)
     }
@@ -8512,7 +8195,7 @@ final class LibraryWindowController: NSWindowController,
         } else {
             removeNotesFromSourceSnapshot(at: urls)
         }
-        clearCurrentDocumentAfterRemoval()
+        discardDocumentTabs(at: urls)
         reloadNotes(
             loadFirstIfNeeded: true,
             refreshCounts: false,
@@ -8712,6 +8395,7 @@ final class LibraryWindowController: NSWindowController,
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: standardizedURL)
         )
 
+        if prepareDocumentTab(for: note) { return }
         externallyOpenedDocumentsByPath[standardizedURL.path] = note
         sourceCountSnapshot = includingExternallyOpenedDocuments(in: sourceCountSnapshot)
         selectedScope = .folder(standardizedURL.deletingLastPathComponent())
@@ -8788,7 +8472,10 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    private var capturedContextActionURLs: [URL]?
+
     func selectedMarkdownFileURLsForLibrary() -> [URL] {
+        if let capturedContextActionURLs { return capturedContextActionURLs }
         var urls: [URL] = []
         var seenPaths = Set<String>()
 
@@ -9036,12 +8723,7 @@ final class LibraryWindowController: NSWindowController,
         activeSearchSession
     }
 
-    var isSourceListVisibleForLibrary: Bool {
-        if let sourceSplitViewItem {
-            return !sourceSplitViewItem.isCollapsed
-        }
-        return sourceListView?.isHidden == false
-    }
+    var isSourceListVisibleForLibrary: Bool { sourcePopover.isShown }
 
     private var storedSourceColumnWidthForLibrary: CGFloat {
         LibraryNotesLayout.clampedSourceColumnWidth(
@@ -9056,51 +8738,17 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func applyStoredLibrarySplitLayoutForLibrary() {
-        guard let splitView = librarySplitView,
-              splitView.arrangedSubviews.count == 3,
-              splitView.bounds.width > 0 else {
-            return
-        }
-
+        guard let splitView = librarySplitView, splitView.arrangedSubviews.count == 2,
+              splitView.bounds.width > 0 else { return }
         isApplyingStoredSplitLayout = true
         defer { isApplyingStoredSplitLayout = false }
-
-        let sourceList = splitView.arrangedSubviews[0]
-        let noteList = splitView.arrangedSubviews[1]
-        sourceSplitViewItem?.isCollapsed = !noteStore.librarySourceListVisible
-        noteListSplitViewItem?.isCollapsed = noteListViewMode == .gallery
-        splitView.adjustSubviews()
-
-        if !sourceList.isHidden {
-            splitView.setPosition(storedSourceColumnWidthForLibrary, ofDividerAt: 0)
-            splitView.layoutSubtreeIfNeeded()
-        }
-        if noteListViewMode == .list {
-            let noteDividerPosition = noteList.frame.minX + storedNoteColumnWidthForLibrary
-            splitView.setPosition(noteDividerPosition, ofDividerAt: 1)
-            splitView.layoutSubtreeIfNeeded()
-        }
+        splitView.setPosition(storedNoteColumnWidthForLibrary, ofDividerAt: 0)
     }
 
     func persistLibrarySplitLayoutForLibrary() {
-        guard !isApplyingStoredSplitLayout,
-              let splitView = librarySplitView,
-              splitView.arrangedSubviews.count == 3 else {
-            return
-        }
-
-        let sourceList = splitView.arrangedSubviews[0]
-        let noteList = splitView.arrangedSubviews[1]
-        if !sourceList.isHidden, sourceList.frame.width > 0 {
-            noteStore.librarySourceColumnWidth = Double(
-                LibraryNotesLayout.clampedSourceColumnWidth(sourceList.frame.width)
-            )
-        }
-        if noteListViewMode == .list, noteList.frame.width > 0 {
-            noteStore.libraryNoteColumnWidth = Double(
-                LibraryNotesLayout.clampedNoteColumnWidth(noteList.frame.width)
-            )
-        }
+        guard !isApplyingStoredSplitLayout, let splitView = librarySplitView,
+              let noteList = splitView.arrangedSubviews.first, noteList.frame.width > 0 else { return }
+        noteStore.libraryNoteColumnWidth = Double(LibraryNotesLayout.clampedNoteColumnWidth(noteList.frame.width))
     }
 
     @objc
@@ -9129,15 +8777,7 @@ final class LibraryWindowController: NSWindowController,
         constrainMinCoordinate proposedMinimumPosition: CGFloat,
         ofSubviewAt dividerIndex: Int
     ) -> CGFloat {
-        switch dividerIndex {
-        case 0:
-            return LibraryNotesLayout.sourceColumnMinimumWidth
-        case 1:
-            let noteList = splitView.arrangedSubviews[1]
-            return noteList.frame.minX + LibraryNotesLayout.noteColumnMinimumWidth
-        default:
-            return proposedMinimumPosition
-        }
+        dividerIndex == 0 ? LibraryNotesLayout.noteColumnMinimumWidth : proposedMinimumPosition
     }
 
     func splitView(
@@ -9145,25 +8785,9 @@ final class LibraryWindowController: NSWindowController,
         constrainMaxCoordinate proposedMaximumPosition: CGFloat,
         ofSubviewAt dividerIndex: Int
     ) -> CGFloat {
-        let editorLimit = splitView.bounds.width
-            - LibraryNotesLayout.editorColumnMinimumWidth
-            - splitView.dividerThickness
-        switch dividerIndex {
-        case 0:
-            let remainingColumnsLimit = splitView.bounds.width
-                - LibraryNotesLayout.noteColumnMinimumWidth
-                - LibraryNotesLayout.editorColumnMinimumWidth
-                - (splitView.dividerThickness * 2)
-            return min(LibraryNotesLayout.sourceColumnMaximumWidth, remainingColumnsLimit)
-        case 1:
-            let noteList = splitView.arrangedSubviews[1]
-            return min(
-                noteList.frame.minX + LibraryNotesLayout.noteColumnMaximumWidth,
-                editorLimit
-            )
-        default:
-            return proposedMaximumPosition
-        }
+        guard dividerIndex == 0 else { return proposedMaximumPosition }
+        return min(LibraryNotesLayout.noteColumnMaximumWidth,
+                   splitView.bounds.width - LibraryNotesLayout.editorColumnMinimumWidth - splitView.dividerThickness)
     }
 
     @discardableResult
@@ -9173,39 +8797,21 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func setSourceListVisibleForLibrary(_ isVisible: Bool) -> Bool {
-        setSourceListVisibleForLibrary(isVisible, animated: false)
+        setSourceListVisibleForLibrary(isVisible, animated: window?.isVisible == true)
     }
 
     @discardableResult
     private func setSourceListVisibleForLibrary(_ isVisible: Bool, animated: Bool) -> Bool {
-        guard let sourceListView else { return false }
-        noteStore.librarySourceListVisible = isVisible
-        applySourceVisibilityChrome(isVisible)
-        if let sourceSplitViewItem {
-            if animated {
-                NSAnimationContext.runAnimationGroup { context in
-                    context.duration = LibraryNotesLayout.sourceCollapseAnimationDuration
-                    context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                    context.allowsImplicitAnimation = true
-                    sourceSplitViewItem.animator().isCollapsed = !isVisible
-                    if let titleView = noteListToolbarTitleLeadingConstraint?.firstItem as? NSView {
-                        titleView.superview?.animator().layoutSubtreeIfNeeded()
-                    }
-                } completionHandler: { [weak self] in
-                    Task { @MainActor [weak self] in
-                        self?.restoreStoredPaneWidthsAfterSourceVisibilityChange()
-                        self?.updateToolbarActionState()
-                    }
-                }
-            } else {
-                sourceSplitViewItem.isCollapsed = !isVisible
-                restoreStoredPaneWidthsAfterSourceVisibilityChange()
-            }
-        } else {
-            sourceListView.isHidden = !isVisible
+        if isVisible && sidebarShowsSearchForLibrary { showFilesPressed() }
+        sourcePopover.animates = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        if isVisible, sourceButton.window != nil, !sourcePopover.isShown {
+            sourcePopover.show(relativeTo: sourceButton.bounds, of: sourceButton, preferredEdge: .maxY)
+            sourceOutlineView.window?.makeFirstResponder(sourceOutlineView)
+        } else if !isVisible {
+            sourcePopover.performClose(nil)
+            window?.makeFirstResponder(sourceButton)
         }
-        updateToolbarActionState()
-        return isSourceListVisibleForLibrary
+        return isVisible && sourcePopover.isShown
     }
 
     private func applySourceVisibilityChrome(_ isVisible: Bool) {
@@ -9288,25 +8894,21 @@ final class LibraryWindowController: NSWindowController,
         }
         updateNoteListEmptyState(query: searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
 
-        if animated {
-            isApplyingStoredSplitLayout = true
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = LibraryNotesLayout.sourceCollapseAnimationDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                context.allowsImplicitAnimation = true
-                noteListSplitViewItem.animator().isCollapsed = showsGallery
-            } completionHandler: { [weak self] in
-                Task { @MainActor in
-                    self?.isApplyingStoredSplitLayout = false
-                    self?.completeNoteListViewModeTransition(showingGallery: showsGallery)
-                }
-            }
-        } else {
-            isApplyingStoredSplitLayout = true
-            noteListSplitViewItem.isCollapsed = showsGallery
-            librarySplitView?.adjustSubviews()
-            isApplyingStoredSplitLayout = false
-            completeNoteListViewModeTransition(showingGallery: showsGallery)
+        isApplyingStoredSplitLayout = true
+        noteListSplitViewItem.isCollapsed = false
+        librarySplitView?.adjustSubviews()
+        isApplyingStoredSplitLayout = false
+        completeNoteListViewModeTransition(showingGallery: showsGallery)
+        if animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            let visibleView: NSView = showsGallery ? galleryScrollView : editorStackView
+            visibleView.wantsLayer = true
+            // Replaces the previous transition in place, with no deferred focus changes.
+            let fade = CABasicAnimation(keyPath: "opacity")
+            fade.fromValue = visibleView.layer?.presentation()?.opacity ?? 0.65
+            fade.toValue = 1
+            fade.duration = 0.16
+            fade.timingFunction = CAMediaTimingFunction(name: .easeOut)
+            visibleView.layer?.add(fade, forKey: "library.modeTransition")
         }
         applyNoteListViewModeToolbarChrome()
     }
@@ -9564,6 +9166,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func renameLibraryFolder(at folderURL: URL, to name: String) throws -> URL {
+        try saveCurrentNoteIfNeeded()
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
         recordInternalFileSystemChanges(for: [folderURL, renamedURL])
         remapSourceSnapshotFolder(from: folderURL, to: renamedURL)
@@ -9584,6 +9187,10 @@ final class LibraryWindowController: NSWindowController,
             throw LibraryActionError.noFolderSelected
         }
 
+        try saveCurrentNoteIfNeeded()
+        let openURLsInFolder = documentTabs.compactMap(\.url).filter {
+            $0.standardizedFileURL.path.hasPrefix(folderURL.standardizedFileURL.path + "/")
+        }
         let folderPath = folderURL.standardizedFileURL.path
         let notesInFolderByPath = Dictionary(uniqueKeysWithValues: sourceCountSnapshot.compactMap { note -> (String, NoteSearchResult)? in
             let notePath = note.url.standardizedFileURL.path
@@ -9591,10 +9198,9 @@ final class LibraryWindowController: NSWindowController,
             return (notePath, note)
         })
         recordInternalFileSystemChanges(for: [folderURL], includingDescendants: true)
-        let trashResult = try noteStore.trashFolderWithNoteURLs(
-            at: folderURL,
-            knownNoteURLs: notesInFolderByPath.values.map(\.url)
-        )
+        // A navigation snapshot can omit externally added or recently moved
+        // notes. Let the store enumerate the moved folder for the trash result.
+        let trashResult = try noteStore.trashFolderWithNoteURLs(at: folderURL)
         let trashedFolderURL = trashResult.directory
         let deletedAt = Date()
         trashedNotesSnapshot.append(contentsOf: trashResult.noteURLs.map { trashedURL in
@@ -9617,7 +9223,7 @@ final class LibraryWindowController: NSWindowController,
         activeSearchSession = nil
         reloadPersistedSourceDisclosureState()
         selectedScope = .folder(noteStore.notesDirectory)
-        clearCurrentDocumentAfterRemoval()
+        discardDocumentTabs(at: openURLsInFolder)
         projectSourceFolderTreeRows(LibraryFolderTreeProjection.removing(
             folderURL,
             from: sourceFolderTreeRows
@@ -9795,7 +9401,26 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    private func discardDocumentTabs(at urls: [URL]) {
+        let paths = Set(urls.map { $0.standardizedFileURL.path })
+        let activeID = activeDocumentTab.id
+        documentTabs.removeAll { tab in
+            tab.id != activeID && tab.url.map { paths.contains($0.standardizedFileURL.path) } == true
+        }
+        if let selectedURL, paths.contains(selectedURL.standardizedFileURL.path) {
+            clearCurrentDocumentAfterRemoval()
+        }
+        updateDocumentTabBar()
+    }
+
     private func clearCurrentDocumentAfterRemoval() {
+        let oldID = activeDocumentTab.id
+        if let index = documentTabs.firstIndex(where: { $0.id == oldID }) {
+            let blank = LibraryDocumentTab()
+            documentTabs[index] = blank
+            activeDocumentTabID = blank.id
+            editorTextView.documentUndoManager = blank.undoManager
+        }
         cancelActiveNoteLoad()
         isLoadingInitialNote = false
         isCreatingNewNote = false
@@ -9804,7 +9429,7 @@ final class LibraryWindowController: NSWindowController,
         isDirty = false
         updateEditorCreatedDate(nil)
         updateEditorStatus("")
-        setEditorEditable(selectedScope != .trash)
+        setEditorEditable(!activeDocumentIsReadOnly)
         applyDocument(title: "", body: "", tags: [])
     }
 
@@ -10353,7 +9978,6 @@ final class LibraryWindowController: NSWindowController,
                 suppressSelectionChanges = true
                 tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 suppressSelectionChanges = false
-                load(note: clickedNote)
             } catch {
                 suppressSelectionChanges = false
                 presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
@@ -10361,7 +9985,40 @@ final class LibraryWindowController: NSWindowController,
             }
         }
 
-        return makeNoteContextMenu()
+        let menu = makeNoteContextMenu()
+        if selectedScope != .trash {
+            let item = NSMenuItem(title: "在新标签页中打开", action: #selector(openContextNoteInNewTab(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = clickedNote.url
+            menu.insertItem(item, at: 0)
+            let background = NSMenuItem(title: "在后台标签页中打开", action: #selector(openContextNoteInNewTab(_:)), keyEquivalent: "")
+            background.target = self
+            background.representedObject = clickedNote.url
+            background.tag = 1
+            menu.insertItem(background, at: 1)
+            menu.insertItem(.separator(), at: 2)
+        }
+        captureNoteMenuActions(in: menu, urls: selectedMarkdownFileURLsForLibrary())
+        return menu
+    }
+
+    private func captureNoteMenuActions(in menu: NSMenu, urls: [URL]) {
+        menu.autoenablesItems = false
+        for (index, item) in menu.items.enumerated() {
+            if let submenu = item.submenu {
+                captureNoteMenuActions(in: submenu, urls: urls)
+                continue
+            }
+            guard let action = item.action else { continue }
+            let captured = LibraryContextMenuItem(original: item) { [weak self] sender in
+                guard let self else { return }
+                self.capturedContextActionURLs = urls
+                defer { self.capturedContextActionURLs = nil }
+                NSApp.sendAction(action, to: item.target, from: sender)
+            }
+            menu.removeItem(item)
+            menu.insertItem(captured, at: index)
+        }
     }
 
     private func makeNoteContextMenu() -> NSMenu {
@@ -11305,7 +10962,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applyParagraphKind(_ target: MarkdownParagraphKind, togglesOffWhenMatching: Bool) {
-        guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
+        guard !activeDocumentIsReadOnly, let storage = editorTextView.textStorage else { return }
         let ranges = selectedLineRanges()
         let currentKinds = ranges.map { MarkdownRichTextCodec.paragraphKind(at: $0, in: storage) }
         let allMatchTarget = currentKinds.allSatisfy { sameParagraphCategory($0, target) }
@@ -11454,7 +11111,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func setHighlightForLibrary(enabled: Bool) {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               let storage = editorTextView.textStorage,
               editorTextView.selectedRange().length > 0 else { return }
         let selection = editorTextView.selectedRange()
@@ -11495,7 +11152,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func toggleInlineFontTrait(_ trait: NSFontTraitMask) {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
 
         if trait.contains(.italicFontMask) {
             toggleItalicFormatting()
@@ -11614,7 +11271,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func toggleIntAttribute(_ key: NSAttributedString.Key, enabledValue: Int, actionName: String) {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
         let selection = editorTextView.selectedRange()
         if selection.length == 0 {
             var typing = editorTextView.typingAttributes
@@ -11711,7 +11368,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func focusEditorForLibraryAction() {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
         window?.makeFirstResponder(editorTextView)
     }
 
@@ -11753,7 +11410,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func moveMarkdownTableCellSelectionForLibrary(_ direction: MarkdownTableCellDirection) -> Bool {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               editorTextView.selectedRange().length == 0,
               let storage = editorTextView.textStorage else {
             return false
@@ -11847,7 +11504,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func insertTableRowInCurrentMarkdownTableForLibrary() -> Bool {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               editorTextView.selectedRange().length == 0,
               let storage = editorTextView.textStorage else {
             return false
@@ -11909,7 +11566,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func deleteCurrentMarkdownTableRowForLibrary() -> Bool {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               editorTextView.selectedRange().length == 0,
               let storage = editorTextView.textStorage else {
             return false
@@ -11971,7 +11628,7 @@ final class LibraryWindowController: NSWindowController,
         atCharacterIndex characterIndex: Int,
         operation: MarkdownTableColumnOperation
     ) -> Bool {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               let storage = editorTextView.textStorage else {
             return false
         }
@@ -12459,7 +12116,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func insertLinkForLibrary(label: String, url: String) {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedURL.isEmpty else { return }
@@ -12469,7 +12126,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func insertAttachmentReferenceForLibrary(from fileURL: URL) throws -> URL {
-        guard selectedScope != .trash else { return fileURL }
+        guard !activeDocumentIsReadOnly else { return fileURL }
         let noteDirectory = targetDirectoryForAttachment()
         let copiedURL = try MarkdownAttachmentStorage.storeFile(fileURL, in: noteDirectory)
         insertStoredAttachmentForLibrary(copiedURL, relativeTo: noteDirectory)
@@ -12517,7 +12174,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func insertMarkdownBlockForLibrary(_ markdown: String, renderingBaseURL: URL? = nil) {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
         focusEditorForLibraryAction()
         let selection = editorTextView.selectedRange()
         let nsString = editorTextView.string as NSString
@@ -12536,7 +12193,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func replaceSelectionWithRenderedMarkdown(_ markdown: String, renderingBaseURL: URL? = nil) {
-        guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
+        guard !activeDocumentIsReadOnly, let storage = editorTextView.textStorage else { return }
         focusEditorForLibraryAction()
         let selection = editorTextView.selectedRange()
         let rendered = MarkdownRichTextCodec.render(

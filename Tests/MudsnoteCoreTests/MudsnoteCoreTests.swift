@@ -1136,6 +1136,23 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func smartLinksKeepDirectionsWithoutLayerClassification() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notes = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        store.configurePreferredDirectories([notes], defaultDirectory: notes)
+        let target = try store.saveNewNote(title: "Target", body: "Body", tags: ["层级/面"], in: notes)
+        let source = try store.saveNewNote(title: "Source", body: "[Target](\(target.lastPathComponent))", tags: ["层级/点"], in: notes)
+        let result = store.smartLinkRelations(for: target, roots: [notes])
+        #expect(result.links.incoming.map(\.url) == [source])
+        #expect(result.links.outgoing.isEmpty)
+        #expect(!result.suggestions.map(\.url).contains(source))
+        let reverse = store.smartLinkRelations(for: source, roots: [notes])
+        #expect(reverse.links.outgoing.map(\.url) == [target])
+        #expect(reverse.links.incoming.isEmpty)
+    }
+
+    @Test
     func knowledgeRelationsClassifyLayersAndSuggestExplainableLocalMatches() throws {
         let harness = try TestHarness()
         let store = harness.store

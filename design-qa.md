@@ -1,54 +1,40 @@
-# Floating Window Manager Containment Design QA
+# macOS document workspace visual QA — 2026-09-14
 
-## Evidence
+Scope: macOS only. The user's Obsidian header reference defines control responsibilities; Flodo defines a restrained backdrop effect. Previous single-title-chip QA is superseded by this review.
 
-- Source visual truth: `/var/folders/hs/3lbg6xjs1kdc4xftnflt94y80000gn/T/codex-clipboard-48b2da31-235f-4cdd-a965-fc361de88581.png`.
-- Rendered implementation: `/tmp/mudsnote-floating-contained-after-scroll.png`.
-- Full-view manager comparison: `/tmp/mudsnote-floating-contained-full-comparison.png`.
-- Focused row comparison: `/tmp/mudsnote-floating-contained-row-comparison.png`.
-- Viewport: native macOS floating note at 412 x 314 points, with a 300 x 116 point borderless manager fully contained inside it. Automated coverage separately constrains the parent to 300 x 314 points, matching the user's narrow-window state.
-- Pixels and density: source capture 678 x 356 pixels; implementation capture 830 x 628 pixels including the parent note and window shadow. The source and implementation manager regions were cropped to 600 x 232 pixels and compared at equal 2x density. Row regions were normalized to 568 x 66 pixels.
-- State: dark appearance, one current unsaved floating note, manager open, empty focused search field.
+## Header and empty-tab correction
 
-## Full-view comparison evidence
+The subsequent user screenshot exposed a compressed trailing search panel and a vertical mismatch between traffic lights and custom controls. The correction uses a shared 32-point header row, explicit sidebar row widths and a single search-field height. Collapsing keeps the toggle and search accessible; selecting search expands the sidebar and focuses its field. The plus now follows the tab strip. Empty tabs offer create/search actions, and creating a note reuses the empty tab.
 
-- The manager retains the supplied title, new-window action, search field, divider, compact single-line record, subtitle, and close action.
-- The implementation panel frame remains entirely inside the parent note frame. Its right edge no longer follows the inset anchor far enough to push the left edge outside a narrow parent.
-- The red current-window marker is absent, while the row gains the released leading space without disturbing title, subtitle, or action alignment.
-- Five downward wheel events over the one-row list produced byte-identical before/after screenshots (`b3cc32092917bf8df651ca9da342bacb9c14d6ee388288c5b57c0af4a38a1f43`), confirming no visible bounce or content movement.
+Actual native-window checks on the final preview covered expanded search, collapse, search-to-expand, plus, create-in-place, close and return to the original document. The temporary synthetic note created by this check was removed. Screenshots: `09-header-search.png`, `10-header-collapsed.png`, `11-empty-tab.png` in the same task artifact directory. Native capture depicts an inactive window; traffic-light and icon geometry is visible, but the images do not establish desktop material composition.
 
-## Focused region comparison evidence
+Codex's own native window is blocked by the computer-use tool, so no direct Codex collapse comparison is claimed. The user's unspecified new-tab complaint was addressed through the observed empty-state and create-in-place issues; a different reported reproduction would need a follow-up.
 
-- The focused equal-width row comparison makes the intended delta legible: the left-hand source includes the redundant red dot, while the right-hand implementation begins directly with the note title and preserves the same single-line rhythm.
-- Native system fonts, vibrancy-aware colors, rounded geometry, and SF Symbol close action remain consistent with the existing app. No raster imagery, logos, illustrations, or generated assets are involved.
-- Copy differs only because the isolated fixture is an unnamed note; control labels and meaning are unchanged.
+## Verified interactions
 
-## Findings
+The isolated native preview uses synthetic notes and its own defaults/support directories. Actual-window checks covered sidebar collapse/expand, foreground and background right-click tab opening, Command-T empty tabs, Control-Tab switching, Command-F document find, Shift-Command-F sidebar search, and edit/switch/back/undo/save. The last sequence was also checked by reading the saved Markdown; the temporary QA text was gone and the original body remained.
 
-- P0: none.
-- P1: none.
-- P2: none.
-- P3: the active implementation capture is lighter than the user's inactive/dimmed source capture because macOS vibrancy follows focus state; this is expected native behavior rather than token drift.
+Tabs have independent buffers, undo managers, selection/scroll state, revisions and save ownership. Right-click actions retain their target URLs even if selection changes. Regression tests include simultaneous unsaved drafts, background open and undo isolation, save-failure close/retry, captured context actions, and trash read-only state. Empty tabs do not create files.
 
-## Comparison history
+## Material and layout
 
-### Pass 1
+Compared real desktop compositing against a synthetic blue/orange/purple/green background with repeated text. Clear Glass exposed too much background detail and lost contrast over dark windows. Fading a native effect to 78% also exposed sharp background text; that candidate was rejected. Final: one full-strength underWindowBackground/behindWindow effect following window activation, transparent child panes, opaque foreground text, and Reduce Transparency fallback.
 
-- The supplied source showed the manager extending left of the parent note, a red current-window dot, and a short list that reacted to wheel input.
-- Fixes: clamp both axes to the parent frame, remove the current-window marker state, disable vertical elasticity without overflow, and reset the clip origin when scrolling becomes unnecessary.
+The final desktop crop shows background color transitions across both panes while the repeated background text is no longer legible. It excludes the titlebar because an unrelated always-on-top Board panel overlapped that corner. The separate full-window image verifies header and tab geometry; isolated-window images do not prove backdrop compositing.
 
-### Pass 2
+Local task artifacts (under the task visualization's material-review directory):
+- 07-document-tabs.png: complete native window and two tabs.
+- 08-background-compositing.png: real desktop content crop with color test backdrop.
 
-- Post-fix evidence: `/tmp/mudsnote-floating-contained-after-scroll.png`, `/tmp/mudsnote-floating-contained-full-comparison.png`, and `/tmp/mudsnote-floating-contained-row-comparison.png`.
-- The manager is contained, the marker is gone, row alignment remains compact, and repeated wheel input leaves the one-row state unchanged. No actionable P0/P1/P2 differences remain.
+No exact Flodo pixel match or user approval of the final visual taste is claimed. Open-tab layout is currently session-local; crash-recovery journaling and tab drag-reordering are not included in this change.
 
-## Implementation checklist
+## Verification
 
-- [x] Keep the complete manager inside its parent note at narrow and default widths.
-- [x] Remove the redundant current-window marker and state plumbing.
-- [x] Disable both the scroller and elastic response for five or fewer rows.
-- [x] Restore scrolling when results exceed five rows.
-- [x] Reset the scroll offset when results shrink below the threshold.
-- [x] Verify the rendered native state against the supplied screenshot.
+- Latest header correction: `./scripts/verify macos pr` passed 322 tests in five suites; log `/tmp/mudsnote-header-final.log`. A regression exercises empty-tab creation, sidebar width and collapsed search expansion.
+- Prior baseline ./scripts/verify macos full: 321 ordinary tests in five suites and 8 Release performance tests in two suites passed. Log: /tmp/mudsnote-delivery-final.log.
+- The real desktop crop checks the final full-strength material. The final delivery run also covers the startup editor undo-manager binding.
+- No iOS build/device or shared production installation was used. The independent preview is not the installed application.
 
-final result: passed
+## Advisory review
+
+The explicitly requested ChatGPT web review used separately verified Latest + far-right Pro. Sent once; the completed response was stable across three reads and pro-skills reports complete. The external answer's standalone sample project was not treated as integrated or locally verified code. Its useful findings were implemented and tested against this repository.
