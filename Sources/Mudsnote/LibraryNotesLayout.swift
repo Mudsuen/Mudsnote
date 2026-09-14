@@ -57,8 +57,6 @@ enum LibraryNotesLayout {
     static let sourceListLeadingInset: CGFloat = 14
     static let sourceListBottomInset: CGFloat = 14
     static let sourceListTrailingInset: CGFloat = 6
-    static let sourceSurfaceCornerRadius: CGFloat = 24
-    static let sourceSurfaceDarkeningAlpha: CGFloat = 0.30
     static let sourceCollapseAnimationDuration: TimeInterval = 0.22
     static let sourceRowCornerRadius: CGFloat = 8
     static let sourceRowHighlightLeadingInset: CGFloat = 10

@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-14, this prototype records 279 implementation iterations, including the initial MVP.
+As of 2026-09-14, this prototype records 280 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 280. Continuous two-column sidebar surface
+- Problem: Tree mode nested an opaque dark surface, a black tint, and large top corners inside the full-height sidebar material, creating a sharp color seam below the toolbar and making navigation look like a card pasted into the window. Switching modes could also replace the list's previous scope with an ordinary folder selection made in the tree.
+- Fix: Tree and list content now share one full-height native sidebar material from titlebar to bottom, with the redundant background, tint, and inner corners removed. Tree and list remember independent scopes while the explicit “以列表显示” actions still carry the requested folder or note into the list.
+- Lesson: A unified navigation column needs one material owner, and changing its presentation should restore that presentation's context rather than reuse incidental selection from the other mode.
 
 ### 279. Unified two-column Mac library navigation
 - Problem: The macOS library permanently split navigation, note browsing, and editing across three panes, so selecting a folder was required before its files became visible and compact windows lost too much writing space.

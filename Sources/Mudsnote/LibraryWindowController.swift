@@ -654,8 +654,6 @@ final class LibrarySourceScrollView: NSScrollView {
 
 private enum LibraryNotesPalette {
     static let windowBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
-    static let sourceBackground = NSColor(calibratedWhite: 0.045, alpha: 1)
-    static let noteListBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
     static let editorBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
 }
 
@@ -1423,7 +1421,8 @@ final class LibraryWindowController: NSWindowController,
     private var hasReleasedDeferredLaunchWork = false
     private var selectedScope: LibraryScope = .all
     private var sidebarPresentation: LibrarySidebarPresentation = .tree
-    private var hasEnteredListPresentation = false
+    private var lastTreeScope: LibraryScope = .all
+    private var lastListScope: LibraryScope = .recent
     private var selectedTreeNoteURL: URL?
     private var sourceOutlineRootItems: [LibrarySourceOutlineItem] = []
     private var sourceOutlineItemsByIdentifier: [String: LibrarySourceOutlineItem] = [:]
@@ -1561,7 +1560,7 @@ final class LibraryWindowController: NSWindowController,
         ) ?? .tree
         if self.sidebarPresentation == .list {
             self.selectedScope = .recent
-            self.hasEnteredListPresentation = true
+            self.lastListScope = .recent
         }
         self.collapsedFolderPaths = noteStore.libraryCollapsedFolderPaths
         self.expandedFolderPaths = noteStore.libraryExpandedFolderPaths
@@ -2275,13 +2274,14 @@ final class LibraryWindowController: NSWindowController,
 
     private func setSidebarPresentation(_ presentation: LibrarySidebarPresentation, animated: Bool) {
         guard presentation != sidebarPresentation else { return }
-        if presentation == .list,
-           !hasEnteredListPresentation,
-           selectedScope == .all,
-           selectedTreeNoteURL == nil {
-            selectedScope = .recent
+        switch presentation {
+        case .tree:
+            lastListScope = selectedScope
+            selectedScope = lastTreeScope
+        case .list:
+            lastTreeScope = selectedScope
+            selectedScope = lastListScope
         }
-        hasEnteredListPresentation = hasEnteredListPresentation || presentation == .list
         sidebarPresentation = presentation
         noteStore.librarySidebarPresentationRawValue = presentation.rawValue
         reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
@@ -2316,27 +2316,10 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildSourceList() -> NSView {
-        let sourceList = NSVisualEffectView()
+        let sourceList = NSView()
         sourceList.translatesAutoresizingMaskIntoConstraints = false
         sourceList.identifier = NSUserInterfaceItemIdentifier("LibrarySourceSurface")
         sourceList.setAccessibilityLabel("资料库")
-        sourceList.material = .sidebar
-        sourceList.blendingMode = .withinWindow
-        sourceList.state = .active
-        sourceList.wantsLayer = true
-        sourceList.layer?.backgroundColor = LibraryNotesPalette.sourceBackground
-            .withAlphaComponent(0.86)
-            .cgColor
-        sourceList.layer?.cornerRadius = LibraryNotesLayout.sourceSurfaceCornerRadius
-        sourceList.layer?.masksToBounds = true
-        let darkeningView = NSView()
-        darkeningView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceDarkeningTint")
-        darkeningView.wantsLayer = true
-        darkeningView.layer?.backgroundColor = NSColor.black.withAlphaComponent(
-            LibraryNotesLayout.sourceSurfaceDarkeningAlpha
-        ).cgColor
-        sourceList.addSubview(darkeningView)
-        pin(darkeningView, to: sourceList)
         sourceFolderTreeRows = rootFolderRowsForSourceList()
         sourceFolderRows = sourceFolderTreeRows
 
@@ -2401,8 +2384,6 @@ final class LibraryWindowController: NSWindowController,
 
     private func buildSidebar() -> NSView {
         let sidebar = NSView()
-        sidebar.wantsLayer = true
-        sidebar.layer?.backgroundColor = LibraryNotesPalette.noteListBackground.cgColor
         sidebar.translatesAutoresizingMaskIntoConstraints = false
 
         configureNoteListHeaderLabels()
@@ -5264,6 +5245,7 @@ final class LibraryWindowController: NSWindowController,
         selectedTreeNoteURL = nil
         if sidebarPresentation == .tree {
             selectedScope = scope
+            lastTreeScope = scope
             reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
             refreshVisibleSourceOutlinePresentation()
         } else if !activateSourceScope(scope) {
@@ -5276,6 +5258,11 @@ final class LibraryWindowController: NSWindowController,
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             selectedScope = scope
+            if sidebarPresentation == .tree {
+                lastTreeScope = scope
+            } else {
+                lastListScope = scope
+            }
             reloadNotesForNavigation(loadFirstIfNeeded: true)
             refreshVisibleSourceOutlinePresentation()
             return true
@@ -10333,7 +10320,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func showTreeNoteInListMenuItemPressed(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
-        selectedScope = .folder(url.deletingLastPathComponent())
+        lastListScope = .folder(url.deletingLastPathComponent())
         setSidebarPresentation(.list, animated: true)
         reloadNotesForNavigation(selecting: url, loadFirstIfNeeded: false)
     }
@@ -10455,7 +10442,7 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func showFolderInListMenuItemPressed(_ sender: NSMenuItem) {
         guard let folderURL = sender.representedObject as? URL else { return }
-        selectedScope = .folder(folderURL.standardizedFileURL)
+        lastListScope = .folder(folderURL.standardizedFileURL)
         setSidebarPresentation(.list, animated: true)
         reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
     }

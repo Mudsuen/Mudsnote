@@ -2710,6 +2710,7 @@ struct MarkdownRichEditorTests {
             from: sidebarPresentationItem
         )
         #expect(store.librarySidebarPresentationRawValue == 1)
+        #expect(controller.selectedSourceTitleForLibrary == "最近编辑")
         #expect(sidebarPresentationItem.label == "切换到文件树")
         #expect(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceSurface"
@@ -2720,6 +2721,7 @@ struct MarkdownRichEditorTests {
             from: sidebarPresentationItem
         )
         #expect(store.librarySidebarPresentationRawValue == 0)
+        #expect(controller.selectedSourceTitleForLibrary == "首页")
         #expect(sidebarPresentationItem.label == "切换到列表")
         #expect(window.toolbarStyle == .unified)
         #expect(window.styleMask.contains(.resizable))
@@ -2989,21 +2991,22 @@ struct MarkdownRichEditorTests {
         #expect(sourceTrackingSeparator.dividerIndex == 0)
         let sourceList = splitView.arrangedSubviews[0]
         let noteList = sourceList
-        let sourceSurface = try #require(sourceList.allSubviews.compactMap { $0 as? NSVisualEffectView }.first {
+        let navigationSurface = try #require(sourceList.allSubviews.compactMap { $0 as? NSVisualEffectView }.first {
+            $0.identifier?.rawValue == "LibraryNavigationSidebar"
+        })
+        let sourceSurface = try #require(sourceList.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceSurface"
         })
         #expect(sourceSurface.identifier?.rawValue == "LibrarySourceSurface")
         #expect(sourceSurface.accessibilityLabel() == "资料库")
         #expect(controller.tableView.accessibilityLabel() == "笔记列表")
-        #expect(sourceSurface.material == .sidebar)
-        #expect(sourceSurface.blendingMode == .withinWindow)
-        #expect(sourceSurface.layer?.cornerRadius == LibraryNotesLayout.sourceSurfaceCornerRadius)
-        #expect(sourceSurface.layer?.borderWidth == 0)
-        let sourceDarkeningTint = try #require(sourceSurface.allSubviews.first {
+        #expect(navigationSurface.identifier?.rawValue == "LibraryNavigationSidebar")
+        #expect(navigationSurface.material == .sidebar)
+        #expect(navigationSurface.blendingMode == .withinWindow)
+        #expect(sourceSurface.layer?.backgroundColor == nil)
+        #expect(!sourceSurface.allSubviews.contains {
             $0.identifier?.rawValue == "LibrarySourceDarkeningTint"
         })
-        #expect(sourceDarkeningTint.layer?.backgroundColor?.alpha == LibraryNotesLayout.sourceSurfaceDarkeningAlpha)
-        #expect(LibraryNotesLayout.sourceSurfaceDarkeningAlpha == 0.30)
         #expect(LibraryNotesLayout.sourceCollapseAnimationDuration == 0.22)
         #expect(sourceList.frame.width >= LibraryNotesLayout.sourceColumnMinimumWidth)
         #expect(noteList.frame.width >= LibraryNotesLayout.noteColumnMinimumWidth)
@@ -3154,7 +3157,7 @@ struct MarkdownRichEditorTests {
         let noteListEmpty = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListEmptyLabel"
         })
-        #expect(noteListTitle.stringValue == "最近编辑")
+        #expect(noteListTitle.stringValue == "首页")
         #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
         #expect(LibraryNotesLayout.noteListHeaderTitleFontSize == 13)
         #expect(noteListCount.stringValue == "1 条笔记")
