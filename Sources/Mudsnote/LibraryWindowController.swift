@@ -2384,33 +2384,18 @@ final class LibraryWindowController: NSWindowController,
         guard presentation != sidebarPresentation else { return }
         sidebarPresentation = presentation
         noteStore.librarySidebarPresentationRawValue = presentation.rawValue
-        reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
         applySidebarPresentation(animated: animated)
     }
 
-    private func applySidebarPresentation(animated: Bool) {
+    private func applySidebarPresentation(animated _: Bool) {
         guard let tree = sidebarTreeView, let list = sidebarNoteListView else { return }
         let showsTree = sidebarPresentation == .tree
-        let changes = {
-            tree.isHidden = !showsTree
-            list.isHidden = showsTree
-            tree.alphaValue = showsTree ? 1 : 0
-            list.alphaValue = showsTree ? 0 : 1
-        }
-        if animated, window?.isVisible == true {
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = 0.16
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                context.allowsImplicitAnimation = true
-                changes()
-            }
-        } else {
-            changes()
-        }
+        tree.isHidden = !showsTree
+        list.isHidden = showsTree
+        tree.alphaValue = 1
+        list.alphaValue = 1
         if showsTree {
             refreshSourceSelection()
-        } else {
-            window?.makeFirstResponder(tableView)
         }
         applySidebarPresentationChrome()
         updateListSmartScopeButtons()

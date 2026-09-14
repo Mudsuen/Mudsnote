@@ -2706,10 +2706,13 @@ struct MarkdownRichEditorTests {
         let treePresentationButton = try #require(filesGroupLabel.superview?.subviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
         })
+        window.makeFirstResponder(controller.editorTextView)
+        let editorResponderBeforePresentationChange = window.firstResponder
         #expect(treePresentationButton.toolTip == "切换到列表")
         treePresentationButton.performClick(nil)
         #expect(store.librarySidebarPresentationRawValue == 1)
         #expect(controller.selectedSourceTitleForLibrary == "首页")
+        #expect(window.firstResponder === editorResponderBeforePresentationChange)
         let listFilesHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibrarySidebarFilesHeader"
         })
