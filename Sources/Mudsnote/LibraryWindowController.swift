@@ -155,6 +155,7 @@ private typealias LoadedLibraryNote = LoadedNoteDocument
 
 private struct LibraryBackgroundSaveSnapshot: Sendable {
     let generation: Int
+    let documentID: UUID
     let editorRevision: Int
     let previousURL: URL?
     let title: String
@@ -1082,6 +1083,7 @@ final class LibraryNoteRowView: NSTableRowView {
 
 enum LibraryNoteKeyCommand {
     case open
+    case openInNewTab
     case delete
     case moveDown
     case moveUp
@@ -1127,6 +1129,8 @@ final class LibraryNoteTableView: NSTableView {
     }
 
     override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask) == [.command],
+           [36, 76].contains(event.keyCode), onKeyCommand?(.openInNewTab) == true { return }
         guard event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty else {
             super.keyDown(with: event)
             return
@@ -1451,8 +1455,22 @@ final class LibraryWindowController: NSWindowController,
     private let folderShortcutStack = NSStackView()
     private let folderNavigationRow = NSStackView()
     private let documentTabTitle = NSTextField(labelWithString: "新笔记")
+    private var documentTabs = [LibraryDocumentTab()]
+    private var activeDocumentTabID: UUID?
+    private var retainedSavingTabs: [UUID: LibraryDocumentTab] = [:]
+    private var backgroundSavingTab: LibraryDocumentTab?
+    private let documentTabsStack = NSStackView()
+    private var tabBarSignature = ""
+    private var isActivatingDocumentTab = false
+    private var activeDocumentTab: LibraryDocumentTab {
+        documentTabs.first { $0.id == activeDocumentTabID } ?? documentTabs[0]
+    }
     private var folderShortcutWidthConstraint: NSLayoutConstraint?
-    private let searchPopover = NSPopover()
+    private let sidebarSearchPanel = NSStackView()
+    private let sidebarToggleButton = NSButton()
+    private let filesModeButton = NSButton()
+    private var sidebarSearchQuery = ""
+    private(set) var sidebarShowsSearchForLibrary = false
     private let searchButton = NSButton()
     private let sourcePopover = NSPopover()
     private let sourceButton = NSButton()
@@ -1732,11 +1750,6 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func selectedNoteStillMatchesInitialLoad(_ note: NoteSearchResult) -> Bool {
-        if let selectedNote = self.note(at: tableView.selectedRow),
-           selectedNote.url.standardizedFileURL.path != note.url.standardizedFileURL.path {
-            return false
-        }
-
         if let selectedURL,
            selectedURL.standardizedFileURL.path != note.url.standardizedFileURL.path {
             return false
@@ -1931,6 +1944,10 @@ final class LibraryWindowController: NSWindowController,
     func windowShouldClose(_ sender: NSWindow) -> Bool {
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            drainBackgroundAutosaves()
+            guard !documentTabs.contains(where: { $0.isDirty }) else {
+                throw CocoaError(.fileWriteUnknown)
+            }
             return true
         } catch {
             presentErrorAlert(message: "无法关闭资料库", details: error.localizedDescription)
@@ -2197,8 +2214,8 @@ final class LibraryWindowController: NSWindowController,
         noteListSplitViewItem = noteListItem
         librarySplitView = splitController.splitView
         let rootController = NSViewController()
-        let root = LibraryPaneSurface(role: .document, providesMaterial: true)
-        rootController.view = root
+        let root = LibraryPaneSurface(role: .document)
+        rootController.view = makeLibraryWindowMaterial(content: root)
         rootController.addChild(splitController)
         root.addSubview(splitController.view)
         root.addSubview(navigation)
@@ -2210,8 +2227,8 @@ final class LibraryWindowController: NSWindowController,
         NSLayoutConstraint.activate([
             navigation.topAnchor.constraint(equalTo: root.topAnchor),
             navigation.leadingAnchor.constraint(equalTo: root.leadingAnchor, constant: 80),
-            navigation.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor, constant: -8),
-            documentHeader.leadingAnchor.constraint(equalTo: editor.leadingAnchor, constant: 8),
+            navigation.trailingAnchor.constraint(equalTo: documentHeader.leadingAnchor, constant: -8),
+            documentHeader.leadingAnchor.constraint(greaterThanOrEqualTo: root.leadingAnchor, constant: 124),
             documentHeader.trailingAnchor.constraint(equalTo: root.trailingAnchor, constant: -8),
             documentHeader.topAnchor.constraint(equalTo: root.topAnchor, constant: 5),
             documentHeader.heightAnchor.constraint(equalToConstant: 35),
@@ -2221,6 +2238,9 @@ final class LibraryWindowController: NSWindowController,
             splitController.view.trailingAnchor.constraint(equalTo: root.trailingAnchor),
             splitController.view.bottomAnchor.constraint(equalTo: root.bottomAnchor)
         ])
+        let paneAlignedHeader = documentHeader.leadingAnchor.constraint(equalTo: editor.leadingAnchor, constant: 8)
+        paneAlignedHeader.priority = .defaultHigh
+        paneAlignedHeader.isActive = true
         window?.contentViewController = rootController
         hostEditorSuggestionView(in: root)
         NotificationCenter.default.addObserver(
@@ -2308,9 +2328,13 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildNavigationBar() -> NSView {
-        configureCompactButton(sourceButton, symbol: "sidebar.left", label: "文件夹与标签（⌃⌘S）", action: #selector(toggleSourceListPressed))
+        configureCompactButton(sourceButton, symbol: "folder.badge.gearshape", label: "文件夹与标签", action: #selector(toggleSourceListPressed))
+        configureCompactButton(sidebarToggleButton, symbol: "sidebar.left", label: "收起侧栏（⌃⌘S）", action: #selector(toggleSidebarPressed))
+        sidebarToggleButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarToggle")
+        configureCompactButton(filesModeButton, symbol: "folder", label: "文件", action: #selector(showFilesPressed))
+        filesModeButton.identifier = NSUserInterfaceItemIdentifier("LibraryFilesMode")
         sourceButton.identifier = NSUserInterfaceItemIdentifier("LibraryFolderPicker")
-        configureCompactButton(searchButton, symbol: "magnifyingglass", label: "搜索笔记（⌘F）", action: #selector(searchPressed))
+        configureCompactButton(searchButton, symbol: "magnifyingglass", label: "搜索笔记（⇧⌘F）", action: #selector(searchPressed))
         searchButton.identifier = NSUserInterfaceItemIdentifier("LibrarySearchButton")
         let newButton = NSButton()
         configureCompactButton(newButton, symbol: "square.and.pencil", label: "新建笔记（⌘N）", action: #selector(newNotePressed))
@@ -2346,55 +2370,254 @@ final class LibraryWindowController: NSWindowController,
         preferredFolderWidth.priority = .defaultLow
         preferredFolderWidth.isActive = true
         folderShortcutWidthConstraint = preferredFolderWidth
-        folderNavigationRow.setViews([folderScroll, newButton], in: .leading)
+        folderNavigationRow.setViews([folderScroll, sourceButton, newButton], in: .leading)
         folderNavigationRow.spacing = 4
         folderNavigationRow.alignment = .centerY
         folderNavigationRow.heightAnchor.constraint(equalToConstant: 34).isActive = true
-        let bar = NSStackView(views: [sourceButton, searchButton, dragHandle])
+        let bar = NSStackView(views: [sidebarToggleButton, filesModeButton, searchButton, dragHandle])
         bar.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationBar")
         bar.spacing = 8
         bar.alignment = .centerY
         bar.distribution = .fill
         folderScroll.setContentCompressionResistancePriority(.fittingSizeCompression, for: .horizontal)
-        folderScroll.widthAnchor.constraint(lessThanOrEqualTo: folderNavigationRow.widthAnchor, constant: -38).isActive = true
+        folderScroll.widthAnchor.constraint(lessThanOrEqualTo: folderNavigationRow.widthAnchor, constant: -76).isActive = true
 
-        let searchStack = NSStackView(views: [searchField, searchScopeControl])
-        searchStack.orientation = .vertical
-        searchStack.alignment = .leading
-        searchStack.spacing = 8
-        searchStack.edgeInsets = NSEdgeInsets(top: 10, left: 12, bottom: 10, right: 12)
-        searchField.widthAnchor.constraint(equalToConstant: 280).isActive = true
-        let searchController = NSViewController()
-        searchController.view = searchStack
-        searchPopover.contentViewController = searchController
-        searchPopover.contentSize = NSSize(width: 304, height: 76)
-        searchPopover.behavior = .semitransient
+        sidebarSearchPanel.setViews([searchField, searchScopeControl], in: .leading)
+        sidebarSearchPanel.orientation = .vertical
+        sidebarSearchPanel.alignment = .leading
+        sidebarSearchPanel.spacing = 6
+        sidebarSearchPanel.edgeInsets = NSEdgeInsets(top: 4, left: 6, bottom: 8, right: 6)
+        sidebarSearchPanel.isHidden = true
+        searchField.widthAnchor.constraint(equalTo: sidebarSearchPanel.widthAnchor, constant: -12).isActive = true
+        searchField.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        filesModeButton.contentTintColor = .controlAccentColor
         return bar
     }
 
     private func buildDocumentHeader() -> NSView {
-        documentTabTitle.font = .systemFont(ofSize: 13, weight: .medium)
-        documentTabTitle.lineBreakMode = .byTruncatingTail
-        documentTabTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        documentTabTitle.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabTitle")
-        let icon = NSImageView(image: NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)!)
-        let tab = NSStackView(views: [icon, documentTabTitle])
-        tab.spacing = 8
-        tab.edgeInsets = NSEdgeInsets(top: 6, left: 12, bottom: 6, right: 12)
-        tab.wantsLayer = true
-        tab.layer?.cornerRadius = 9
-        tab.layer?.borderWidth = 0.5
-        tab.layer?.borderColor = NSColor.secondaryLabelColor.withAlphaComponent(0.25).cgColor
+        documentTabsStack.orientation = .horizontal
+        documentTabsStack.spacing = 3
+        let scroll = NSScrollView()
+        scroll.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabs")
+        scroll.drawsBackground = false
+        scroll.contentView.drawsBackground = false
+        scroll.hasHorizontalScroller = true
+        scroll.autohidesScrollers = true
+        scroll.scrollerStyle = .overlay
+        scroll.documentView = documentTabsStack
+        documentTabsStack.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            documentTabsStack.leadingAnchor.constraint(equalTo: scroll.contentView.leadingAnchor),
+            documentTabsStack.topAnchor.constraint(equalTo: scroll.contentView.topAnchor),
+            documentTabsStack.heightAnchor.constraint(equalTo: scroll.heightAnchor),
+            scroll.heightAnchor.constraint(equalToConstant: 32),
+            scroll.widthAnchor.constraint(greaterThanOrEqualToConstant: 100)
+        ])
         let add = NSButton()
-        configureCompactButton(add, symbol: "plus", label: "新建笔记（⌘N）", action: #selector(newNotePressed))
-        let spacer = LibraryWindowDragHandle()
-        let header = NSStackView(views: [tab, add, spacer, commandButton])
+        configureCompactButton(add, symbol: "plus", label: "新标签页（⌘T）", action: #selector(newDocumentTabPressed))
+        add.identifier = NSUserInterfaceItemIdentifier("LibraryNewTab")
+        let header = NSStackView(views: [scroll, add, commandButton])
         header.spacing = 6
         header.alignment = .centerY
-        tab.widthAnchor.constraint(lessThanOrEqualTo: header.widthAnchor, multiplier: 0.7).isActive = true
-        spacer.widthAnchor.constraint(greaterThanOrEqualToConstant: 4).isActive = true
+        header.distribution = .fill
+        updateDocumentTabBar()
         return header
     }
+
+    private func updateDocumentTabBar() {
+        let active = activeDocumentTab.id
+        let signature = documentTabs.map { "\($0.id):\($0.title):\($0.isDirty):\($0.saveFailed):\($0.id == active)" }.joined(separator: "|")
+        guard signature != tabBarSignature else { return }
+        tabBarSignature = signature
+        documentTabsStack.arrangedSubviews.forEach { documentTabsStack.removeArrangedSubview($0); $0.removeFromSuperview() }
+        for tab in documentTabs {
+            let view = LibraryDocumentTabView(tab: tab, selected: tab.id == active)
+            view.onSelect = { [weak self] in self?.activateDocumentTab(tab.id) }
+            view.onClose = { [weak self] in self?.closeDocumentTab(tab.id) }
+            view.onCloseOthers = { [weak self] in
+                guard let self else { return }
+                for id in self.documentTabs.map(\.id) where id != tab.id { self.closeDocumentTab(id) }
+            }
+            documentTabsStack.addArrangedSubview(view)
+        }
+        documentTabsStack.layoutSubtreeIfNeeded()
+        if let selectedView = documentTabsStack.arrangedSubviews.first(where: { ($0 as? LibraryDocumentTabView)?.tabID == active }) {
+            selectedView.scrollToVisible(selectedView.bounds)
+        }
+    }
+
+    private func captureActiveDocumentTab() {
+        guard !isLoadingInitialNote else { return }
+        editorTextView.breakUndoCoalescing()
+        let tab = activeDocumentTab
+        tab.url = selectedURL
+        let title = visibleEditorMetadata().title
+        tab.title = title.isEmpty ? (selectedURL == nil ? "新标签页" : "新笔记") : title
+        tab.buffer = editorTextView.attributedString().copy() as? NSAttributedString
+        tab.sourceContents = selectedSourceContents
+        tab.tags = selectedTags
+        tab.selection = editorTextView.selectedRange()
+        tab.scrollOrigin = editorTextView.enclosingScrollView?.contentView.bounds.origin ?? .zero
+        tab.revision = editorContentRevision
+        tab.isDirty = isDirty
+        tab.isSourceMode = isEditorShowingMarkdownSource
+        tab.isCreatingNote = isCreatingNewNote
+        tab.targetDirectory = selectedURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote()
+    }
+
+
+
+    @objc private func newDocumentTabPressed() { newDocumentTabForLibrary() }
+
+    func newDocumentTabForLibrary() {
+        do {
+            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            captureActiveDocumentTab()
+            let tab = LibraryDocumentTab()
+            documentTabs.append(tab)
+            activateDocumentTab(tab.id)
+        } catch { presentErrorAlert(message: "无法打开标签页", details: error.localizedDescription) }
+    }
+
+    private func activateDocumentTab(_ id: UUID) {
+        guard let tab = documentTabs.first(where: { $0.id == id }), tab.id != activeDocumentTab.id else { return }
+        do {
+            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            captureActiveDocumentTab()
+        } catch { presentErrorAlert(message: "无法切换标签页", details: error.localizedDescription); return }
+        cancelActiveNoteLoad()
+        autosaveTask?.cancel()
+        autosaveTask = nil
+        activeDocumentTabID = tab.id
+        editorTextView.documentUndoManager = tab.undoManager
+        isLoadingInitialNote = false
+        selectedURL = tab.url
+        selectedSourceContents = tab.sourceContents
+        selectedTags = tab.tags
+        editorContentRevision = tab.revision
+        isCreatingNewNote = tab.isCreatingNote
+        isDirty = tab.isDirty
+        restoreNoteBrowserSelection(to: tab.url)
+        if let buffer = tab.buffer {
+            tab.undoManager.disableUndoRegistration()
+            applyDocument(title: tab.title == "新标签页" ? "" : tab.title, body: "", tags: tab.tags,
+                          renderedBody: buffer, preservedSelection: tab.selection)
+            tab.undoManager.enableUndoRegistration()
+            isEditorShowingMarkdownSource = tab.isSourceMode
+            editorTextView.isRichText = !tab.isSourceMode
+            isDirty = tab.isDirty
+            setEditorEditable(!activeDocumentIsReadOnly)
+            editorTextView.enclosingScrollView?.contentView.scroll(to: tab.scrollOrigin)
+            if let url = tab.url {
+                refreshNoteLinks(for: url, body: currentEditorMarkdownBody())
+                if !tab.isDirty, let note = sourceCountSnapshot.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }),
+                   !pendingDeletionPaths.contains(url.standardizedFileURL.path) {
+                    if let cached = cachedLoadedNote(for: note) { scheduleCachedNoteValidation(cached, for: note) }
+                    else { reloadSelectedNoteAfterExternalChange(note) }
+                }
+            }
+            else { noteLinksView.update(.empty) }
+            if tab.saveFailed { updateEditorStatus("保存失败，编辑仍保留", kind: .failure) }
+            else { updateEditorStatus("") }
+        } else if let url = tab.url {
+            applyDocument(title: "", body: "", tags: [])
+            let note = sourceCountSnapshot.first { $0.url.standardizedFileURL == url.standardizedFileURL }
+                ?? NoteSearchResult(url: url, title: tab.title, snippet: "", modifiedAt: Date())
+            isActivatingDocumentTab = true
+            load(note: note)
+            isActivatingDocumentTab = false
+        } else {
+            tab.isCreatingNote = true
+            isCreatingNewNote = true
+            applyDocument(title: "", body: "", tags: [])
+            isDirty = false
+            setEditorEditable(true)
+            noteLinksView.update(.empty)
+            updateEditorStatus("")
+        }
+        updateDocumentTabBar()
+        updateToolbarActionState()
+        window?.makeFirstResponder(editorTextView)
+    }
+
+    private func prepareDocumentTab(for note: NoteSearchResult) -> Bool {
+        guard !isActivatingDocumentTab else { return false }
+        if let existing = documentTabs.first(where: { $0.url?.standardizedFileURL == note.url.standardizedFileURL }),
+           existing.id != activeDocumentTab.id {
+            activateDocumentTab(existing.id)
+            return true
+        }
+        let active = activeDocumentTab
+        if active.url?.standardizedFileURL != note.url.standardizedFileURL {
+            captureActiveDocumentTab()
+            if active.isDirty { retainedSavingTabs[active.id] = active }
+            let replacement = LibraryDocumentTab(url: note.url, title: note.title)
+            let index = documentTabs.firstIndex { $0.id == active.id } ?? 0
+            documentTabs[index] = replacement
+            activeDocumentTabID = replacement.id
+        }
+        editorTextView.documentUndoManager = activeDocumentTab.undoManager
+        activeDocumentTab.url = note.url
+        activeDocumentTab.title = note.title
+        updateDocumentTabBar()
+        return false
+    }
+
+    func openNoteInNewTabForLibrary(at url: URL, activate: Bool = true) {
+        if let existing = documentTabs.first(where: { $0.url?.standardizedFileURL == url.standardizedFileURL }) {
+            if activate { activateDocumentTab(existing.id) }
+            return
+        }
+        captureActiveDocumentTab()
+        let note = sourceCountSnapshot.first { $0.url.standardizedFileURL == url.standardizedFileURL }
+        let tab = LibraryDocumentTab(url: url, title: note?.title ?? url.deletingPathExtension().lastPathComponent)
+        documentTabs.append(tab)
+        if activate { activateDocumentTab(tab.id) }
+        else { updateDocumentTabBar() }
+    }
+
+    @objc private func openContextNoteInNewTab(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        openNoteInNewTabForLibrary(at: url, activate: sender.tag != 1)
+    }
+
+    func closeActiveDocumentTabForLibrary() { closeDocumentTab(activeDocumentTab.id) }
+
+    private func closeDocumentTab(_ id: UUID) {
+        guard let tab = documentTabs.first(where: { $0.id == id }) else { return }
+        if tab.id == activeDocumentTab.id { captureActiveDocumentTab() }
+        if tab.isDirty {
+            tab.closeAfterSave = true
+            tab.saveFailed = false
+            retainedSavingTabs[tab.id] = tab
+            if !backgroundAutosaveIsActive { enqueueBackgroundAutosave(for: tab) }
+            return
+        }
+        removeDocumentTab(id)
+    }
+
+    private func removeDocumentTab(_ id: UUID) {
+        guard let index = documentTabs.firstIndex(where: { $0.id == id }) else { return }
+        let wasActive = activeDocumentTab.id == id
+        if documentTabs.count == 1 { documentTabs.append(LibraryDocumentTab()) }
+        if wasActive {
+            let next = documentTabs[index + 1 < documentTabs.count ? index + 1 : index - 1]
+            activateDocumentTab(next.id)
+        }
+        documentTabs.removeAll { $0.id == id }
+        updateDocumentTabBar()
+    }
+
+    func selectAdjacentDocumentTabForLibrary(_ delta: Int) {
+        let index = documentTabs.firstIndex { $0.id == activeDocumentTab.id } ?? 0
+        let next = (index + delta + documentTabs.count) % documentTabs.count
+        activateDocumentTab(documentTabs[next].id)
+    }
+
+    private var activeDocumentIsReadOnly: Bool { selectedURL.map(isTrashURL) ?? false }
+    var activeDocumentURLForLibrary: URL? { selectedURL }
+    var openDocumentURLsForLibrary: [URL] { documentTabs.compactMap(\.url) }
+    var documentTabCountForLibrary: Int { documentTabs.count }
 
     private func rebuildFolderShortcuts() {
         let previous = folderShortcutStack.arrangedSubviews.compactMap { ($0 as? LibraryFolderShortcutButton)?.folderURL }
@@ -2521,7 +2744,7 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        let stack = NSStackView(views: [folderNavigationRow, listContainer])
+        let stack = NSStackView(views: [folderNavigationRow, sidebarSearchPanel, listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
@@ -2780,7 +3003,8 @@ final class LibraryWindowController: NSWindowController,
         searchField.setAccessibilityLabel(LibraryCopy.searchNotes)
         searchField.font = .systemFont(ofSize: 13)
         searchField.delegate = self
-        searchField.isBordered = true
+        searchField.isBordered = false
+        searchField.isBezeled = true
         searchField.bezelStyle = .roundedBezel
         searchField.focusRingType = .default
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -2968,6 +3192,7 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.isAutomaticTextReplacementEnabled = false
         editorTextView.isContinuousSpellCheckingEnabled = noteStore.spellCheckingEnabled
         editorTextView.allowsUndo = true
+        editorTextView.documentUndoManager = activeDocumentTab.undoManager
         editorTextView.font = theme.bodyFont
         editorTextView.backgroundColor = .clear
         editorTextView.drawsBackground = false
@@ -3879,7 +4104,7 @@ final class LibraryWindowController: NSWindowController,
         cancelActiveSearchResultReload()
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let allNotes = allNotesSnapshot ?? sourceCountSnapshot
-        searchScopeControl.isHidden = query.isEmpty
+        searchScopeControl.isHidden = query.isEmpty && !sidebarShowsSearchForLibrary
         let previousRows = listRows
         notes = query.isEmpty
             ? notesForSelectedScope(limit: Self.noteListResultLimit, allNotes: allNotes)
@@ -3897,7 +4122,7 @@ final class LibraryWindowController: NSWindowController,
            let row = rowIndex(for: preferredPath) {
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             noteToLoad = note(at: row)
-        } else if loadFirstIfNeeded,
+        } else if loadFirstIfNeeded, !isCreatingNewNote,
                   let firstNoteRow = listRows.firstIndex(where: { $0.note != nil }) {
             tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
             noteToLoad = note(at: firstNoteRow)
@@ -3909,7 +4134,7 @@ final class LibraryWindowController: NSWindowController,
         synchronizeGallerySelectionFromTable()
         stabilizeVisualQASelectionIfNeeded()
 
-        if loadFirstIfNeeded, let noteToLoad {
+        if loadFirstIfNeeded, !isCreatingNewNote, let noteToLoad {
             load(note: noteToLoad)
         }
         if refreshCounts {
@@ -4024,7 +4249,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func updateNoteListHeader(query: String) {
         searchButton.contentTintColor = query.isEmpty ? .secondaryLabelColor : .controlAccentColor
-        searchButton.toolTip = query.isEmpty ? "搜索笔记（⌘F）" : "搜索：\(query)"
+        searchButton.toolTip = query.isEmpty ? "搜索笔记（⇧⌘F）" : "搜索：\(query)"
         refreshFolderShortcutSelection()
         let title = query.isEmpty
             ? noteListTitle(for: selectedScope)
@@ -5601,6 +5826,9 @@ final class LibraryWindowController: NSWindowController,
 
     private func handleGalleryKeyCommand(_ command: LibraryNoteKeyCommand) -> Bool {
         switch command {
+        case .openInNewTab:
+            synchronizeTableSelectionFromGallery()
+            return handleNoteListKeyCommand(.openInNewTab)
         case .open:
             guard !galleryCollectionView.selectionIndexPaths.isEmpty else { return false }
             openSelectedGalleryNoteInList()
@@ -5626,6 +5854,7 @@ final class LibraryWindowController: NSWindowController,
         }
 
         if object === searchField {
+            guard (searchField.currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }
             scheduleSearchReloadFromTyping()
             return
         }
@@ -5664,7 +5893,7 @@ final class LibraryWindowController: NSWindowController,
 
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
             _ = clearSearchFromKeyboard()
-            searchPopover.performClose(nil)
+            sidebarSearchQuery = ""
             window?.makeFirstResponder(searchButton)
             return true
         }
@@ -5704,6 +5933,8 @@ final class LibraryWindowController: NSWindowController,
             let metadata = visibleEditorMetadata()
             titleField.stringValue = metadata.title
             documentTabTitle.stringValue = metadata.title.isEmpty ? "新笔记" : metadata.title
+            activeDocumentTab.title = documentTabTitle.stringValue
+            updateDocumentTabBar()
             updateWordCount(in: metadata.body)
             layoutEditorStatusLabel()
             libraryUserDidEdit()
@@ -5819,6 +6050,10 @@ final class LibraryWindowController: NSWindowController,
     private func newNotePressed() {
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            captureActiveDocumentTab()
+            let tab = LibraryDocumentTab()
+            documentTabs.append(tab)
+            activateDocumentTab(tab.id)
             if noteListViewMode == .gallery {
                 noteListViewMode = .list
                 noteStore.libraryNoteViewModeRawValue = LibraryNoteViewMode.list.rawValue
@@ -5885,13 +6120,63 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    func findInCurrentDocumentForLibrary() {
+        editorTextView.usesFindBar = true
+        editorTextView.isIncrementalSearchingEnabled = true
+        window?.makeFirstResponder(editorTextView)
+        let sender = NSMenuItem()
+        sender.tag = NSTextFinder.Action.showFindInterface.rawValue
+        editorTextView.performTextFinderAction(sender)
+    }
+
     func focusSearchForLibrary() {
-        guard searchButton.window != nil else { return }
-        searchPopover.animates = !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-        if !searchPopover.isShown {
-            searchPopover.show(relativeTo: searchButton.bounds, of: searchButton, preferredEdge: .maxY)
+        setSidebarVisibleForLibrary(true)
+        if !sidebarShowsSearchForLibrary {
+            sidebarShowsSearchForLibrary = true
+            searchScopeControl.selectedSegment = 1
+            searchScopeControl.isHidden = false
+            folderNavigationRow.isHidden = true
+            sidebarSearchPanel.isHidden = false
+            filesModeButton.contentTintColor = .secondaryLabelColor
+            searchButton.contentTintColor = .controlAccentColor
+            if searchField.stringValue != sidebarSearchQuery {
+                searchField.stringValue = sidebarSearchQuery
+                controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: searchField))
+            }
         }
-        searchField.window?.makeFirstResponder(searchField)
+        window?.contentView?.layoutSubtreeIfNeeded()
+        window?.makeFirstResponder(searchField)
+    }
+
+    @objc private func showFilesPressed() {
+        setSidebarVisibleForLibrary(true)
+        sidebarSearchQuery = searchField.stringValue
+        sidebarShowsSearchForLibrary = false
+        sidebarSearchPanel.isHidden = true
+        folderNavigationRow.isHidden = false
+        filesModeButton.contentTintColor = .controlAccentColor
+        searchButton.contentTintColor = .secondaryLabelColor
+        _ = clearSearchFromKeyboard()
+        window?.makeFirstResponder(tableView)
+    }
+
+    @objc private func toggleSidebarPressed() { toggleSidebarForLibrary() }
+
+    @discardableResult
+    func toggleSidebarForLibrary() -> Bool {
+        setSidebarVisibleForLibrary(noteListSplitViewItem?.isCollapsed == true)
+        return noteListSplitViewItem?.isCollapsed == false
+    }
+
+    private func setSidebarVisibleForLibrary(_ visible: Bool) {
+        guard let item = noteListSplitViewItem else { return }
+        item.isCollapsed = !visible
+        filesModeButton.isHidden = !visible
+        searchButton.isHidden = !visible
+        sidebarToggleButton.toolTip = visible ? "收起侧栏（⌃⌘S）" : "展开侧栏（⌃⌘S）"
+        sidebarToggleButton.setAccessibilityLabel(sidebarToggleButton.toolTip)
+        librarySplitView?.adjustSubviews()
+        if !visible { window?.makeFirstResponder(editorTextView) }
     }
 
     @objc private func searchPressed() { focusSearchForLibrary() }
@@ -5913,6 +6198,10 @@ final class LibraryWindowController: NSWindowController,
 
     private func handleNoteListKeyCommand(_ command: LibraryNoteKeyCommand) -> Bool {
         switch command {
+        case .openInNewTab:
+            guard let url = selectedMarkdownFileURLForLibrary() else { return false }
+            openNoteInNewTabForLibrary(at: url)
+            return true
         case .open:
             guard selectedURL != nil else { return false }
             openSelectedInSeparateWindow()
@@ -6138,7 +6427,6 @@ final class LibraryWindowController: NSWindowController,
     private func loadFocusedNoteListResultFromSearch() -> Bool {
         guard selectNoteListRowIfNeeded() else { return false }
         loadSelectedRow()
-        searchPopover.performClose(nil)
         editorTextView.window?.makeFirstResponder(editorTextView)
         return true
     }
@@ -6454,6 +6742,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func load(note: NoteSearchResult) {
+        if prepareDocumentTab(for: note) { return }
         isLoadingInitialNote = false
         persistedLaunchFallbackURL = nil
         isCreatingNewNote = false
@@ -6579,7 +6868,7 @@ final class LibraryWindowController: NSWindowController,
             let fallbackURL = noteLoadFallbackURL
             noteLoadFallbackURL = nil
             setSelectedURLForLibrary(fallbackURL)
-            setEditorEditable(selectedScope != .trash)
+            setEditorEditable(!activeDocumentIsReadOnly)
             restoreNoteBrowserSelection(to: fallbackURL)
             updateToolbarActionState()
             presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
@@ -6597,7 +6886,7 @@ final class LibraryWindowController: NSWindowController,
     ) {
         setSelectedURLForLibrary(note.url)
         selectedSourceContents = cached.loaded.sourceContents
-        setEditorEditable(selectedScope != .trash)
+        setEditorEditable(!activeDocumentIsReadOnly)
 
         let preservedSelection = preservingEditorSelection ? editorTextView.selectedRange() : nil
         if preservingEditorSelection,
@@ -6632,6 +6921,7 @@ final class LibraryWindowController: NSWindowController,
             }
         }
 
+        editorTextView.undoManager?.removeAllActions()
         applyDocument(
             title: cached.loaded.title,
             body: cached.loaded.body,
@@ -6782,6 +7072,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func setSelectedURLForLibrary(_ nextURL: URL?) {
         selectedURL = nextURL
+        activeDocumentTab.url = nextURL
     }
 
     private func applyDocument(
@@ -6799,6 +7090,8 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.markdownPasteTheme = theme
         titleField.stringValue = title
         documentTabTitle.stringValue = title.isEmpty ? "新笔记" : title
+        activeDocumentTab.title = title.isEmpty ? (selectedURL == nil ? "新标签页" : "新笔记") : title
+        updateDocumentTabBar()
         selectedTags = tags
         let unifiedMarkdown = MarkdownEditorDocument.composeEditorText(
             title: title,
@@ -7159,10 +7452,13 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func markDirty() {
-        guard !suppressEditorChanges, selectedScope != .trash else { return }
+        guard !suppressEditorChanges, !activeDocumentIsReadOnly else { return }
         editorContentRevision &+= 1
         let becameDirty = !isDirty
         isDirty = true
+        activeDocumentTab.isDirty = true
+        activeDocumentTab.saveFailed = false
+        updateDocumentTabBar()
         if becameDirty {
             updateToolbarActionState()
         }
@@ -7183,40 +7479,42 @@ final class LibraryWindowController: NSWindowController,
     private func autosaveCurrentNote() {
         autosaveTask?.cancel()
         autosaveTask = nil
-        guard isDirty, selectedScope != .trash else { return }
+        guard isDirty, !activeDocumentIsReadOnly else { return }
 
         enqueueBackgroundAutosave()
     }
 
     private func enqueueBackgroundAutosave() {
+        captureActiveDocumentTab()
+        let tab = activeDocumentTab
+        retainedSavingTabs[tab.id] = tab
         if backgroundAutosaveIsActive {
             backgroundAutosaveNeedsLatest = true
             return
         }
-        let editorSnapshot: LibraryBackgroundEditorSnapshot
-        if isEditorShowingMarkdownSource {
-            editorSnapshot = LibraryBackgroundEditorSnapshot(
-                sourceMarkdown: editorTextView.string,
-                theme: theme
-            )
-        } else {
-            editorSnapshot = LibraryBackgroundEditorSnapshot(
-                attributedMarkdown: editorTextView.attributedString(),
-                theme: theme
-            )
-        }
+        enqueueBackgroundAutosave(for: tab)
+    }
 
+    private func enqueueBackgroundAutosave(for tab: LibraryDocumentTab) {
+        guard !backgroundAutosaveIsActive, tab.isDirty, let buffer = tab.buffer else { return }
+        let editorSnapshot: LibraryBackgroundEditorSnapshot
+        if tab.isSourceMode {
+            editorSnapshot = LibraryBackgroundEditorSnapshot(sourceMarkdown: buffer.string, theme: theme)
+        } else {
+            editorSnapshot = LibraryBackgroundEditorSnapshot(attributedMarkdown: buffer, theme: theme)
+        }
         backgroundAutosaveGeneration &+= 1
         backgroundAutosaveIsActive = true
+        backgroundSavingTab = tab
+        retainedSavingTabs[tab.id] = tab
         let generation = backgroundAutosaveGeneration
-        let editorRevision = editorContentRevision
-        let previousURL = selectedURL
-        let tags = selectedTags
-        let targetDirectory = previousURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote()
-        let updatesInPlace = previousURL.map {
-            externallyOpenedDocumentsByPath[$0.path] != nil
-        } ?? false
-        let expectedContents = selectedSourceContents
+        let documentID = tab.id
+        let editorRevision = tab.revision
+        let previousURL = tab.url
+        let tags = tab.tags
+        let targetDirectory = tab.targetDirectory ?? noteStore.notesDirectory
+        let updatesInPlace = previousURL.map { externallyOpenedDocumentsByPath[$0.path] != nil } ?? false
+        let expectedContents = tab.sourceContents
         backgroundAutosaveActiveEditorRevision = editorRevision
         backgroundAutosaveActivePreviousURL = previousURL
         cancelSourceSnapshotValidation()
@@ -7233,6 +7531,7 @@ final class LibraryWindowController: NSWindowController,
                 let title = document.title
                 let snapshot = LibraryBackgroundSaveSnapshot(
                     generation: generation,
+                    documentID: documentID,
                     editorRevision: editorRevision,
                     previousURL: previousURL,
                     title: title,
@@ -7302,36 +7601,49 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func finishBackgroundAutosave(generation: Int) {
-        let boxedResult = backgroundAutosaveResultStore.remove(generation: generation)
-        guard let boxedResult else { return }
+        guard let boxedResult = backgroundAutosaveResultStore.remove(generation: generation) else { return }
+        let completedTab = backgroundSavingTab
+        backgroundSavingTab = nil
         backgroundAutosaveIsActive = false
         backgroundAutosaveActiveEditorRevision = nil
         backgroundAutosaveActivePreviousURL = nil
-
+        backgroundAutosaveNeedsLatest = false
         switch boxedResult.result {
         case .success(let success):
             applyBackgroundSaveSuccess(success)
-            if backgroundAutosaveNeedsLatest, isDirty {
-                backgroundAutosaveNeedsLatest = false
-                enqueueBackgroundAutosave()
-            } else {
-                backgroundAutosaveNeedsLatest = false
+            if let tab = completedTab {
+                if tab.id == activeDocumentTab.id { captureActiveDocumentTab() }
+                if !tab.isDirty {
+                    retainedSavingTabs.removeValue(forKey: tab.id)
+                    if tab.closeAfterSave { removeDocumentTab(tab.id) }
+                }
             }
         case .failure:
-            backgroundAutosaveNeedsLatest = false
-            updateEditorStatus(
-                "自动保存失败，编辑仍保留",
-                kind: .failure,
-                toolTip: "按 Command-S 重试保存",
-                announcesChange: true
-            )
+            if let tab = completedTab {
+                tab.saveFailed = true
+                tab.closeAfterSave = false
+                if !documentTabs.contains(where: { $0.id == tab.id }) { documentTabs.append(tab) }
+            }
+            updateEditorStatus("“\(completedTab?.title ?? "笔记")”保存失败，编辑仍保留", kind: .failure,
+                              toolTip: "打开该标签页，按 Command-S 重试", announcesChange: true)
             NSSound.beep()
+        }
+        updateDocumentTabBar()
+        if let next = retainedSavingTabs.values.first(where: { $0.isDirty && !$0.saveFailed }) {
+            enqueueBackgroundAutosave(for: next)
         }
         flushDeferredFileSystemChangesAfterAutosave()
     }
 
     private func applyBackgroundSaveSuccess(_ success: LibraryBackgroundSaveSuccess) {
         let snapshot = success.snapshot
+        if let tab = retainedSavingTabs[snapshot.documentID] ?? documentTabs.first(where: { $0.id == snapshot.documentID }) {
+            tab.url = success.savedURL
+            tab.sourceContents = success.sourceContents
+            tab.isCreatingNote = false
+            tab.saveFailed = false
+            if tab.revision == snapshot.editorRevision { tab.isDirty = false }
+        }
         let changedURLs = [snapshot.previousURL, success.savedURL].compactMap { $0 }
         recordInternalFileSystemChanges(for: changedURLs)
         if let previousURL = snapshot.previousURL {
@@ -7355,7 +7667,8 @@ final class LibraryWindowController: NSWindowController,
            }) {
             externallyOpenedDocumentsByPath[success.savedURL.standardizedFileURL.path] = recoveryNote
         }
-        let isCurrentDocument = selectedScope != .trash
+        let isCurrentDocument = activeDocumentTab.id == snapshot.documentID
+            && !activeDocumentIsReadOnly
             && selectedURL?.path == snapshot.previousURL?.path
         guard isCurrentDocument else {
             onSave(success.savedURL)
@@ -7402,20 +7715,21 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func saveCurrentNoteIfNeeded(allowBackgroundHandoff: Bool = false) throws {
+        if !allowBackgroundHandoff {
+            drainBackgroundAutosaves()
+            if retainedSavingTabs.values.contains(where: { $0.isDirty && $0.saveFailed }) {
+                throw CocoaError(.fileWriteUnknown)
+            }
+        }
         guard isDirty else { return }
-        if allowBackgroundHandoff, handOffCurrentEditorToBackgroundAutosave() {
+        if allowBackgroundHandoff {
+            captureActiveDocumentTab()
+            activeDocumentTab.saveFailed = false
+            retainedSavingTabs[activeDocumentTab.id] = activeDocumentTab
+            autosaveCurrentNote()
             return
         }
         _ = try saveCurrentNote(force: false)
-    }
-
-    private func handOffCurrentEditorToBackgroundAutosave() -> Bool {
-        if !backgroundAutosaveIsActive {
-            autosaveCurrentNote()
-        }
-        return backgroundAutosaveIsActive
-            && backgroundAutosaveActiveEditorRevision == editorContentRevision
-            && backgroundAutosaveActivePreviousURL?.path == selectedURL?.path
     }
 
     private func serializedEditorMarkdown() -> String {
@@ -7456,7 +7770,6 @@ final class LibraryWindowController: NSWindowController,
         if announcesChange {
             NSAccessibility.post(element: statusLabel, notification: .valueChanged)
         }
-        layoutEditorStatusLabel()
     }
 
     private func layoutEditorStatusLabel() {
@@ -7480,7 +7793,7 @@ final class LibraryWindowController: NSWindowController,
     private func saveCurrentNote(force: Bool) throws -> URL? {
         drainBackgroundAutosaves()
         guard force || isDirty else { return selectedURL }
-        guard selectedScope != .trash else { return selectedURL }
+        guard !activeDocumentIsReadOnly else { return selectedURL }
         autosaveTask?.cancel()
         autosaveTask = nil
         cancelSourceSnapshotValidation()
@@ -7530,6 +7843,9 @@ final class LibraryWindowController: NSWindowController,
         activeSearchSession = nil
         isCreatingNewNote = false
         isDirty = false
+        captureActiveDocumentTab()
+        activeDocumentTab.saveFailed = false
+        updateDocumentTabBar()
         let savedAt = (try? FileManager.default.attributesOfItem(atPath: savedURL.path)[.modificationDate])
             as? Date ?? Date()
         let sourceCountsChanged = updateSourceCountSnapshotAfterSave(
@@ -7679,6 +7995,12 @@ final class LibraryWindowController: NSWindowController,
         let destinationBySourcePath = Dictionary(uniqueKeysWithValues: zip(sourceURLs, destinationURLs).map {
             ($0.standardizedFileURL.path, $1.standardizedFileURL)
         })
+        for tab in documentTabs {
+            if let path = tab.url?.standardizedFileURL.path, let destination = destinationBySourcePath[path] {
+                tab.url = destination
+                tab.targetDirectory = destination.deletingLastPathComponent()
+            }
+        }
         for (sourcePath, destinationURL) in destinationBySourcePath {
             guard let externalNote = externallyOpenedDocumentsByPath.removeValue(forKey: sourcePath),
                   !isInsideConfiguredLibraryRoot(destinationURL) else { continue }
@@ -7694,6 +8016,11 @@ final class LibraryWindowController: NSWindowController,
     private func remapSourceSnapshotFolder(from sourceURL: URL, to destinationURL: URL) {
         let sourcePath = sourceURL.standardizedFileURL.path
         let destination = destinationURL.standardizedFileURL
+        for tab in documentTabs {
+            guard let path = tab.url?.standardizedFileURL.path, path.hasPrefix(sourcePath + "/") else { continue }
+            tab.url = destination.appendingPathComponent(String(path.dropFirst(sourcePath.count + 1)))
+            tab.targetDirectory = tab.url?.deletingLastPathComponent()
+        }
         sourceCountSnapshot = sourceCountSnapshot.map { note in
             let notePath = note.url.standardizedFileURL.path
             guard notePath.hasPrefix(sourcePath + "/") else { return note }
@@ -7804,7 +8131,7 @@ final class LibraryWindowController: NSWindowController,
             removeNotesFromSourceSnapshot(at: urls)
         }
         activeSearchSession = nil
-        clearCurrentDocumentAfterRemoval()
+        discardDocumentTabs(at: urls)
         rebuildSourceRows(includeTags: sourceTagsLoaded)
         reloadNotes(loadFirstIfNeeded: true, mutationAnimation: .deletion)
     }
@@ -7836,7 +8163,7 @@ final class LibraryWindowController: NSWindowController,
         } else {
             removeNotesFromSourceSnapshot(at: urls)
         }
-        clearCurrentDocumentAfterRemoval()
+        discardDocumentTabs(at: urls)
         reloadNotes(
             loadFirstIfNeeded: true,
             refreshCounts: false,
@@ -8036,6 +8363,7 @@ final class LibraryWindowController: NSWindowController,
             thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: standardizedURL)
         )
 
+        if prepareDocumentTab(for: note) { return }
         externallyOpenedDocumentsByPath[standardizedURL.path] = note
         sourceCountSnapshot = includingExternallyOpenedDocuments(in: sourceCountSnapshot)
         selectedScope = .folder(standardizedURL.deletingLastPathComponent())
@@ -8112,7 +8440,10 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    private var capturedContextActionURLs: [URL]?
+
     func selectedMarkdownFileURLsForLibrary() -> [URL] {
+        if let capturedContextActionURLs { return capturedContextActionURLs }
         var urls: [URL] = []
         var seenPaths = Set<String>()
 
@@ -8439,6 +8770,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func setSourceListVisibleForLibrary(_ isVisible: Bool, animated: Bool) -> Bool {
+        if isVisible && sidebarShowsSearchForLibrary { showFilesPressed() }
         sourcePopover.animates = animated && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         if isVisible, sourceButton.window != nil, !sourcePopover.isShown {
             sourcePopover.show(relativeTo: sourceButton.bounds, of: sourceButton, preferredEdge: .maxY)
@@ -8802,6 +9134,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func renameLibraryFolder(at folderURL: URL, to name: String) throws -> URL {
+        try saveCurrentNoteIfNeeded()
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
         recordInternalFileSystemChanges(for: [folderURL, renamedURL])
         remapSourceSnapshotFolder(from: folderURL, to: renamedURL)
@@ -8822,6 +9155,10 @@ final class LibraryWindowController: NSWindowController,
             throw LibraryActionError.noFolderSelected
         }
 
+        try saveCurrentNoteIfNeeded()
+        let openURLsInFolder = documentTabs.compactMap(\.url).filter {
+            $0.standardizedFileURL.path.hasPrefix(folderURL.standardizedFileURL.path + "/")
+        }
         let folderPath = folderURL.standardizedFileURL.path
         let notesInFolderByPath = Dictionary(uniqueKeysWithValues: sourceCountSnapshot.compactMap { note -> (String, NoteSearchResult)? in
             let notePath = note.url.standardizedFileURL.path
@@ -8854,7 +9191,7 @@ final class LibraryWindowController: NSWindowController,
         activeSearchSession = nil
         reloadPersistedSourceDisclosureState()
         selectedScope = .folder(noteStore.notesDirectory)
-        clearCurrentDocumentAfterRemoval()
+        discardDocumentTabs(at: openURLsInFolder)
         projectSourceFolderTreeRows(LibraryFolderTreeProjection.removing(
             folderURL,
             from: sourceFolderTreeRows
@@ -9032,7 +9369,26 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    private func discardDocumentTabs(at urls: [URL]) {
+        let paths = Set(urls.map { $0.standardizedFileURL.path })
+        let activeID = activeDocumentTab.id
+        documentTabs.removeAll { tab in
+            tab.id != activeID && tab.url.map { paths.contains($0.standardizedFileURL.path) } == true
+        }
+        if let selectedURL, paths.contains(selectedURL.standardizedFileURL.path) {
+            clearCurrentDocumentAfterRemoval()
+        }
+        updateDocumentTabBar()
+    }
+
     private func clearCurrentDocumentAfterRemoval() {
+        let oldID = activeDocumentTab.id
+        if let index = documentTabs.firstIndex(where: { $0.id == oldID }) {
+            let blank = LibraryDocumentTab()
+            documentTabs[index] = blank
+            activeDocumentTabID = blank.id
+            editorTextView.documentUndoManager = blank.undoManager
+        }
         cancelActiveNoteLoad()
         isLoadingInitialNote = false
         isCreatingNewNote = false
@@ -9041,7 +9397,7 @@ final class LibraryWindowController: NSWindowController,
         isDirty = false
         updateEditorCreatedDate(nil)
         updateEditorStatus("")
-        setEditorEditable(selectedScope != .trash)
+        setEditorEditable(!activeDocumentIsReadOnly)
         applyDocument(title: "", body: "", tags: [])
     }
 
@@ -9590,7 +9946,6 @@ final class LibraryWindowController: NSWindowController,
                 suppressSelectionChanges = true
                 tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
                 suppressSelectionChanges = false
-                load(note: clickedNote)
             } catch {
                 suppressSelectionChanges = false
                 presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
@@ -9598,7 +9953,40 @@ final class LibraryWindowController: NSWindowController,
             }
         }
 
-        return makeNoteContextMenu()
+        let menu = makeNoteContextMenu()
+        if selectedScope != .trash {
+            let item = NSMenuItem(title: "在新标签页中打开", action: #selector(openContextNoteInNewTab(_:)), keyEquivalent: "")
+            item.target = self
+            item.representedObject = clickedNote.url
+            menu.insertItem(item, at: 0)
+            let background = NSMenuItem(title: "在后台标签页中打开", action: #selector(openContextNoteInNewTab(_:)), keyEquivalent: "")
+            background.target = self
+            background.representedObject = clickedNote.url
+            background.tag = 1
+            menu.insertItem(background, at: 1)
+            menu.insertItem(.separator(), at: 2)
+        }
+        captureNoteMenuActions(in: menu, urls: selectedMarkdownFileURLsForLibrary())
+        return menu
+    }
+
+    private func captureNoteMenuActions(in menu: NSMenu, urls: [URL]) {
+        menu.autoenablesItems = false
+        for (index, item) in menu.items.enumerated() {
+            if let submenu = item.submenu {
+                captureNoteMenuActions(in: submenu, urls: urls)
+                continue
+            }
+            guard let action = item.action else { continue }
+            let captured = LibraryContextMenuItem(original: item) { [weak self] sender in
+                guard let self else { return }
+                self.capturedContextActionURLs = urls
+                defer { self.capturedContextActionURLs = nil }
+                NSApp.sendAction(action, to: item.target, from: sender)
+            }
+            menu.removeItem(item)
+            menu.insertItem(captured, at: index)
+        }
     }
 
     private func makeNoteContextMenu() -> NSMenu {
@@ -10542,7 +10930,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applyParagraphKind(_ target: MarkdownParagraphKind, togglesOffWhenMatching: Bool) {
-        guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
+        guard !activeDocumentIsReadOnly, let storage = editorTextView.textStorage else { return }
         let ranges = selectedLineRanges()
         let currentKinds = ranges.map { MarkdownRichTextCodec.paragraphKind(at: $0, in: storage) }
         let allMatchTarget = currentKinds.allSatisfy { sameParagraphCategory($0, target) }
@@ -10691,7 +11079,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func setHighlightForLibrary(enabled: Bool) {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               let storage = editorTextView.textStorage,
               editorTextView.selectedRange().length > 0 else { return }
         let selection = editorTextView.selectedRange()
@@ -10732,7 +11120,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func toggleInlineFontTrait(_ trait: NSFontTraitMask) {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
 
         if trait.contains(.italicFontMask) {
             toggleItalicFormatting()
@@ -10851,7 +11239,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func toggleIntAttribute(_ key: NSAttributedString.Key, enabledValue: Int, actionName: String) {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
         let selection = editorTextView.selectedRange()
         if selection.length == 0 {
             var typing = editorTextView.typingAttributes
@@ -10948,7 +11336,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func focusEditorForLibraryAction() {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
         window?.makeFirstResponder(editorTextView)
     }
 
@@ -10990,7 +11378,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func moveMarkdownTableCellSelectionForLibrary(_ direction: MarkdownTableCellDirection) -> Bool {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               editorTextView.selectedRange().length == 0,
               let storage = editorTextView.textStorage else {
             return false
@@ -11084,7 +11472,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func insertTableRowInCurrentMarkdownTableForLibrary() -> Bool {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               editorTextView.selectedRange().length == 0,
               let storage = editorTextView.textStorage else {
             return false
@@ -11146,7 +11534,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     private func deleteCurrentMarkdownTableRowForLibrary() -> Bool {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               editorTextView.selectedRange().length == 0,
               let storage = editorTextView.textStorage else {
             return false
@@ -11208,7 +11596,7 @@ final class LibraryWindowController: NSWindowController,
         atCharacterIndex characterIndex: Int,
         operation: MarkdownTableColumnOperation
     ) -> Bool {
-        guard selectedScope != .trash,
+        guard !activeDocumentIsReadOnly,
               let storage = editorTextView.textStorage else {
             return false
         }
@@ -11696,7 +12084,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func insertLinkForLibrary(label: String, url: String) {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
         let trimmedLabel = label.trimmingCharacters(in: .whitespacesAndNewlines)
         let trimmedURL = url.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedURL.isEmpty else { return }
@@ -11706,7 +12094,7 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func insertAttachmentReferenceForLibrary(from fileURL: URL) throws -> URL {
-        guard selectedScope != .trash else { return fileURL }
+        guard !activeDocumentIsReadOnly else { return fileURL }
         let noteDirectory = targetDirectoryForAttachment()
         let copiedURL = try MarkdownAttachmentStorage.storeFile(fileURL, in: noteDirectory)
         insertStoredAttachmentForLibrary(copiedURL, relativeTo: noteDirectory)
@@ -11754,7 +12142,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func insertMarkdownBlockForLibrary(_ markdown: String, renderingBaseURL: URL? = nil) {
-        guard selectedScope != .trash else { return }
+        guard !activeDocumentIsReadOnly else { return }
         focusEditorForLibraryAction()
         let selection = editorTextView.selectedRange()
         let nsString = editorTextView.string as NSString
@@ -11773,7 +12161,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func replaceSelectionWithRenderedMarkdown(_ markdown: String, renderingBaseURL: URL? = nil) {
-        guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
+        guard !activeDocumentIsReadOnly, let storage = editorTextView.textStorage else { return }
         focusEditorForLibraryAction()
         let selection = editorTextView.selectedRange()
         let rendered = MarkdownRichTextCodec.render(

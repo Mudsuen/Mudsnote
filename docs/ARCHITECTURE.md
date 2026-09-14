@@ -95,7 +95,7 @@ Run `./scripts/agent_context.sh --list` for the executable topic names.
 Several mature files are still deliberate hotspots. Do not read them from top to
 bottom by default:
 
-- `LibraryWindowController.swift` owns the macOS two-pane orchestration, shared icon navigation, and transient folder/tag and search pickers; `Chrome/LibraryPaneSurface.swift` owns native material styling.
+- `LibraryWindowController.swift` owns macOS two-pane orchestration, sidebar file/search modes and document activation. `LibraryDocumentTab.swift` owns each document buffer, stable identity, revision, undo stack and pending-close state; background saves carry that identity and may outlive the visible tab. `Chrome/LibraryDocumentTabView.swift` renders the tab strip, `Chrome/LibraryContextMenuItem.swift` retains captured action targets, and `Chrome/LibraryPaneSurface.swift` owns native material styling. A single visible rich editor restores the active document state.
 - `MarkdownRichEditorTests.swift` contains the serialized macOS integration suite.
 - `MarkdownFileStore.swift` owns the iOS filesystem transaction boundary.
 - `MarkdownPreviewView.swift` owns iOS rendering/editing helpers and presentation.

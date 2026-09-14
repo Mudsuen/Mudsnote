@@ -195,6 +195,198 @@ private func setLibraryEditorDocument(_ controller: LibraryWindowController, tit
 @Suite(.serialized)
 @MainActor
 struct MarkdownRichEditorTests {
+    @Test func documentTabsKeepEditsSeparateAcrossSwitchSaveAndClose() throws {
+        let suite = "workspace-tabs-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let a = try store.saveNewNote(title: "Alpha", body: "Original A")
+        let b = try store.saveNewNote(title: "Beta", body: "Original B")
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.openNoteInNewTabForLibrary(at: a)
+        #expect(controller.selectedMarkdownFileURLForLibrary() == a)
+        setLibraryEditorDocument(controller, body: "Edited A")
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.editorTextView.setSelectedRange(NSRange(location: 3, length: 0))
+        controller.openNoteInNewTabForLibrary(at: b)
+        #expect(controller.selectedMarkdownFileURLForLibrary() == b)
+        #expect(libraryEditorBody(controller) == "Original B")
+        setLibraryEditorDocument(controller, body: "Edited B")
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.openNoteInNewTabForLibrary(at: a)
+        #expect(libraryEditorBody(controller) == "Edited A")
+        #expect(controller.editorTextView.selectedRange().location == 3)
+        #expect(controller.openDocumentURLsForLibrary.filter { $0 == a }.count == 1)
+        controller.flushBackgroundAutosaveForTesting()
+        #expect(try store.loadNote(at: a).body == "Edited A")
+        #expect(try store.loadNote(at: b).body == "Edited B")
+        let before = controller.documentTabCountForLibrary
+        controller.newDocumentTabForLibrary()
+        #expect(controller.documentTabCountForLibrary == before + 1)
+        #expect(controller.selectedMarkdownFileURLForLibrary() == nil)
+        #expect(controller.editorTextView.string.isEmpty)
+        #expect(try FileManager.default.contentsOfDirectory(atPath: store.notesDirectory.path).filter { $0.hasSuffix(".md") }.count == 2)
+        controller.closeActiveDocumentTabForLibrary()
+        #expect(controller.documentTabCountForLibrary == before)
+    }
+
+    @Test func contextOpenInNewTabDoesNotReplaceCurrentDocument() throws {
+        let suite = "workspace-context-tabs-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let a = try store.saveNewNote(title: "Alpha", body: "A")
+        let b = try store.saveNewNote(title: "Beta", body: "B")
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.openNoteInNewTabForLibrary(at: a)
+        var menu: NSMenu?
+        for row in 0..<controller.tableView.numberOfRows {
+            guard let candidate = controller.noteContextMenuForLibrary(row: row),
+                  let item = candidate.items.first(where: { $0.title == "在新标签页中打开" }),
+                  item.representedObject as? URL == b else { continue }
+            menu = candidate
+            break
+        }
+        #expect(controller.activeDocumentURLForLibrary == a)
+        #expect(libraryEditorBody(controller) == "A")
+        let item = try #require(menu?.items.first { $0.title == "在新标签页中打开" })
+        NSApp.sendAction(try #require(item.action), to: item.target, from: item)
+        #expect(controller.activeDocumentURLForLibrary == b)
+        #expect(controller.openDocumentURLsForLibrary.contains(a))
+        #expect(controller.openDocumentURLsForLibrary.contains(b))
+    }
+
+    @Test func documentTabUndoAndBackgroundOpenKeepTheActiveEditor() throws {
+        let suite = "workspace-undo-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let a = try store.saveNewNote(title: "Alpha", body: "A")
+        let b = try store.saveNewNote(title: "Beta", body: "B")
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.openNoteInNewTabForLibrary(at: a)
+        let editor = controller.editorTextView
+        editor.undoManager?.beginUndoGrouping()
+        editor.insertText("1", replacementRange: NSRange(location: editor.string.utf16.count, length: 0))
+        editor.undoManager?.endUndoGrouping()
+        controller.openNoteInNewTabForLibrary(at: b, activate: false)
+        #expect(controller.activeDocumentURLForLibrary == a)
+        #expect(libraryEditorBody(controller) == "A1")
+        controller.openNoteInNewTabForLibrary(at: b)
+        editor.undoManager?.beginUndoGrouping()
+        editor.insertText("2", replacementRange: NSRange(location: editor.string.utf16.count, length: 0))
+        editor.undoManager?.endUndoGrouping()
+        controller.openNoteInNewTabForLibrary(at: a)
+        #expect(editor.undoManager?.canUndo == true)
+        editor.undoManager?.undo()
+        #expect(libraryEditorBody(controller) == "A")
+        controller.openNoteInNewTabForLibrary(at: b)
+        #expect(libraryEditorBody(controller) == "B2")
+        editor.undoManager?.undo()
+        #expect(libraryEditorBody(controller) == "B")
+    }
+
+    @Test func pendingDraftSaveCannotClaimAnotherDraft() async throws {
+        let suite = "workspace-draft-save-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let recorder = BlockingAutosaveRecorder()
+        let controller = LibraryWindowController(noteStore: store, backgroundAutosaveWillPersist: recorder.record,
+            onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { recorder.releaseFirstWrite.signal(); controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.newDocumentTabForLibrary()
+        setLibraryEditorDocument(controller, title: "Draft A", body: "A pending")
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.triggerBackgroundAutosaveForTesting()
+        let started = await withCheckedContinuation { continuation in
+            DispatchQueue.global().async { continuation.resume(returning: recorder.firstWriteStarted.wait(timeout: .now() + 2)) }
+        }
+        #expect(started == .success)
+        controller.newDocumentTabForLibrary()
+        setLibraryEditorDocument(controller, title: "Draft B", body: "B pending")
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        controller.triggerBackgroundAutosaveForTesting()
+        recorder.releaseFirstWrite.signal()
+        await controller.waitForBackgroundAutosaveForTesting()
+        #expect(libraryEditorBody(controller) == "B pending")
+        let documents = try controller.openDocumentURLsForLibrary.map { try store.loadNote(at: $0) }
+        #expect(documents.contains { $0.title == "Draft A" && $0.body == "A pending" })
+        #expect(documents.contains { $0.title == "Draft B" && $0.body == "B pending" })
+        #expect(Set(controller.openDocumentURLsForLibrary).count == 2)
+    }
+
+    @Test func failedDraftCloseRetainsContentForRetry() async throws {
+        let suite = "workspace-save-failure-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.newDocumentTabForLibrary()
+        setLibraryEditorDocument(controller, title: "Keep me", body: "Unsaved body")
+        controller.textDidChange(Notification(name: NSText.didChangeNotification, object: controller.editorTextView))
+        let backup = root.appendingPathComponent("Notes-backup")
+        try FileManager.default.createDirectory(at: store.notesDirectory, withIntermediateDirectories: true)
+        try FileManager.default.moveItem(at: store.notesDirectory, to: backup)
+        try Data("not a directory".utf8).write(to: store.notesDirectory)
+        let count = controller.documentTabCountForLibrary
+        controller.closeActiveDocumentTabForLibrary()
+        await controller.waitForBackgroundAutosaveForTesting()
+        #expect(controller.documentTabCountForLibrary == count)
+        #expect(controller.currentNoteHasUnsavedChangesForLibrary)
+        #expect(libraryEditorBody(controller) == "Unsaved body")
+        try FileManager.default.removeItem(at: store.notesDirectory)
+        try FileManager.default.moveItem(at: backup, to: store.notesDirectory)
+        let saved = try #require(try controller.saveCurrentNoteForLibrary())
+        #expect(try store.loadNote(at: saved).body == "Unsaved body")
+    }
+
+    @Test func contextActionsKeepCapturedTargetsAndTrashTabsStayReadOnly() throws {
+        let suite = "workspace-context-target-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(suite)
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let a = try store.saveNewNote(title: "Alpha", body: "A")
+        let b = try store.saveNewNote(title: "Beta", body: "B")
+        let trash = try store.trashNote(at: store.saveNewNote(title: "Trash", body: "Read only"))
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.openNoteInNewTabForLibrary(at: b)
+        controller.openNoteInNewTabForLibrary(at: a)
+        var targetMenu: NSMenu?
+        for row in 0..<controller.tableView.numberOfRows {
+            let candidate = controller.noteContextMenuForLibrary(row: row)
+            if candidate?.items.first?.representedObject as? URL == b { targetMenu = candidate; break }
+        }
+        controller.openNoteInNewTabForLibrary(at: b)
+        controller.openNoteInNewTabForLibrary(at: a)
+        let pin = try #require(targetMenu?.items.first { $0.title == "置顶笔记" })
+        NSApp.sendAction(try #require(pin.action), to: pin.target, from: pin)
+        #expect(store.isLibraryNotePinned(at: b))
+        #expect(!store.isLibraryNotePinned(at: a))
+        let delete = try #require(targetMenu?.items.first { $0.title == "删除" })
+        NSApp.sendAction(try #require(delete.action), to: delete.target, from: delete)
+        #expect(controller.activeDocumentURLForLibrary == a)
+        #expect(libraryEditorBody(controller) == "A")
+        #expect(!controller.openDocumentURLsForLibrary.contains(b))
+        controller.openNoteInNewTabForLibrary(at: trash)
+        #expect(!controller.editorTextView.isEditable)
+        controller.openNoteInNewTabForLibrary(at: a)
+        #expect(controller.editorTextView.isEditable)
+        controller.openNoteInNewTabForLibrary(at: trash)
+        #expect(!controller.editorTextView.isEditable)
+    }
+
     @Test func boundedNoteProjectionStopsAfterReachingItsLimit() {
         var visited = 0
         let matches = LibraryNoteListProjection.prefix(0..<10_000, limit: 240) { value in
@@ -1233,7 +1425,7 @@ struct MarkdownRichEditorTests {
         let suggestionView = try #require(contentView.allSubviews.first {
             $0.identifier?.rawValue == "LibraryEditorSlashSuggestionPopover"
         })
-        #expect(suggestionView.superview === contentView)
+        #expect(suggestionView.isDescendant(of: contentView))
         #expect(suggestionView.isHidden)
 
         let previousCount = store.listNotes(limit: 20).count
@@ -2705,11 +2897,13 @@ struct MarkdownRichEditorTests {
         let views = try #require(window.contentView).allSubviews
         #expect(views.contains { $0.identifier?.rawValue == "LibraryFolderPicker" })
         #expect(views.contains { $0.identifier?.rawValue == "LibraryQuickMenu" })
-        #expect(controller.searchField.window == nil)
+        #expect(controller.searchField.window === window)
         controller.focusSearchForLibrary()
         #expect(controller.searchField.window != nil)
-        #expect(controller.searchField.window !== window)
-        controller.searchField.window?.close()
+        #expect(controller.searchField.window === window)
+        if let editor = controller.searchField.currentEditor() as? NSTextView {
+            _ = controller.control(controller.searchField, textView: editor, doCommandBy: #selector(NSResponder.cancelOperation(_:)))
+        }
         // The only divider resizes the note list, including widths that the
         // former three-column delegate incorrectly rejected.
         #expect(controller.splitView(split.splitView, constrainMinCoordinate: 0, ofSubviewAt: 0) == 250)
@@ -2826,7 +3020,7 @@ struct MarkdownRichEditorTests {
         #expect(target.state == .on)
         controller.focusSearchForLibrary()
         let fieldEditor = try #require(controller.searchField.currentEditor() as? NSTextView)
-        #expect(controller.searchField.window !== window)
+        #expect(controller.searchField.window === window)
         #expect(controller.control(controller.searchField, textView: fieldEditor,
             doCommandBy: #selector(NSResponder.cancelOperation(_:))))
         #expect((window.firstResponder as? NSView)?.identifier?.rawValue == "LibrarySearchButton")
@@ -8681,7 +8875,7 @@ struct MarkdownRichEditorTests {
         controller.menuNeedsUpdate(moveNoteMenu)
         #expect(moveNoteMenu.items.map(\.title) == ["无可用文件夹"])
         #expect(moveNoteMenu.items.allSatisfy { !$0.isEnabled })
-        #expect(fileMenu.items.first { $0.title == "关闭窗口" }?.keyEquivalent == "w")
+        #expect(fileMenu.items.first { $0.title == "关闭标签页或窗口" }?.keyEquivalent == "w")
 
         let editMenu = try #require(mainMenu.items.first { $0.title == "编辑" }?.submenu)
         #expect(editMenu.items.contains { $0.title == "撤销" && $0.keyEquivalent == "z" })
@@ -8707,8 +8901,8 @@ struct MarkdownRichEditorTests {
         #expect(searchItem.target === controller)
         #expect(searchItem.action == #selector(AppController.focusLibrarySearchFromMainMenu))
         #expect(searchItem.keyEquivalent == "f")
-        #expect(searchItem.keyEquivalentModifierMask == [.command])
-        #expect(viewMenu.items.first { $0.title == "文件夹与标签" }?.keyEquivalentModifierMask == [.command, .control])
+        #expect(searchItem.keyEquivalentModifierMask == [.command, .shift])
+        #expect(viewMenu.items.first { $0.title == "展开或收起侧栏" }?.keyEquivalentModifierMask == [.command, .control])
         let sortMenu = try #require(viewMenu.items.first { $0.title == "排序方式" }?.submenu)
         #expect(sortMenu.items.map(\.title) == ["编辑日期", "创建日期", "标题"])
         #expect(sortMenu.items.allSatisfy {

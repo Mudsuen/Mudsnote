@@ -1,36 +1,31 @@
-# macOS header visual QA
+# macOS document workspace visual QA — 2026-09-14
 
-final result: passed
+Scope: macOS only. The user's Obsidian header reference defines control responsibilities; Flodo defines a restrained backdrop effect. Previous single-title-chip QA is superseded by this review.
 
-Scope: pane-aligned header structure based on the supplied Obsidian crop;
-this is an adaptation to Mudsnote's single-document editor, not a multi-tab feature.
-The reference is dark; the requested light appearance is checked separately.
+## Verified interactions
 
-Compared the supplied reference and the final actual-window capture together.
-Navigation occupies the list side; the current-document title and new-note action
-occupy the editor side. Folder shortcuts remain in one compact row. At 921×613,
-controls and content do not overlap, truncate unexpectedly, or leave extra footer chrome.
-Current title follows folder/note selection. Search opens and Escape closes it.
+The isolated native preview uses synthetic notes and its own defaults/support directories. Actual-window checks covered sidebar collapse/expand, foreground and background right-click tab opening, Command-T empty tabs, Control-Tab switching, Command-F document find, Shift-Command-F sidebar search, and edit/switch/back/undo/save. The last sequence was also checked by reading the saved Markdown; the temporary QA text was gone and the original body remained.
 
-The initial faded-effect preview was rejected as too transparent. Final correction
-uses one full-strength native sidebar effect and tint-only children, preserving
-native blur. Final capture: task visualization `material-review/05-balanced-header.png`.
-Isolated window capture cannot prove desktop compositing; user acceptance of the
-final material remains a subjective review, not implied by this structural QA.
+Tabs have independent buffers, undo managers, selection/scroll state, revisions and save ownership. Right-click actions retain their target URLs even if selection changes. Regression tests include simultaneous unsaved drafts, background open and undo isolation, save-failure close/retry, captured context actions, and trash read-only state. Empty tabs do not create files.
 
-Final `./scripts/verify macos pr`: 315 tests passed in five suites (19.374s).
-Log: `/tmp/mudsnote-obsidian-final-pr.log`. No iOS or production installation.
+## Material and layout
 
-## Flodo follow-up
+Compared real desktop compositing against a synthetic blue/orange/purple/green background with repeated text. Clear Glass exposed too much background detail and lost contrast over dark windows. Fading a native effect to 78% also exposed sharp background text; that candidate was rejected. Final: one full-strength underWindowBackground/behindWindow effect following window activation, transparent child panes, opaque foreground text, and Reduce Transparency fallback.
 
-Reference: https://flodo.fehey.com/zh, expanded app image, viewed together with
-our actual preview. This reference guides material and restrained controls;
-Obsidian still guides header structure. Backgrounds/content differ, so no pixel
-match is claimed. Root native blur stays at full strength; child navigation tint
-is reduced to 1.8%, and folder button borders show only on hover/selection.
-Final window capture: `material-review/06-flodo-material.png` in task visualization.
-Desktop-region inspection confirms background text is no longer legibly exposed;
-its incidental overlapping window is excluded from the delivered screenshot.
-Final `./scripts/verify macos pr`: 315 tests, five suites, 19.357s.
-Log: `/tmp/mudsnote-flodo-final-pr.log`. Structural result remains passed;
-material taste remains subject to the user's preview feedback.
+The final desktop crop shows background color transitions across both panes while the repeated background text is no longer legible. It excludes the titlebar because an unrelated always-on-top Board panel overlapped that corner. The separate full-window image verifies header and tab geometry; isolated-window images do not prove backdrop compositing.
+
+Local task artifacts (under the task visualization's material-review directory):
+- 07-document-tabs.png: complete native window and two tabs.
+- 08-background-compositing.png: real desktop content crop with color test backdrop.
+
+No exact Flodo pixel match or user approval of the final visual taste is claimed. Open-tab layout is currently session-local; crash-recovery journaling and tab drag-reordering are not included in this change.
+
+## Verification
+
+- ./scripts/verify macos full: 321 ordinary tests in five suites and 8 Release performance tests in two suites passed. Log: /tmp/mudsnote-delivery-final.log.
+- The real desktop crop checks the final full-strength material. The final delivery run also covers the startup editor undo-manager binding.
+- No iOS build/device or shared production installation was used. The independent preview is not the installed application.
+
+## Advisory review
+
+The explicitly requested ChatGPT web review used separately verified Latest + far-right Pro. Sent once; the completed response was stable across three reads and pro-skills reports complete. The external answer's standalone sample project was not treated as integrated or locally verified code. Its useful findings were implemented and tested against this repository.

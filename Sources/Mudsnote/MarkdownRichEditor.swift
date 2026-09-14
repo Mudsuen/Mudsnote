@@ -426,6 +426,9 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     private var metadataTags: [String] = []
     private var metadataTagScrollView: NSScrollView?
 
+    var documentUndoManager: UndoManager?
+    override var undoManager: UndoManager? { documentUndoManager ?? super.undoManager }
+
     func replaceAllContent(with attributedString: NSAttributedString) {
         textStorage?.setAttributedString(attributedString)
         metadataTags = []

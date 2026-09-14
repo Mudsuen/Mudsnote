@@ -53,3 +53,19 @@ final class LibrarySearchField: NSSearchField {
         NSBezierPath(roundedRect: bounds, xRadius: 8, yRadius: 8).fill()
     }
 }
+
+/// One native backdrop compositor; content is a sibling so text stays opaque.
+@MainActor
+func makeLibraryWindowMaterial(content: NSView) -> NSView {
+    let root = NSView()
+    root.identifier = NSUserInterfaceItemIdentifier("LibraryWindowMaterial")
+    let material = NSVisualEffectView()
+    material.material = .underWindowBackground
+    material.blendingMode = .behindWindow
+    material.state = .followsWindowActiveState
+    root.addSubview(material)
+    pin(material, to: root)
+    root.addSubview(content)
+    pin(content, to: root)
+    return root
+}

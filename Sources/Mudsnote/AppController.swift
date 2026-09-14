@@ -373,8 +373,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         fileMenu.addItem(restoreNoteItem)
         fileMenu.addItem(.separator())
 
-        let closeItem = NSMenuItem(title: "关闭窗口", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
-        closeItem.target = nil
+        let tabItem = NSMenuItem(title: "新标签页", action: #selector(newLibraryTabFromMainMenu), keyEquivalent: "t")
+        tabItem.target = self
+        fileMenu.addItem(tabItem)
+        let closeItem = NSMenuItem(title: "关闭标签页或窗口", action: #selector(closeLibraryTabOrWindow), keyEquivalent: "w")
+        closeItem.target = self
         closeItem.keyEquivalentModifierMask = [.command]
         fileMenu.addItem(closeItem)
 
@@ -413,10 +416,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
         let findItem = NSMenuItem(title: "搜索笔记", action: #selector(focusLibrarySearchFromMainMenu), keyEquivalent: "f")
         findItem.target = self
-        findItem.keyEquivalentModifierMask = [.command]
+        findItem.keyEquivalentModifierMask = [.command, .shift]
         viewMenu.addItem(findItem)
+        let findInNote = NSMenuItem(title: "在笔记中查找", action: #selector(findInLibraryDocument), keyEquivalent: "f")
+        findInNote.target = self
+        viewMenu.addItem(findInNote)
 
-        let sidebarItem = NSMenuItem(title: "文件夹与标签", action: #selector(toggleLibrarySidebarFromMainMenu), keyEquivalent: "s")
+        let sidebarItem = NSMenuItem(title: "展开或收起侧栏", action: #selector(toggleLibrarySidebarFromMainMenu), keyEquivalent: "s")
         sidebarItem.target = self
         sidebarItem.keyEquivalentModifierMask = [.command, .control]
         viewMenu.addItem(sidebarItem)
@@ -466,6 +472,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         let windowMenu = NSMenu(title: "窗口")
         windowMenuItem.submenu = windowMenu
         mainMenu.addItem(windowMenuItem)
+        let nextTab = NSMenuItem(title: "下一个标签页", action: #selector(nextLibraryTab), keyEquivalent: "\t")
+        nextTab.keyEquivalentModifierMask = [.control]
+        nextTab.target = self
+        windowMenu.addItem(nextTab)
+        let previousTab = NSMenuItem(title: "上一个标签页", action: #selector(previousLibraryTab), keyEquivalent: "\t")
+        previousTab.keyEquivalentModifierMask = [.control, .shift]
+        previousTab.target = self
+        windowMenu.addItem(previousTab)
+        windowMenu.addItem(.separator())
         addResponderMenuItem(title: "最小化", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m", to: windowMenu)
         addResponderMenuItem(title: "缩放", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "", to: windowMenu)
 
@@ -846,6 +861,21 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         }
     }
 
+    @objc private func newLibraryTabFromMainMenu() {
+        showLibraryWindow()
+        libraryWindowController?.newDocumentTabForLibrary()
+    }
+
+    @objc private func findInLibraryDocument() { libraryWindowController?.findInCurrentDocumentForLibrary() }
+    @objc private func nextLibraryTab() { libraryWindowController?.selectAdjacentDocumentTabForLibrary(1) }
+    @objc private func previousLibraryTab() { libraryWindowController?.selectAdjacentDocumentTabForLibrary(-1) }
+
+    @objc private func closeLibraryTabOrWindow() {
+        if NSApp.keyWindow === libraryWindowController?.window {
+            libraryWindowController?.closeActiveDocumentTabForLibrary()
+        } else { NSApp.keyWindow?.performClose(nil) }
+    }
+
     @objc
     func focusLibrarySearchFromMainMenu() {
         showLibraryWindow()
@@ -855,7 +885,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     @objc
     func toggleLibrarySidebarFromMainMenu() {
         showLibraryWindow()
-        libraryWindowController?.toggleSourceListForLibrary()
+        libraryWindowController?.toggleSidebarForLibrary()
     }
 
     @objc private func showLibraryQuickMenu() { libraryWindowController?.showQuickMenu(nil) }

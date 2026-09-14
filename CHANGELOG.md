@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-13, this prototype records 281 implementation iterations, including the initial MVP.
+As of 2026-09-14, this prototype records 282 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 282. Mac document tabs and corrected sidebar interactions
+- Problem: The sidebar toggle opened a folder picker, search used a transient popover, and the document title looked like a tab without supporting multiple documents. Background saves, undo and read-only state needed independent document ownership.
+- Fix: Separate sidebar collapse, file browsing and inline search; add real tabs, right-click foreground/background opening, empty tabs, close actions, per-document undo and asynchronous save ownership. Capture context-menu targets, preserve failed saves, isolate trash permissions, and separate document find from library search. Use one full-strength window-backdrop material with clear child panes and opaque text and controls.
+- Lesson: Validate material on a real colored desktop, and test pending saves and undo across document switches. A completed Pro review is advisory evidence, not an integrated build or a visual acceptance result.
 
 ### 281. Balanced translucent material and pane-aligned Mac header
 - Problem: Light material felt white, while reducing effect opacity exposed distracting background detail. A global icon strip lacked the pane-aligned structure of the supplied Obsidian reference.
