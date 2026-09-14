@@ -13,9 +13,14 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-04, this prototype records 278 implementation iterations, including the initial MVP.
+As of 2026-09-14, this prototype records 279 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 279. Unified two-column Mac library navigation
+- Problem: The macOS library permanently split navigation, note browsing, and editing across three panes, so selecting a folder was required before its files became visible and compact windows lost too much writing space.
+- Fix: The stable macOS library now uses one persistent navigation sidebar beside the editor. A toolbar button in the former Add Folder position switches between a folder-and-note outline and the existing scoped note list; the first list visit opens Recently Edited, folder and note context menus can move directly into the matching list scope, the active editor is preserved while browsing folders or switching modes, and the chosen mode plus the wider sidebar width persist across windows. New Folder remains available from folder context menus.
+- Lesson: Tree and list are two presentations of one navigation responsibility; preserving the document while changing browsing context keeps layout changes from interrupting writing.
 
 ### 278. Consistent capture projection and full-library performance
 - Problem: A text-only iOS capture updated the visible list without invalidating the store's in-progress metadata page, so loading the next page could replace the new projection with stale inventory; the Recent list could also grow beyond 24 items. The macOS full-library path returned every requested result but still maintained a bounded-result heap before its final sort.

@@ -2,7 +2,7 @@ import AppKit
 import MudsnoteCore
 
 enum LibraryNotesLayout {
-    static let storedLayoutScaleVersion = 8
+    static let storedLayoutScaleVersion = 9
     static let initialWindowSize = NSSize(width: 921, height: 613)
     static let presentedWindowSize = NSSize(width: 921, height: 613)
     static let minimumWindowSize = NSSize(width: 896, height: 560)
@@ -11,15 +11,15 @@ enum LibraryNotesLayout {
         NSSize(width: 1080, height: 680),
         NSSize(width: 1080, height: 720)
     ]
-    static let sourceColumnWidth: CGFloat = 200
-    static let noteColumnWidth: CGFloat = 200
-    static let sourceColumnMinimumWidth: CGFloat = 200
-    static let sourceColumnMaximumWidth: CGFloat = 320
+    static let sourceColumnWidth: CGFloat = 280
+    static let noteColumnWidth: CGFloat = 280
+    static let sourceColumnMinimumWidth: CGFloat = 220
+    static let sourceColumnMaximumWidth: CGFloat = 380
     static let noteColumnMinimumWidth: CGFloat = 200
     static let noteColumnMaximumWidth: CGFloat = 320
     static let editorColumnMinimumWidth: CGFloat = 480
-    static let noteTableInitialWidth: CGFloat = 174
-    static let noteTableMinimumWidth: CGFloat = 174
+    static let noteTableInitialWidth: CGFloat = 254
+    static let noteTableMinimumWidth: CGFloat = 194
     static let toolbarSearchWidth: CGFloat = 160
     static let toolbarSearchHeight: CGFloat = 32
     static let toolbarSearchHorizontalFocusRingInset: CGFloat = 4
@@ -37,7 +37,6 @@ enum LibraryNotesLayout {
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
     static let toolbarExpandedTitleLeadingOffset: CGFloat = 12
     static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11.5
-    static let toolbarAddFolderWrapperWidth: CGFloat = 63
     static let toolbarSourceActionSymbolPointSize: CGFloat = 13
     static let toolbarNewNoteSymbolPointSize: CGFloat = 13
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 12

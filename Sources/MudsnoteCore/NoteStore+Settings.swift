@@ -262,6 +262,11 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.librarySourceListVisible) }
     }
 
+    public var librarySidebarPresentationRawValue: Int {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.librarySidebarPresentation) as? Int ?? 0 }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.librarySidebarPresentation) }
+    }
+
     @discardableResult
     public func migrateLibraryLayoutScaleIfNeeded(
         to version: Int,

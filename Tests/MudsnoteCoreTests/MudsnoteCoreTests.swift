@@ -1823,6 +1823,7 @@ struct MudsnoteCoreTests {
         #expect(store.librarySourceColumnWidth == nil)
         #expect(store.libraryNoteColumnWidth == nil)
         #expect(store.librarySourceListVisible)
+        #expect(store.librarySidebarPresentationRawValue == 0)
         #expect(!store.aiEnabled)
         #expect(store.aiCodexExecutablePath.isEmpty)
 
@@ -1840,6 +1841,7 @@ struct MudsnoteCoreTests {
         store.librarySourceColumnWidth = 372
         store.libraryNoteColumnWidth = 388
         store.librarySourceListVisible = false
+        store.librarySidebarPresentationRawValue = 1
         store.aiEnabled = true
         store.aiCodexExecutablePath = "/usr/local/bin/codex"
 
@@ -1857,6 +1859,7 @@ struct MudsnoteCoreTests {
         #expect(store.librarySourceColumnWidth == 372)
         #expect(store.libraryNoteColumnWidth == 388)
         #expect(!store.librarySourceListVisible)
+        #expect(store.librarySidebarPresentationRawValue == 1)
         #expect(store.aiEnabled)
         #expect(store.aiCodexExecutablePath == "/usr/local/bin/codex")
     }

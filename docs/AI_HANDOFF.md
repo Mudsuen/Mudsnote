@@ -16,7 +16,7 @@ relative attachments are canonical across separate macOS and iPhone apps.
 
 ### macOS
 
-- Native three-pane library with source outline, bounded note projection,
+- Native two-column library with a unified tree/list navigation sidebar, bounded note projection,
   list/gallery modes, and rich editor.
 - Finder/Open Markdown routes into the library without registering an external
   file's parent. Registered roots are never moved or deleted on removal.

@@ -18,7 +18,7 @@ private enum LibraryScope: Equatable, Sendable {
         case .all:
             return LibraryCopy.home
         case .recent:
-            return "最近"
+            return "最近编辑"
         case .inbox:
             return LibraryCopy.inbox
         case .folder(let url):
@@ -55,6 +55,11 @@ private enum LibraryScope: Equatable, Sendable {
             return "trash"
         }
     }
+}
+
+private enum LibrarySidebarPresentation: Int {
+    case tree
+    case list
 }
 
 private func librarySearchResults(
@@ -346,6 +351,7 @@ private final class LibrarySourceOutlineItem: NSObject {
     enum Kind {
         case group(title: String, section: LibrarySourceSection?)
         case scope(LibraryScope)
+        case note(NoteSearchResult)
         case status(String)
         case inlineFolderEdit(InlineFolderEditOperation)
     }
@@ -369,6 +375,11 @@ private final class LibrarySourceOutlineItem: NSObject {
     var scope: LibraryScope? {
         guard case .scope(let scope) = kind else { return nil }
         return scope
+    }
+
+    var note: NoteSearchResult? {
+        guard case .note(let note) = kind else { return nil }
+        return note
     }
 }
 
@@ -1294,7 +1305,7 @@ final class LibraryWindowController: NSWindowController,
     private var knowledgeGraphWindowController: KnowledgeGraphWindowController?
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
-    private static let addFolderToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.add-folder")
+    private static let sidebarPresentationToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.sidebar-presentation")
     private static let toggleSidebarToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.toggle-sidebar")
     private static let sourceTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-separator")
     private static let noteTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-separator")
@@ -1411,6 +1422,9 @@ final class LibraryWindowController: NSWindowController,
     private var hasHydratedInitialNoteList = false
     private var hasReleasedDeferredLaunchWork = false
     private var selectedScope: LibraryScope = .all
+    private var sidebarPresentation: LibrarySidebarPresentation = .tree
+    private var hasEnteredListPresentation = false
+    private var selectedTreeNoteURL: URL?
     private var sourceOutlineRootItems: [LibrarySourceOutlineItem] = []
     private var sourceOutlineItemsByIdentifier: [String: LibrarySourceOutlineItem] = [:]
     private var sourceOutlineItemsByScopeIdentifier: [String: LibrarySourceOutlineItem] = [:]
@@ -1471,6 +1485,8 @@ final class LibraryWindowController: NSWindowController,
     private weak var sourceSplitViewItem: NSSplitViewItem?
     private weak var noteListSplitViewItem: NSSplitViewItem?
     private weak var sourceListView: NSView?
+    private weak var sidebarTreeView: NSView?
+    private weak var sidebarNoteListView: NSView?
     private weak var editorStackView: NSStackView?
     private weak var galleryScrollView: NSScrollView?
     static let sourceCountSnapshotLimit = Int.max
@@ -1540,6 +1556,13 @@ final class LibraryWindowController: NSWindowController,
         self.noteListSortOrder = LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue) ?? .dateEdited
         self.groupsNoteListByDate = noteStore.libraryGroupsNotesByDate
         self.noteListViewMode = LibraryNoteViewMode(rawValue: noteStore.libraryNoteViewModeRawValue) ?? .list
+        self.sidebarPresentation = LibrarySidebarPresentation(
+            rawValue: noteStore.librarySidebarPresentationRawValue
+        ) ?? .tree
+        if self.sidebarPresentation == .list {
+            self.selectedScope = .recent
+            self.hasEnteredListPresentation = true
+        }
         self.collapsedFolderPaths = noteStore.libraryCollapsedFolderPaths
         self.expandedFolderPaths = noteStore.libraryExpandedFolderPaths
         self.sourceFoldersSectionCollapsed = noteStore.libraryFoldersSectionCollapsed
@@ -2174,12 +2197,11 @@ final class LibraryWindowController: NSWindowController,
     private func buildUI() {
         let sourceList = buildSourceList()
         let sidebar = buildSidebar()
+        let navigation = buildNavigationSidebar(tree: sourceList, list: sidebar)
         let editor = buildEditor()
 
         let sourceController = NSViewController()
-        sourceController.view = sourceList
-        let noteListController = NSViewController()
-        noteListController.view = sidebar
+        sourceController.view = navigation
         let editorController = NSViewController()
         editorController.view = editor
 
@@ -2191,19 +2213,11 @@ final class LibraryWindowController: NSWindowController,
         sourceItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
         sourceItem.isCollapsed = !noteStore.librarySourceListVisible
 
-        let noteListItem = NSSplitViewItem(contentListWithViewController: noteListController)
-        noteListItem.minimumThickness = LibraryNotesLayout.noteColumnMinimumWidth
-        noteListItem.maximumThickness = LibraryNotesLayout.noteColumnMaximumWidth
-        noteListItem.automaticMaximumThickness = LibraryNotesLayout.noteColumnMaximumWidth
-        noteListItem.canCollapse = true
-        noteListItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
-
         let editorItem = NSSplitViewItem(viewController: editorController)
         editorItem.minimumThickness = LibraryNotesLayout.editorColumnMinimumWidth
 
         let splitController = NSSplitViewController()
         splitController.addSplitViewItem(sourceItem)
-        splitController.addSplitViewItem(noteListItem)
         splitController.addSplitViewItem(editorItem)
         splitController.splitView.isVertical = true
         splitController.splitView.dividerStyle = .thin
@@ -2212,7 +2226,7 @@ final class LibraryWindowController: NSWindowController,
 
         librarySplitViewController = splitController
         sourceSplitViewItem = sourceItem
-        noteListSplitViewItem = noteListItem
+        noteListSplitViewItem = nil
         librarySplitView = splitController.splitView
         window?.contentViewController = splitController
         hostEditorSuggestionView(in: splitController.view)
@@ -2225,7 +2239,80 @@ final class LibraryWindowController: NSWindowController,
 
         splitController.view.layoutSubtreeIfNeeded()
         applyStoredLibrarySplitLayoutForLibrary()
+        applySidebarPresentation(animated: false)
         applyNoteListViewModeChrome(animated: false)
+    }
+
+    private func buildNavigationSidebar(tree: NSView, list: NSView) -> NSView {
+        let container = NSVisualEffectView()
+        container.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSidebar")
+        container.setAccessibilityLabel("笔记导航")
+        container.material = .sidebar
+        container.blendingMode = .withinWindow
+        container.state = .active
+        container.translatesAutoresizingMaskIntoConstraints = false
+        sourceListView = container
+        sidebarTreeView = tree
+        sidebarNoteListView = list
+
+        tree.translatesAutoresizingMaskIntoConstraints = false
+        list.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(tree)
+        container.addSubview(list)
+
+        NSLayoutConstraint.activate([
+            tree.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tree.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tree.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
+            tree.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            list.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            list.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            list.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
+            list.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+        ])
+        return container
+    }
+
+    private func setSidebarPresentation(_ presentation: LibrarySidebarPresentation, animated: Bool) {
+        guard presentation != sidebarPresentation else { return }
+        if presentation == .list,
+           !hasEnteredListPresentation,
+           selectedScope == .all,
+           selectedTreeNoteURL == nil {
+            selectedScope = .recent
+        }
+        hasEnteredListPresentation = hasEnteredListPresentation || presentation == .list
+        sidebarPresentation = presentation
+        noteStore.librarySidebarPresentationRawValue = presentation.rawValue
+        reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
+        applySidebarPresentation(animated: animated)
+    }
+
+    private func applySidebarPresentation(animated: Bool) {
+        guard let tree = sidebarTreeView, let list = sidebarNoteListView else { return }
+        let showsTree = sidebarPresentation == .tree
+        let changes = {
+            tree.isHidden = !showsTree
+            list.isHidden = showsTree
+            tree.alphaValue = showsTree ? 1 : 0
+            list.alphaValue = showsTree ? 0 : 1
+        }
+        if animated, window?.isVisible == true {
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.16
+                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
+                context.allowsImplicitAnimation = true
+                changes()
+            }
+        } else {
+            changes()
+        }
+        if showsTree {
+            refreshSourceSelection()
+        } else {
+            window?.makeFirstResponder(tableView)
+        }
+        applySidebarPresentationToolbarChrome()
     }
 
     private func buildSourceList() -> NSView {
@@ -2242,8 +2329,6 @@ final class LibraryWindowController: NSWindowController,
             .cgColor
         sourceList.layer?.cornerRadius = LibraryNotesLayout.sourceSurfaceCornerRadius
         sourceList.layer?.masksToBounds = true
-        sourceListView = sourceList
-
         let darkeningView = NSView()
         darkeningView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceDarkeningTint")
         darkeningView.wantsLayer = true
@@ -2396,7 +2481,17 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        let stack = NSStackView(views: [listContainer])
+        let listHeader = NSStackView(views: [noteListTitleLabel, noteListCountLabel, searchScopeControl])
+        listHeader.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarListHeader")
+        listHeader.orientation = .horizontal
+        listHeader.alignment = .centerY
+        listHeader.spacing = 6
+        noteListTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        noteListCountLabel.setContentHuggingPriority(.required, for: .horizontal)
+        searchScopeControl.setContentHuggingPriority(.required, for: .horizontal)
+        listHeader.heightAnchor.constraint(equalToConstant: 32).isActive = true
+
+        let stack = NSStackView(views: [listHeader, listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
@@ -2700,6 +2795,7 @@ final class LibraryWindowController: NSWindowController,
         toolbar.allowsUserCustomization = false
         toolbar.autosavesConfiguration = false
         window?.toolbar = toolbar
+        applySidebarPresentationToolbarChrome()
         applyNoteListViewModeToolbarChrome()
     }
 
@@ -2732,11 +2828,9 @@ final class LibraryWindowController: NSWindowController,
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
-            Self.addFolderToolbarItemIdentifier,
+            Self.sidebarPresentationToolbarItemIdentifier,
             Self.toggleSidebarToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
-            Self.noteListTitleToolbarItemIdentifier,
-            Self.noteTrackingSeparatorToolbarItemIdentifier,
             Self.newNoteToolbarItemIdentifier,
             .space,
             Self.editorToolsToolbarItemIdentifier,
@@ -2773,12 +2867,13 @@ final class LibraryWindowController: NSWindowController,
             return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 1)
         case Self.noteListTitleToolbarItemIdentifier:
             return toolbarNoteListTitleItem(identifier: itemIdentifier)
-        case Self.addFolderToolbarItemIdentifier:
-            return toolbarAddFolderItem(
+        case Self.sidebarPresentationToolbarItemIdentifier:
+            return toolbarButtonItem(
                 identifier: itemIdentifier,
-                label: "添加文件夹",
-                symbolName: "folder.badge.plus",
-                action: #selector(addFolderPressed)
+                label: sidebarPresentation == .tree ? "切换到列表" : "切换到文件树",
+                symbolName: sidebarPresentation == .tree ? "list.bullet" : "list.bullet.indent",
+                action: #selector(toggleSidebarPresentationPressed),
+                symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
             )
         case Self.toggleSidebarToolbarItemIdentifier:
             return toolbarButtonItem(
@@ -3011,58 +3106,6 @@ final class LibraryWindowController: NSWindowController,
         item.action = action
         item.visibilityPriority = visibilityPriority
         item.isBordered = false
-        return item
-    }
-
-    private func toolbarAddFolderItem(
-        identifier: NSToolbarItem.Identifier,
-        label: String,
-        symbolName: String,
-        action: Selector
-    ) -> NSToolbarItem {
-        let item = toolbarButtonItem(
-            identifier: identifier,
-            label: label,
-            symbolName: symbolName,
-            action: action,
-            symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
-        )
-        let button = NSButton(
-            image: item.image ?? NSImage(),
-            target: self,
-            action: action
-        )
-        button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = .toolbar
-        button.isBordered = true
-        button.showsBorderOnlyWhileMouseInside = true
-        button.focusRingType = .none
-        button.imagePosition = .imageOnly
-        button.imageScaling = .scaleProportionallyDown
-        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        updateToolbarEditorTextButtonAppearance(button, isEnabled: true, isWindowFocused: true)
-        button.translatesAutoresizingMaskIntoConstraints = false
-
-        let wrapper = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarAddFolderWrapperWidth,
-            height: LibraryNotesLayout.toolbarCircularButtonSize
-        ))
-        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarAddFolderWrapper")
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(button)
-        NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarAddFolderWrapperWidth),
-            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor),
-            button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize)
-        ])
-        item.view = wrapper
         return item
     }
 
@@ -3511,6 +3554,13 @@ final class LibraryWindowController: NSWindowController,
         )
     }
 
+    private func makeSourceOutlineNoteItem(_ note: NoteSearchResult) -> LibrarySourceOutlineItem {
+        makeSourceOutlineItem(
+            identifier: "note:\(note.url.standardizedFileURL.path)",
+            kind: .note(note)
+        )
+    }
+
     private func sourceOutlineIdentifier(for scope: LibraryScope) -> String {
         switch scope {
         case .all:
@@ -3557,6 +3607,25 @@ final class LibraryWindowController: NSWindowController,
             ancestors.append(item)
         }
 
+        let notesByParentPath = Dictionary(grouping: sourceCountSnapshot) {
+            $0.url.deletingLastPathComponent().standardizedFileURL.path
+        }
+        for folderRow in sourceFolderTreeRows.reversed() {
+            let folderPath = folderRow.url.standardizedFileURL.path
+            guard let folderItem = sourceOutlineItemsByScopeIdentifier[
+                sourceOutlineIdentifier(for: .folder(folderRow.url))
+            ] else { continue }
+            let directNotes = (notesByParentPath[folderPath] ?? []).sorted {
+                let titleOrder = $0.title.localizedStandardCompare($1.title)
+                return titleOrder == .orderedSame
+                    ? $0.url.lastPathComponent.localizedStandardCompare($1.url.lastPathComponent) == .orderedAscending
+                    : titleOrder == .orderedAscending
+            }
+            for note in directNotes {
+                folderItem.append(makeSourceOutlineNoteItem(note))
+            }
+        }
+
         if case .create(let parentURL) = inlineFolderEditOperation {
             let editItem = makeSourceOutlineItem(
                 identifier: "inline:create:\(parentURL.standardizedFileURL.path)",
@@ -3593,12 +3662,13 @@ final class LibraryWindowController: NSWindowController,
            let tagsGroup = sourceOutlineItemsByIdentifier["group:tags"] {
             sourceOutlineView.expandItem(tagsGroup, expandChildren: false)
         }
-        for folderRow in sourceFolderTreeRows where folderRow.hasChildren {
+        for folderRow in sourceFolderTreeRows {
             let path = folderRow.url.standardizedFileURL.path
-            guard isSourceFolderExpanded(path: path, depth: folderRow.depth),
-                  let item = sourceOutlineItemsByScopeIdentifier[
+            guard let item = sourceOutlineItemsByScopeIdentifier[
                     sourceOutlineIdentifier(for: .folder(folderRow.url))
-                  ] ?? sourceOutlineItemsByIdentifier["inline:rename:\(path)"] else {
+                  ] ?? sourceOutlineItemsByIdentifier["inline:rename:\(path)"],
+                  !item.children.isEmpty,
+                  isSourceFolderExpanded(path: path, depth: folderRow.depth) else {
                 continue
             }
             sourceOutlineView.expandItem(item, expandChildren: false)
@@ -4009,6 +4079,12 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    func sourceTreeNoteTitlesForLibrary() -> [String] {
+        sourceOutlineItemsByIdentifier.values.compactMap { item in
+            item.note.map { $0.title }
+        }.sorted { $0.localizedStandardCompare($1) == .orderedAscending }
+    }
+
     func sourceIconNameForLibrary(titled title: String) -> String? {
         guard let scope = sourceOutlineItemsByScopeIdentifier.values.compactMap(\.scope).first(where: {
             sourceTitle(for: $0).localizedCaseInsensitiveCompare(title) == .orderedSame
@@ -4189,9 +4265,9 @@ final class LibraryWindowController: NSWindowController,
     private func refreshSourceCounts(
         using allNotes: [NoteSearchResult],
         countIndex precomputedCountIndex: LibrarySourceCountIndex? = nil,
-        recentCount precomputedRecentCount: Int? = nil
+        recentCount _: Int? = nil
     ) {
-        let recentCount = precomputedRecentCount ?? recentFilesVisibleInLibrary(limit: 80).count
+        let recentCount = min(allNotes.count, 80)
         let countIndex = precomputedCountIndex ?? LibrarySourceCountIndex(
             notes: allNotes,
             folderPaths: currentSourceFolderPaths(),
@@ -4212,19 +4288,12 @@ final class LibraryWindowController: NSWindowController,
         let folderPaths = currentSourceFolderPaths()
         let trashCount = trashedNotesSnapshot.count
         let noteStore = noteStore
-        let preferredDirectories = noteStore.preferredDirectories
-        let externalDocumentPaths = Set(externallyOpenedDocumentsByPath.keys)
         let willLoad = backgroundSourceCountWillLoad
 
         sourceCountRefreshTask = Task.detached(priority: .utility) { [weak self] in
             willLoad()
             let inboxDirectory = noteStore.preferredInboxDirectory
-            let recentCount = Self.recentFilesVisibleInLibrary(
-                noteStore: noteStore,
-                preferredDirectories: preferredDirectories,
-                externalDocumentPaths: externalDocumentPaths,
-                limit: 80
-            ).count
+            let recentCount = min(allNotes.count, 80)
             let countIndex = LibrarySourceCountIndex(
                 notes: allNotes,
                 folderPaths: folderPaths,
@@ -4337,6 +4406,7 @@ final class LibraryWindowController: NSWindowController,
         }
         if refreshCounts {
             sourceCountSnapshot = allNotes
+            rebuildSourceRows(includeTags: sourceTagsLoaded)
             refreshSourceCounts(
                 using: allNotes,
                 countIndex: sourceCountIndex,
@@ -4696,20 +4766,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func recentNoteResults(limit: Int, allNotes: [NoteSearchResult]) -> [NoteSearchResult] {
-        let resultsByPath = Dictionary(uniqueKeysWithValues: allNotes.map {
-            ($0.url.standardizedFileURL.path, $0)
-        })
-        return recentFilesVisibleInLibrary(limit: limit).map { note in
-            resultsByPath[note.url.standardizedFileURL.path] ?? NoteSearchResult(
-                url: note.url,
-                title: note.title,
-                snippet: "",
-                modifiedAt: note.modifiedAt,
-                tags: [],
-                hasAttachments: false,
-                thumbnailURL: nil
-            )
-        }
+        Array(allNotes.prefix(limit))
     }
 
     private func recentFilesVisibleInLibrary(limit: Int) -> [NoteFile] {
@@ -4920,7 +4977,49 @@ final class LibraryWindowController: NSWindowController,
             }
             configureSourceOutlineCell(cell, for: item)
             return cell
+        case .note(let note):
+            return makeSourceOutlineNoteCell(for: note, item: item)
         }
+    }
+
+    private func makeSourceOutlineNoteCell(
+        for note: NoteSearchResult,
+        item: LibrarySourceOutlineItem
+    ) -> NSView {
+        let identifier = NSUserInterfaceItemIdentifier("LibrarySourceNoteCell")
+        let cell = (sourceOutlineView.makeView(withIdentifier: identifier, owner: nil) as? NSTableCellView)
+            ?? NSTableCellView()
+        cell.identifier = identifier
+        let icon = cell.imageView ?? NSImageView()
+        let label = cell.textField ?? NSTextField(labelWithString: "")
+        if label.superview == nil {
+            cell.imageView = icon
+            cell.textField = label
+            cell.addSubview(icon)
+            cell.addSubview(label)
+            icon.translatesAutoresizingMaskIntoConstraints = false
+            label.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                icon.leadingAnchor.constraint(equalTo: cell.leadingAnchor, constant: 8),
+                icon.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                icon.widthAnchor.constraint(equalToConstant: 18),
+                icon.heightAnchor.constraint(equalToConstant: 18),
+                label.leadingAnchor.constraint(equalTo: icon.trailingAnchor, constant: 5),
+                label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
+                label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+            ])
+        }
+        label.stringValue = note.title.isEmpty
+            ? note.url.deletingPathExtension().lastPathComponent
+            : note.title
+        label.font = .systemFont(ofSize: LibraryNotesLayout.sourceButtonFontSize, weight: .regular)
+        label.textColor = LibrarySourceSelectionPalette.unselectedForegroundColor
+        label.lineBreakMode = .byTruncatingMiddle
+        icon.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: "笔记")
+        icon.contentTintColor = panelTertiaryTextColor()
+        cell.setAccessibilityLabel(label.stringValue)
+        cell.setAccessibilityValue("笔记")
+        return cell
     }
 
     private func configureSourceOutlineCell(
@@ -5095,7 +5194,7 @@ final class LibraryWindowController: NSWindowController,
         switch item.kind {
         case .group:
             return false
-        case .scope:
+        case .scope, .note:
             return true
         case .status, .inlineFolderEdit:
             return false
@@ -5111,7 +5210,7 @@ final class LibraryWindowController: NSWindowController,
             return LibraryNotesLayout.sourceSectionHeaderHeight
         case .status:
             return LibraryNotesLayout.sourceStatusRowHeight
-        case .scope, .inlineFolderEdit:
+        case .scope, .note, .inlineFolderEdit:
             return LibraryNotesLayout.sourceRowHeight
         }
     }
@@ -5119,9 +5218,14 @@ final class LibraryWindowController: NSWindowController,
     func outlineView(_ outlineView: NSOutlineView, rowViewForItem item: Any) -> NSTableRowView? {
         guard let item = item as? LibrarySourceOutlineItem else { return nil }
         switch item.kind {
-        case .scope:
+        case .scope, .note:
             let row = LibrarySourceOutlineRowView()
-            row.setVisuallySelected(isSourceOutlineItemVisuallySelected(item))
+            let itemRow = sourceOutlineView.row(forItem: item)
+            row.setVisuallySelected(
+                item.note != nil
+                    ? itemRow == sourceOutlineView.selectedRow
+                    : isSourceOutlineItemVisuallySelected(item)
+            )
             return row
         case .group, .status, .inlineFolderEdit:
             let row = NSTableRowView()
@@ -5144,10 +5248,25 @@ final class LibraryWindowController: NSWindowController,
     private func commitCurrentSourceOutlineSelection() {
         guard sourceOutlineView.selectedRow >= 0,
               let item = sourceOutlineView.item(atRow: sourceOutlineView.selectedRow)
-                as? LibrarySourceOutlineItem,
-              let scope = item.scope else { return }
+                as? LibrarySourceOutlineItem else { return }
         refreshVisibleSourceOutlinePresentation()
-        if !activateSourceScope(scope) {
+        if let note = item.note {
+            selectedTreeNoteURL = note.url
+            do {
+                try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+                load(note: note)
+            } catch {
+                presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
+            }
+            return
+        }
+        guard let scope = item.scope else { return }
+        selectedTreeNoteURL = nil
+        if sidebarPresentation == .tree {
+            selectedScope = scope
+            reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
+            refreshVisibleSourceOutlinePresentation()
+        } else if !activateSourceScope(scope) {
             refreshSourceSelection()
         }
     }
@@ -5202,6 +5321,8 @@ final class LibraryWindowController: NSWindowController,
             folderURL = url
         case .inlineFolderEdit(.rename(let url)):
             folderURL = url
+        case .note:
+            return
         default:
             return
         }
@@ -6226,6 +6347,14 @@ final class LibraryWindowController: NSWindowController,
     private func toggleSourceListPressed() {
         setSourceListVisibleForLibrary(
             !isSourceListVisibleForLibrary,
+            animated: window?.isVisible == true && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
+        )
+    }
+
+    @objc
+    private func toggleSidebarPresentationPressed() {
+        setSidebarPresentation(
+            sidebarPresentation == .tree ? .list : .tree,
             animated: window?.isVisible == true && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
         )
     }
@@ -9057,7 +9186,7 @@ final class LibraryWindowController: NSWindowController,
 
     func applyStoredLibrarySplitLayoutForLibrary() {
         guard let splitView = librarySplitView,
-              splitView.arrangedSubviews.count == 3,
+              splitView.arrangedSubviews.count == 2,
               splitView.bounds.width > 0 else {
             return
         }
@@ -9066,18 +9195,11 @@ final class LibraryWindowController: NSWindowController,
         defer { isApplyingStoredSplitLayout = false }
 
         let sourceList = splitView.arrangedSubviews[0]
-        let noteList = splitView.arrangedSubviews[1]
         sourceSplitViewItem?.isCollapsed = !noteStore.librarySourceListVisible
-        noteListSplitViewItem?.isCollapsed = noteListViewMode == .gallery
         splitView.adjustSubviews()
 
         if !sourceList.isHidden {
             splitView.setPosition(storedSourceColumnWidthForLibrary, ofDividerAt: 0)
-            splitView.layoutSubtreeIfNeeded()
-        }
-        if noteListViewMode == .list {
-            let noteDividerPosition = noteList.frame.minX + storedNoteColumnWidthForLibrary
-            splitView.setPosition(noteDividerPosition, ofDividerAt: 1)
             splitView.layoutSubtreeIfNeeded()
         }
     }
@@ -9085,20 +9207,14 @@ final class LibraryWindowController: NSWindowController,
     func persistLibrarySplitLayoutForLibrary() {
         guard !isApplyingStoredSplitLayout,
               let splitView = librarySplitView,
-              splitView.arrangedSubviews.count == 3 else {
+              splitView.arrangedSubviews.count == 2 else {
             return
         }
 
         let sourceList = splitView.arrangedSubviews[0]
-        let noteList = splitView.arrangedSubviews[1]
         if !sourceList.isHidden, sourceList.frame.width > 0 {
             noteStore.librarySourceColumnWidth = Double(
                 LibraryNotesLayout.clampedSourceColumnWidth(sourceList.frame.width)
-            )
-        }
-        if noteListViewMode == .list, noteList.frame.width > 0 {
-            noteStore.libraryNoteColumnWidth = Double(
-                LibraryNotesLayout.clampedNoteColumnWidth(noteList.frame.width)
             )
         }
     }
@@ -9132,9 +9248,6 @@ final class LibraryWindowController: NSWindowController,
         switch dividerIndex {
         case 0:
             return LibraryNotesLayout.sourceColumnMinimumWidth
-        case 1:
-            let noteList = splitView.arrangedSubviews[1]
-            return noteList.frame.minX + LibraryNotesLayout.noteColumnMinimumWidth
         default:
             return proposedMinimumPosition
         }
@@ -9150,17 +9263,7 @@ final class LibraryWindowController: NSWindowController,
             - splitView.dividerThickness
         switch dividerIndex {
         case 0:
-            let remainingColumnsLimit = splitView.bounds.width
-                - LibraryNotesLayout.noteColumnMinimumWidth
-                - LibraryNotesLayout.editorColumnMinimumWidth
-                - (splitView.dividerThickness * 2)
-            return min(LibraryNotesLayout.sourceColumnMaximumWidth, remainingColumnsLimit)
-        case 1:
-            let noteList = splitView.arrangedSubviews[1]
-            return min(
-                noteList.frame.minX + LibraryNotesLayout.noteColumnMaximumWidth,
-                editorLimit
-            )
+            return min(LibraryNotesLayout.sourceColumnMaximumWidth, editorLimit)
         default:
             return proposedMaximumPosition
         }
@@ -9214,7 +9317,7 @@ final class LibraryWindowController: NSWindowController,
             : LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset
         for item in window?.toolbar?.items ?? [] {
             switch item.itemIdentifier {
-            case Self.addFolderToolbarItemIdentifier,
+            case Self.sidebarPresentationToolbarItemIdentifier,
                  Self.sourceTrackingSeparatorToolbarItemIdentifier:
                 item.isHidden = !isVisible
             case Self.toggleSidebarToolbarItemIdentifier:
@@ -9234,19 +9337,27 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    private func applySidebarPresentationToolbarChrome() {
+        guard let item = window?.toolbar?.items.first(where: {
+            $0.itemIdentifier == Self.sidebarPresentationToolbarItemIdentifier
+        }) else { return }
+        let showsTree = sidebarPresentation == .tree
+        updateToolbarItemPresentation(
+            item,
+            label: showsTree ? "切换到列表" : "切换到文件树",
+            symbolName: showsTree ? "list.bullet" : "list.bullet.indent",
+            symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
+        )
+    }
+
     private func restoreStoredPaneWidthsAfterSourceVisibilityChange() {
         guard let splitView = librarySplitView,
-              splitView.arrangedSubviews.count == 3 else { return }
+              splitView.arrangedSubviews.count == 2 else { return }
         isApplyingStoredSplitLayout = true
         defer { isApplyingStoredSplitLayout = false }
         splitView.adjustSubviews()
         if !splitView.arrangedSubviews[0].isHidden {
             splitView.setPosition(storedSourceColumnWidthForLibrary, ofDividerAt: 0)
-            splitView.layoutSubtreeIfNeeded()
-        }
-        if noteListViewMode == .list {
-            let noteList = splitView.arrangedSubviews[1]
-            splitView.setPosition(noteList.frame.minX + storedNoteColumnWidthForLibrary, ofDividerAt: 1)
             splitView.layoutSubtreeIfNeeded()
         }
     }
@@ -9272,7 +9383,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applyNoteListViewModeChrome(animated: Bool) {
-        guard let noteListSplitViewItem, let editorStackView, let galleryScrollView else { return }
+        guard let editorStackView, let galleryScrollView else { return }
         let showsGallery = noteListViewMode == .gallery
 
         if showsGallery {
@@ -9288,26 +9399,7 @@ final class LibraryWindowController: NSWindowController,
         }
         updateNoteListEmptyState(query: searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
 
-        if animated {
-            isApplyingStoredSplitLayout = true
-            NSAnimationContext.runAnimationGroup { context in
-                context.duration = LibraryNotesLayout.sourceCollapseAnimationDuration
-                context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
-                context.allowsImplicitAnimation = true
-                noteListSplitViewItem.animator().isCollapsed = showsGallery
-            } completionHandler: { [weak self] in
-                Task { @MainActor in
-                    self?.isApplyingStoredSplitLayout = false
-                    self?.completeNoteListViewModeTransition(showingGallery: showsGallery)
-                }
-            }
-        } else {
-            isApplyingStoredSplitLayout = true
-            noteListSplitViewItem.isCollapsed = showsGallery
-            librarySplitView?.adjustSubviews()
-            isApplyingStoredSplitLayout = false
-            completeNoteListViewModeTransition(showingGallery: showsGallery)
-        }
+        completeNoteListViewModeTransition(showingGallery: showsGallery)
         applyNoteListViewModeToolbarChrome()
     }
 
@@ -10154,6 +10246,42 @@ final class LibraryWindowController: NSWindowController,
 
     func sourceContextMenuForLibrary(row: Int) -> NSMenu? {
         guard let item = sourceOutlineView.item(atRow: row) as? LibrarySourceOutlineItem else { return nil }
+        if let note = item.note {
+            let menu = NSMenu()
+            let openItem = NSMenuItem(title: "打开", action: #selector(openTreeNoteMenuItemPressed(_:)), keyEquivalent: "")
+            openItem.target = self
+            openItem.representedObject = note.url
+            menu.addItem(openItem)
+
+            let separateItem = NSMenuItem(
+                title: "在独立窗口中打开",
+                action: #selector(openTreeNoteSeparatelyMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            separateItem.target = self
+            separateItem.representedObject = note.url
+            menu.addItem(separateItem)
+
+            let listItem = NSMenuItem(
+                title: "在列表中显示",
+                action: #selector(showTreeNoteInListMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            listItem.target = self
+            listItem.representedObject = note.url
+            menu.addItem(listItem)
+            menu.addItem(.separator())
+
+            let revealItem = NSMenuItem(
+                title: "在 Finder 中显示",
+                action: #selector(revealTreeNoteMenuItemPressed(_:)),
+                keyEquivalent: ""
+            )
+            revealItem.target = self
+            revealItem.representedObject = note.url
+            menu.addItem(revealItem)
+            return menu
+        }
         if case .group(title: _, section: .folders) = item.kind {
             let menu = NSMenu()
             let addItem = NSMenuItem(
@@ -10179,6 +10307,41 @@ final class LibraryWindowController: NSWindowController,
         }
         guard case .folder(let folderURL)? = item.scope else { return nil }
         return makeFolderContextMenu(for: folderURL)
+    }
+
+    @objc
+    private func openTreeNoteMenuItemPressed(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL,
+              let note = sourceCountSnapshot.first(where: {
+                  $0.url.standardizedFileURL.path == url.standardizedFileURL.path
+              }) else { return }
+        do {
+            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            selectedTreeNoteURL = note.url
+            load(note: note)
+        } catch {
+            presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription)
+        }
+    }
+
+    @objc
+    private func openTreeNoteSeparatelyMenuItemPressed(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        onOpenInSeparateWindow(url)
+    }
+
+    @objc
+    private func showTreeNoteInListMenuItemPressed(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        selectedScope = .folder(url.deletingLastPathComponent())
+        setSidebarPresentation(.list, animated: true)
+        reloadNotesForNavigation(selecting: url, loadFirstIfNeeded: false)
+    }
+
+    @objc
+    private func revealTreeNoteMenuItemPressed(_ sender: NSMenuItem) {
+        guard let url = sender.representedObject as? URL else { return }
+        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     @objc
@@ -10225,6 +10388,16 @@ final class LibraryWindowController: NSWindowController,
         let isExternalPreviewFolder = externalPreviewFolderURLs().contains {
             $0.standardizedFileURL.path == standardizedFolder.path
         }
+
+        let listItem = NSMenuItem(
+            title: "以列表显示",
+            action: #selector(showFolderInListMenuItemPressed(_:)),
+            keyEquivalent: ""
+        )
+        listItem.target = self
+        listItem.representedObject = standardizedFolder
+        menu.addItem(listItem)
+        menu.addItem(.separator())
 
         let revealItem = NSMenuItem(
             title: "在 Finder 中显示",
@@ -10277,6 +10450,14 @@ final class LibraryWindowController: NSWindowController,
         menu.addItem(deleteItem)
 
         return menu
+    }
+
+    @objc
+    private func showFolderInListMenuItemPressed(_ sender: NSMenuItem) {
+        guard let folderURL = sender.representedObject as? URL else { return }
+        selectedScope = .folder(folderURL.standardizedFileURL)
+        setSidebarPresentation(.list, animated: true)
+        reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
     }
 
     private func makeFolderIconMenu(for folderURL: URL) -> NSMenu {
