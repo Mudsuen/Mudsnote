@@ -665,7 +665,7 @@ final class LibrarySourceScrollView: NSScrollView {
 }
 
 @MainActor
-final class LibraryPassthroughVisualEffectView: NSVisualEffectView {
+final class LibraryPassthroughTintView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
 }
 
@@ -750,6 +750,7 @@ final class LibraryListSmartScopeControl: NSControl {
 private enum LibraryNotesPalette {
     static let windowBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
     static let editorBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
+    static let sidebarMaterialTint = NSColor.black.withAlphaComponent(0.10)
 }
 
 @MainActor
@@ -2362,20 +2363,52 @@ final class LibraryWindowController: NSWindowController,
         sidebarTreeView = tree
         sidebarNoteListView = list
 
+        let tint = LibraryPassthroughTintView()
+        tint.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSidebarTint")
+        tint.wantsLayer = true
+        tint.layer?.backgroundColor = LibraryNotesPalette.sidebarMaterialTint.cgColor
+        let smartNavigation = buildListSmartNavigation()
+        let modeContainer = NSView()
+        modeContainer.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarModeContent")
+
+        tint.translatesAutoresizingMaskIntoConstraints = false
+        smartNavigation.translatesAutoresizingMaskIntoConstraints = false
+        modeContainer.translatesAutoresizingMaskIntoConstraints = false
         tree.translatesAutoresizingMaskIntoConstraints = false
         list.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(tree)
-        container.addSubview(list)
+        container.addSubview(tint)
+        container.addSubview(smartNavigation)
+        container.addSubview(modeContainer)
+        modeContainer.addSubview(tree)
+        modeContainer.addSubview(list)
+
+        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryNavigationTitlebarSeparator")
+        container.addSubview(titlebarSeparator)
 
         NSLayoutConstraint.activate([
-            tree.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            tree.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            tree.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
-            tree.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            list.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            list.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            list.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
-            list.bottomAnchor.constraint(equalTo: container.bottomAnchor)
+            tint.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            tint.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            tint.topAnchor.constraint(equalTo: container.topAnchor),
+            tint.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            smartNavigation.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
+            smartNavigation.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            smartNavigation.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
+            modeContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            modeContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            modeContainer.topAnchor.constraint(equalTo: smartNavigation.bottomAnchor),
+            modeContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            tree.leadingAnchor.constraint(equalTo: modeContainer.leadingAnchor),
+            tree.trailingAnchor.constraint(equalTo: modeContainer.trailingAnchor),
+            tree.topAnchor.constraint(equalTo: modeContainer.topAnchor),
+            tree.bottomAnchor.constraint(equalTo: modeContainer.bottomAnchor),
+            list.leadingAnchor.constraint(equalTo: modeContainer.leadingAnchor),
+            list.trailingAnchor.constraint(equalTo: modeContainer.trailingAnchor),
+            list.topAnchor.constraint(equalTo: modeContainer.topAnchor),
+            list.bottomAnchor.constraint(equalTo: modeContainer.bottomAnchor),
+            titlebarSeparator.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            titlebarSeparator.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            titlebarSeparator.bottomAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
+            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
         ])
         return container
     }
@@ -2424,7 +2457,7 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineView.indentationPerLevel = LibraryNotesLayout.sourceFolderIndentStep
         sourceOutlineView.rowSizeStyle = .custom
         sourceOutlineView.intercellSpacing = .zero
-        sourceOutlineView.floatsGroupRows = true
+        sourceOutlineView.floatsGroupRows = false
         sourceOutlineView.delegate = self
         sourceOutlineView.dataSource = self
         sourceOutlineView.registerForDraggedTypes([.fileURL])
@@ -2584,8 +2617,7 @@ final class LibraryWindowController: NSWindowController,
         searchScopeControl.setContentHuggingPriority(.required, for: .horizontal)
         listHeader.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
-        let smartNavigation = buildListSmartNavigation()
-        let stack = NSStackView(views: [smartNavigation, filesHeader, listHeader, listContainer])
+        let stack = NSStackView(views: [filesHeader, listHeader, listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
@@ -2597,8 +2629,6 @@ final class LibraryWindowController: NSWindowController,
             right: LibraryNotesLayout.noteListTrailingInset
         )
         sidebar.addSubview(stack)
-        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryNoteListTitlebarSeparator")
-        sidebar.addSubview(titlebarSeparator)
         stack.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             stack.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
@@ -2607,14 +2637,10 @@ final class LibraryWindowController: NSWindowController,
                 equalTo: sidebar.safeAreaLayoutGuide.topAnchor,
                 constant: LibraryNotesLayout.noteListStackTopOffset
             ),
-            stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor),
-            titlebarSeparator.leadingAnchor.constraint(equalTo: sidebar.leadingAnchor),
-            titlebarSeparator.trailingAnchor.constraint(equalTo: sidebar.trailingAnchor),
-            titlebarSeparator.bottomAnchor.constraint(equalTo: sidebar.safeAreaLayoutGuide.topAnchor),
-            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
+            stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor)
         ])
         let stackHorizontalInsets = stack.edgeInsets.left + stack.edgeInsets.right
-        [smartNavigation, filesHeader, listHeader, listContainer].forEach {
+        [filesHeader, listHeader, listContainer].forEach {
             $0.widthAnchor.constraint(
                 equalTo: stack.widthAnchor,
                 constant: -stackHorizontalInsets
@@ -2625,6 +2651,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func buildListSmartNavigation() -> NSView {
         let title = NSTextField(labelWithString: MudsnoteBrand.appName)
+        title.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarBrandTitle")
         title.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
         title.textColor = panelTertiaryTextColor()
         title.alignment = .left
@@ -3859,8 +3886,6 @@ final class LibraryWindowController: NSWindowController,
         smartGroup.append(makeSourceOutlineScopeItem(.recent))
         smartGroup.append(makeSourceOutlineScopeItem(.favorites))
         smartGroup.append(makeSourceOutlineScopeItem(.all))
-        roots.append(smartGroup)
-
         let previewFolders = externalPreviewFolderURLs()
         let filesGroup = makeSourceOutlineItem(
             identifier: "group:files",
@@ -5335,22 +5360,9 @@ final class LibraryWindowController: NSWindowController,
             cell.identifier = identifier
             let label = cell.textField ?? NSTextField(labelWithString: "")
             if label.superview == nil {
-                let background = LibraryPassthroughVisualEffectView()
-                background.identifier = NSUserInterfaceItemIdentifier("LibrarySourceFloatingGroupBackground")
-                background.material = .sidebar
-                background.blendingMode = .withinWindow
-                background.state = .followsWindowActiveState
-                cell.addSubview(background)
-                background.translatesAutoresizingMaskIntoConstraints = false
                 cell.textField = label
                 cell.addSubview(label)
                 label.translatesAutoresizingMaskIntoConstraints = false
-                NSLayoutConstraint.activate([
-                    background.leadingAnchor.constraint(equalTo: cell.leadingAnchor),
-                    background.trailingAnchor.constraint(equalTo: cell.trailingAnchor),
-                    background.topAnchor.constraint(equalTo: cell.topAnchor),
-                    background.bottomAnchor.constraint(equalTo: cell.bottomAnchor)
-                ])
                 let leading = label.leadingAnchor.constraint(
                     equalTo: cell.leadingAnchor,
                     constant: LibraryNotesLayout.sourceGroupContentLeadingInset

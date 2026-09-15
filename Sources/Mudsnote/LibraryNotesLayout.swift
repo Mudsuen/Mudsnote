@@ -53,7 +53,7 @@ enum LibraryNotesLayout {
     static let sourceRowHeight: CGFloat = 32
     static let sourceSectionHeaderHeight: CGFloat = 22
     static let sourceStatusRowHeight: CGFloat = 22
-    static let sourceListTopInset: CGFloat = 12
+    static let sourceListTopInset: CGFloat = 0
     static let sourceListLeadingInset: CGFloat = 14
     static let sourceListBottomInset: CGFloat = 14
     static let sourceListTrailingInset: CGFloat = 6

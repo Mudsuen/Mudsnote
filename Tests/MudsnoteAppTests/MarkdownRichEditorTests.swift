@@ -2720,18 +2720,16 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
         })
         window.contentView?.layoutSubtreeIfNeeded()
-        let listStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
-            $0.identifier?.rawValue == "LibraryNoteListStack"
-        })
         let smartNavigation = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryListSmartNavigation"
         })
         let smartControls = smartNavigation.arrangedSubviews.compactMap { $0 as? LibraryListSmartScopeControl }
         let firstSmartControl = try #require(smartControls.first)
         let smartTitle = try #require(smartNavigation.arrangedSubviews.first as? NSTextField)
-        #expect(abs(smartNavigation.frame.minX - listStack.edgeInsets.left) < 0.5)
+        let navigationSidebar = try #require(smartNavigation.superview)
+        #expect(abs(smartNavigation.frame.minX - 8) < 0.5)
         #expect(abs(smartNavigation.frame.width
-            - (listStack.bounds.width - listStack.edgeInsets.left - listStack.edgeInsets.right)) < 0.5)
+            - (navigationSidebar.bounds.width - 16)) < 0.5)
         #expect(abs(firstSmartControl.frame.minX - smartNavigation.edgeInsets.left) < 0.5)
         #expect(abs(firstSmartControl.frame.width
             - (smartNavigation.bounds.width - smartNavigation.edgeInsets.left - smartNavigation.edgeInsets.right)) < 0.5)
@@ -2745,11 +2743,8 @@ struct MarkdownRichEditorTests {
         #expect(store.librarySidebarPresentationRawValue == 0)
         #expect(controller.selectedSourceTitleForLibrary == "首页")
         #expect(treePresentationButton.toolTip == "切换到列表")
-        let recentLabel = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceLabel-1"
-        })
-        let recentRow = controller.sourceOutlineView.row(for: try #require(recentLabel.superview))
-        controller.sourceOutlineView.selectRowIndexes(IndexSet(integer: recentRow), byExtendingSelection: false)
+        let recentControl = try #require(smartControls.first { $0.tag == 0 })
+        recentControl.sendAction(recentControl.action, to: recentControl.target)
         #expect(controller.selectedSourceTitleForLibrary == "最近编辑")
         #expect(store.librarySidebarPresentationRawValue == 1)
         #expect(window.contentView?.allSubviews.filter {
@@ -2758,11 +2753,8 @@ struct MarkdownRichEditorTests {
         listPresentationButton.performClick(nil)
         #expect(controller.selectedSourceTitleForLibrary == "最近编辑")
         #expect(store.librarySidebarPresentationRawValue == 0)
-        let homeLabel = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceLabel-0"
-        })
-        let homeRow = controller.sourceOutlineView.row(for: try #require(homeLabel.superview))
-        controller.sourceOutlineView.selectRowIndexes(IndexSet(integer: homeRow), byExtendingSelection: false)
+        let homeControl = try #require(smartControls.first { $0.tag == 2 })
+        homeControl.sendAction(homeControl.action, to: homeControl.target)
         #expect(controller.selectedSourceTitleForLibrary == "首页")
         #expect(store.librarySidebarPresentationRawValue == 0)
         #expect(window.toolbarStyle == .unified)
@@ -2776,7 +2768,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.minimumWindowSize.width == 896)
         #expect(window.minSize.height >= LibraryNotesLayout.minimumWindowSize.height)
         #expect(!controller.tableView.floatsGroupRows)
-        #expect(controller.sourceOutlineView.floatsGroupRows)
+        #expect(!controller.sourceOutlineView.floatsGroupRows)
         #expect(LibraryNotesLayout.storedLayoutScaleVersion == 9)
         #expect(LibraryNotesLayout.initialWindowSize == NSSize(width: 921, height: 613))
         #expect(LibraryNotesLayout.presentedWindowSize == NSSize(width: 921, height: 613))
@@ -3139,27 +3131,33 @@ struct MarkdownRichEditorTests {
         #expect(libraryGroup.stringValue == "FILES")
         #expect(libraryGroup.superview?.subviews.contains {
             $0.identifier?.rawValue == "LibrarySourceFloatingGroupBackground"
-        } == true)
+        } == false)
         let smartGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceGroup-Mudsnote"
+            $0.identifier?.rawValue == "LibrarySidebarBrandTitle"
         })
         #expect(smartGroup.stringValue == "Mudsnote")
-        let recentScope = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceLabel-1"
+        let recentScope = try #require(window.contentView?.allSubviews.compactMap {
+            $0 as? LibraryListSmartScopeControl
+        }.first {
+            $0.identifier?.rawValue == "LibraryListSmartScope-0"
         })
-        let favoritesScope = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceLabel-4"
+        let favoritesScope = try #require(window.contentView?.allSubviews.compactMap {
+            $0 as? LibraryListSmartScopeControl
+        }.first {
+            $0.identifier?.rawValue == "LibraryListSmartScope-1"
         })
-        let allNotesScope = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceLabel-0"
+        let allNotesScope = try #require(window.contentView?.allSubviews.compactMap {
+            $0 as? LibraryListSmartScopeControl
+        }.first {
+            $0.identifier?.rawValue == "LibraryListSmartScope-2"
         })
-        #expect(recentScope.stringValue == "最近编辑")
-        #expect(favoritesScope.stringValue == "收藏")
-        #expect(allNotesScope.stringValue == LibraryCopy.home)
+        #expect(recentScope.titleLabel.stringValue == "最近编辑")
+        #expect(favoritesScope.titleLabel.stringValue == "收藏")
+        #expect(allNotesScope.titleLabel.stringValue == LibraryCopy.home)
         #expect(libraryGroup.font?.pointSize == LibraryNotesLayout.sourceGroupFontSize)
         #expect(LibraryNotesLayout.sourceGroupFontSize == 12)
         #expect(LibraryNotesLayout.sourceRowHeight == 32)
-        #expect(LibraryNotesLayout.sourceListTopInset == 12)
+        #expect(LibraryNotesLayout.sourceListTopInset == 0)
         #expect(LibraryNotesLayout.sourceListLeadingInset == 14)
         #expect(LibraryNotesLayout.sourceListBottomInset == 14)
         #expect(LibraryNotesLayout.sourceListTrailingInset == 6)
@@ -3488,9 +3486,10 @@ struct MarkdownRichEditorTests {
                 theme: controller.theme
             ) == "# Library Seed\nBody line"
         )
-        let allCount = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceCount-0"
-        })
+        let allSourceControl = try #require(window.contentView?.allSubviews.compactMap {
+            $0 as? LibraryListSmartScopeControl
+        }.first { $0.tag == 2 })
+        let allCount = allSourceControl.countLabel
         #expect(allCount.stringValue == "1")
         #expect(allCount.font?.pointSize == LibraryNotesLayout.sourceCountFontSize)
         #expect(!allCount.isAccessibilityElement())
@@ -3499,24 +3498,25 @@ struct MarkdownRichEditorTests {
         #expect(allCount.constraints.contains {
             $0.firstAttribute == .width && $0.constant == LibraryNotesLayout.sourceCountWidth
         })
-        let allSourceCell = try #require(window.contentView?.allSubviews.compactMap {
-            $0 as? LibrarySourceOutlineCellView
-        }.first {
-            $0.identifier?.rawValue == "LibrarySourceRow-0"
-        })
-        #expect(allSourceCell.textField?.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
-        #expect(allSourceCell.accessibilityLabel() == "首页")
-        #expect(allSourceCell.accessibilityValue() as? String == "1 条笔记")
-        #expect(allSourceCell.imageView?.contentTintColor == nil)
-        #expect(allSourceCell.imageView?.image?.isTemplate == false)
-        let selectedSourceWeight = NSFontManager.shared.weight(of: try #require(allSourceCell.textField?.font))
+        #expect(allSourceControl.titleLabel.font?.pointSize == LibraryNotesLayout.sourceButtonFontSize)
+        #expect(allSourceControl.accessibilityLabel() == "首页")
+        #expect(allSourceControl.accessibilityValue() as? String == "已选中")
+        #expect(allSourceControl.iconView.contentTintColor == nil)
+        #expect(allSourceControl.iconView.image?.isTemplate == false)
+        let selectedSourceWeight = NSFontManager.shared.weight(of: try #require(allSourceControl.titleLabel.font))
         let expectedSelectedSourceWeight = NSFontManager.shared.weight(of: .systemFont(
             ofSize: LibraryNotesLayout.sourceButtonFontSize,
-            weight: LibraryNotesLayout.sourceSelectedButtonFontWeight
+            weight: .semibold
         ))
         #expect(selectedSourceWeight == expectedSelectedSourceWeight)
-        let allSourceRow = try #require(controller.sourceOutlineView.rowView(
-            atRow: controller.sourceOutlineView.selectedRow,
+        let folderSourceCell = try #require(window.contentView?.allSubviews.compactMap {
+            $0 as? LibrarySourceOutlineCellView
+        }.first {
+            $0.identifier?.rawValue == "LibrarySourceRow-10"
+        })
+        let folderSourceRowIndex = controller.sourceOutlineView.row(for: folderSourceCell)
+        let folderSourceRow = try #require(controller.sourceOutlineView.rowView(
+            atRow: folderSourceRowIndex,
             makeIfNecessary: false
         ) as? LibrarySourceOutlineRowView)
         #expect(LibrarySourceOutlineRowView.leadingInset == LibraryNotesLayout.sourceRowHighlightLeadingInset)
@@ -3536,17 +3536,17 @@ struct MarkdownRichEditorTests {
         dropFeedbackRow.drawDraggingDestinationFeedback(in: dropFeedbackRow.bounds)
         dropFeedbackImage.unlockFocus()
         #expect(dropFeedbackRow.dropTargetFeedbackDrawCountForLibrary == 1)
-        #expect(!allSourceRow.isPointerHovered)
-        let selectedSourceRect = sourceOutline.rect(ofRow: sourceOutline.selectedRow)
+        #expect(!folderSourceRow.isPointerHovered)
+        let selectedSourceRect = sourceOutline.rect(ofRow: folderSourceRowIndex)
         sourceOutline.reconcilePointerHover(at: NSPoint(
             x: selectedSourceRect.midX,
             y: selectedSourceRect.midY
         ))
-        #expect(allSourceRow.isPointerHovered)
-        #expect(sourceOutline.pointerHoveredRow === allSourceRow)
+        #expect(folderSourceRow.isPointerHovered)
+        #expect(sourceOutline.pointerHoveredRow === folderSourceRow)
         let replacementSourceHoverRow = LibrarySourceOutlineRowView()
         sourceOutline.setPointerHoveredRow(replacementSourceHoverRow)
-        #expect(!allSourceRow.isPointerHovered)
+        #expect(!folderSourceRow.isPointerHovered)
         #expect(replacementSourceHoverRow.isPointerHovered)
         #expect(sourceOutline.pointerHoveredRow === replacementSourceHoverRow)
         sourceOutline.reconcilePointerHover(at: nil)
