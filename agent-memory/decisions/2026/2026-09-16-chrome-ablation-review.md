@@ -7,12 +7,27 @@ Scope: macOS implementation and native verification. Starting commit:
 
 A controlled 139-file project snapshot (macOS, shared core, iOS, tests, scripts,
 and documentation) was prepared for the explicitly requested whole-project
-review. Live selection was verified as Latest and Pro independently. The single
-Send attempt left the page displaying the original draft at chatgpt.com/ with
-no conversation or assistant answer. The pro-skills one-send rule prevents an
-unapproved retry; the user was asked to authorize one retry. No Pro conclusion
-has been received or incorporated. This record is local evidence, not a claim
-that the requested independent review completed.
+review. The user authorized a retry, and Latest + Pro were independently verified
+before the successful send. The complete response was captured and validated
+with three stable reads on 2026-09-16:
+https://chatgpt.com/c/6aaa2ae6-13b0-83e9-a3a6-5c6ae6d88fc6
+
+The reviewer used a Linux environment; its proposed AppKit patches were not
+runtime proof. Existing native ablation results remain authoritative for chrome.
+Locally adopted corrections: exclusive new-note creation with collision retry;
+commit tab identity only after successful load; remap inactive tabs on folder
+moves; include URLs in tab redraw signatures; explicit manual-CI platform input.
+A separate local search regression normalizes whitespace before filtered search.
+
+Deferred recommendations: incremental tab view reuse, asynchronous session-state
+refactoring, filesystem-event reconciliation, aggregate index memory budgeting,
+and cross-platform trash semantics. These need separate behavioral evidence and
+are not represented as resolved by this change.
+
+Risk review: exclusive creation changes only new-note writes, preserving existing
+files when another process wins a filename. Update-note replacement is unchanged.
+CI defaults to macOS and still uses isolated verification fixtures; no cloud run
+or iOS build is implied. All failure experiments use temporary notes and defaults.
 
 The retained local review bundle, prompt hash, attempt receipt, and recovery
 information are under `/tmp/mudsnote-pro-review-20260916`.
@@ -89,3 +104,23 @@ Real-window inspection confirmed compose is left of the sidebar divider, the
 search focus ring is intact, and opening/closing a blank tab restores the prior
 note. Collapsing and restoring the sidebar retained the editor first responder
 and kept toolbar controls visible.
+
+## Pro follow-up verification
+
+`./scripts/verify macos full` passed 317 discovered tests (316 executed plus
+one optional ablation skip) and all 8 Release performance tests. The deterministic
+creation test inserts a competing file after the availability check and verifies
+both bodies survive at distinct URLs. Filtered-search whitespace had three
+failing expectations before correction and passed afterward. Platform-routing
+fixtures passed; the manually dispatched cloud workflow itself was not run.
+
+The first broad run exposed a test-fixture filename assumption and a transient
+floating-search result failure. The fixture now derives the actual generated
+name; floating search passed both focused and subsequent full verification.
+Tab-load and folder-remap changes passed the existing AppKit suite; exhaustive
+injected async-load failure coverage remains a follow-up, not claimed evidence.
+
+The follow-up candidate passed `./scripts/verify macos live` and was installed.
+A real-window check confirmed compact chrome and sidebar compose placement.
+Opening and closing an empty tab restored the original selected document and
+editor first responder. No user-note content was changed by this interaction.

@@ -128,11 +128,19 @@ extension NoteStore {
     public func saveNewNote(title: String, body: String, tags: [String] = [], in directory: URL? = nil) throws -> URL {
         let targetDirectory = directory ?? notesDirectory
         try fileManager.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
-        let fileURL = uniqueFileURL(for: title, in: targetDirectory)
-        try writeNote(to: fileURL, title: title, body: body, tags: tags)
-        rememberRecentFile(fileURL)
-        markSearchIndexDirty(at: [fileURL])
-        return fileURL
+        let content = Data(storedNoteContent(title: title, body: body, tags: tags).utf8)
+        while true {
+            let fileURL = uniqueFileURL(for: title, in: targetDirectory)
+            do {
+                // Existence checks only suggest a name; creation must reject collisions.
+                try content.write(to: fileURL, options: .withoutOverwriting)
+            } catch CocoaError.fileWriteFileExists {
+                continue
+            }
+            rememberRecentFile(fileURL)
+            markSearchIndexDirty(at: [fileURL])
+            return fileURL
+        }
     }
 
     public func updateNote(at url: URL, title: String, body: String, tags: [String] = [], in directory: URL? = nil) throws -> URL {

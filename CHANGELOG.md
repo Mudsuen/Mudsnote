@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-16, this prototype records 283 implementation iterations, including the initial MVP.
+As of 2026-09-16, this prototype records 284 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 284. Pro review safety corrections
+
+- Problem: Concurrent new-note creation could overwrite another writer, failed loads could publish incorrect tab identities, folder moves left inactive tabs stale, and manual CI lacked a usable diff base.
+- Fix: Reject file collisions and retry, commit tab identity after load, remap every affected tab, explicitly select the CI platform, and normalize filtered-search whitespace.
+- Lesson: Advisory findings require local reproduction; filename availability is not a reservation.
 
 ### 283. Compact titlebar, sidebar compose, and safe export
 

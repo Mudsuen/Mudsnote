@@ -84,6 +84,10 @@ struct MacOSFeatureRegressionTests {
         #expect(Set(session.searchNotes(query: "needle", filter: .body).map(\.url)) == Set([bodyURL, attachmentURL]))
         #expect(session.searchNotes(query: "needle", filter: .tags).map(\.url) == [tagURL])
         #expect(session.searchNotes(query: "", filter: .attachments).map(\.url) == [attachmentURL])
+        for filter in [NoteSearchFilter.title, .body, .tags] {
+            #expect(session.searchNotes(query: "  needle\n", filter: filter).map(\.url)
+                == session.searchNotes(query: "needle", filter: filter).map(\.url))
+        }
     }
 
     @Test

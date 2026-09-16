@@ -2974,7 +2974,7 @@ final class LibraryWindowController: NSWindowController,
         guard !documentTabs.isEmpty else { return }
         let activeID = activeDocumentTab.id
         let signature = documentTabs.map {
-            "\($0.id):\($0.title):\($0.isDirty):\($0.id == activeID)"
+            "\($0.id):\($0.url?.path ?? ""):\($0.title):\($0.isDirty):\($0.id == activeID)"
         }.joined(separator: "|")
         guard signature != documentTabBarSignature else { return }
         documentTabBarSignature = signature
@@ -3068,12 +3068,7 @@ final class LibraryWindowController: NSWindowController,
             activateDocumentTab(existing.id)
             return true
         }
-        activeDocumentTab.url = note.url
-        activeDocumentTab.title = note.title.isEmpty
-            ? note.url.deletingPathExtension().lastPathComponent
-            : note.title
-        activeDocumentTab.isDirty = false
-        updateDocumentTabBar()
+        // Commit tab identity together with the successfully loaded document.
         return false
     }
 
@@ -8998,6 +8993,12 @@ final class LibraryWindowController: NSWindowController,
     private func remapSourceSnapshotFolder(from sourceURL: URL, to destinationURL: URL) {
         let sourcePath = sourceURL.standardizedFileURL.path
         let destination = destinationURL.standardizedFileURL
+        for tab in documentTabs {
+            guard let path = tab.url?.standardizedFileURL.path,
+                  path.hasPrefix(sourcePath + "/") else { continue }
+            tab.url = destination.appendingPathComponent(String(path.dropFirst(sourcePath.count + 1)))
+        }
+        updateDocumentTabBar()
         sourceCountSnapshot = sourceCountSnapshot.map { note in
             let notePath = note.url.standardizedFileURL.path
             guard notePath.hasPrefix(sourcePath + "/") else { return note }

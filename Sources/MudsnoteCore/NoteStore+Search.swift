@@ -23,26 +23,26 @@ public final class NoteSearchSession: @unchecked Sendable {
         filter: NoteSearchFilter,
         cancellationCheck: @Sendable () -> Bool = { false }
     ) -> [NoteSearchResult] {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let filteredEntries: [NoteSearchIndexEntry]
         switch filter {
         case .all:
             filteredEntries = entries
         case .title:
             filteredEntries = entries.filter {
-                $0.title.localizedCaseInsensitiveContains(query)
+                $0.title.localizedCaseInsensitiveContains(trimmedQuery)
             }
         case .body:
             filteredEntries = entries.filter {
-                $0.body.localizedCaseInsensitiveContains(query)
+                $0.body.localizedCaseInsensitiveContains(trimmedQuery)
             }
         case .tags:
             filteredEntries = entries.filter { entry in
-                entry.tags.contains { $0.localizedCaseInsensitiveContains(query) }
+                entry.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
             }
         case .attachments:
             filteredEntries = entries.filter(\.hasAttachments)
         }
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedQuery.isEmpty {
             return filteredEntries
                 .sorted { $0.modifiedAt > $1.modifiedAt }

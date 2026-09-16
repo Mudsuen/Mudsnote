@@ -3,6 +3,15 @@ name: CI
 # Routine verification runs locally; dispatch cloud CI only when needed.
 on:
   workflow_dispatch:
+    inputs:
+      platform:
+        description: Platform to verify
+        type: choice
+        default: macos
+        options:
+          - macos
+          - ios
+          - both
 
 permissions:
   contents: read
@@ -48,6 +57,5 @@ jobs:
           swift --version
       - name: Verify main
         env:
-          MUDSNOTE_DIFF_BASE: ${{ github.event.before }}
-          MUDSNOTE_DIFF_HEAD: ${{ github.sha }}
-        run: ./scripts/verify full
+          VERIFY_PLATFORM: ${{ inputs.platform }}
+        run: ./scripts/verify "$VERIFY_PLATFORM" full
