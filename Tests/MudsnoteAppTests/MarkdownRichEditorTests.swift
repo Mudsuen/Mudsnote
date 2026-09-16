@@ -2700,12 +2700,11 @@ struct MarkdownRichEditorTests {
         #expect(splitController.splitViewItems.count == 2)
         #expect(controller.sourceOutlineView.numberOfRows >= 3)
         #expect(controller.sourceTreeNoteTitlesForLibrary().contains("Library Seed"))
-        let filesGroupLabel = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceGroup-Files"
-        })
-        let treePresentationButton = try #require(filesGroupLabel.superview?.subviews.compactMap { $0 as? NSButton }.first {
+        let treePresentationButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
         })
+        window.contentView?.layoutSubtreeIfNeeded()
+        let toggleFrameBefore = treePresentationButton.convert(treePresentationButton.bounds, to: nil)
         window.makeFirstResponder(controller.editorTextView)
         let editorResponderBeforePresentationChange = window.firstResponder
         #expect(treePresentationButton.toolTip == "切换到列表")
@@ -2720,6 +2719,8 @@ struct MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
         })
         window.contentView?.layoutSubtreeIfNeeded()
+        #expect(listPresentationButton === treePresentationButton)
+        #expect(listPresentationButton.convert(listPresentationButton.bounds, to: nil).origin == toggleFrameBefore.origin)
         let smartNavigation = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibraryListSmartNavigation"
         })
@@ -2943,9 +2944,9 @@ struct MarkdownRichEditorTests {
         let sidebarListHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
             $0.identifier?.rawValue == "LibrarySidebarListHeader"
         })
-        #expect(sidebarListHeader.arrangedSubviews.contains(controller.noteListTitleLabel))
-        #expect(sidebarListHeader.arrangedSubviews.contains(controller.noteListCountLabel))
-        #expect(sidebarListHeader.arrangedSubviews.contains(controller.searchScopeControl))
+        #expect(sidebarListHeader.allSubviews.contains(controller.noteListTitleLabel))
+        #expect(sidebarListHeader.allSubviews.contains(controller.noteListCountLabel))
+        #expect(sidebarListHeader.allSubviews.contains(controller.searchScopeControl))
         #expect(controller.searchScopeControl.isHidden)
         #expect(controller.searchScopeControl.accessibilityLabel() == "搜索范围")
         sidebarListHeader.layoutSubtreeIfNeeded()
@@ -3104,13 +3105,11 @@ struct MarkdownRichEditorTests {
                 && $0.constant == LibraryNotesLayout.noteListStackTopOffset
         })
         #expect(LibraryNotesLayout.noteListStackTopOffset == -1)
-        let libraryGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
-            $0.identifier?.rawValue == "LibrarySourceGroup-Files"
+        let treeHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibrarySidebarTreeHeader"
         })
-        #expect(libraryGroup.stringValue == "FILES")
-        #expect(libraryGroup.superview?.subviews.contains {
-            $0.identifier?.rawValue == "LibrarySourceFloatingGroupBackground"
-        } == false)
+        #expect(treeHeader.title == "文件")
+        #expect(treeHeader.font == controller.noteListTitleLabel.font)
         #expect(window.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibrarySidebarBrandTitle"
         } == false)
@@ -3132,7 +3131,6 @@ struct MarkdownRichEditorTests {
         #expect(recentScope.titleLabel.stringValue == "最近编辑")
         #expect(favoritesScope.titleLabel.stringValue == "收藏")
         #expect(allNotesScope.titleLabel.stringValue == LibraryCopy.home)
-        #expect(libraryGroup.font?.pointSize == LibraryNotesLayout.sourceGroupFontSize)
         #expect(LibraryNotesLayout.sourceGroupFontSize == 12)
         #expect(LibraryNotesLayout.sourceRowHeight == 32)
         #expect(LibraryNotesLayout.sourceListTopInset == 0)

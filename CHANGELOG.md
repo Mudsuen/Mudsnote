@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-16, this prototype records 286 implementation iterations, including the initial MVP.
+As of 2026-09-16, this prototype records 287 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 287. Stable sidebar view switch
+
+- Problem: Tree and list presentations used separate headers with different typography, insets, and switch positions; the tree switch scrolled with its group row.
+- Fix: Share one fixed header and one 28-point switch target across both presentations, use matching semibold titles, and distinguish the destinations with folder and framed-list symbols. The fixed file heading retains folder-section collapse behavior.
+- Lesson: A presentation switch should preserve the control's identity and position as well as the current note and focus.
 
 ### 286. Single sidebar outline
 

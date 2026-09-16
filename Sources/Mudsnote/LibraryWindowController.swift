@@ -1491,6 +1491,9 @@ final class LibraryWindowController: NSWindowController,
     private var knowledgeBackStack: [URL] = []
     private var knowledgeForwardStack: [URL] = []
     private var sidebarPresentationButtons: [NSButton] = []
+    private var sidebarHeaderView: NSView!
+    private let sidebarTreeHeaderButton = NSButton(title: "文件", target: nil, action: nil)
+    private let sidebarListHeaderContent = NSStackView()
     private var listSmartScopeControls: [LibraryListSmartScopeControl] = []
     private var searchResultsGeneration = 0
     private var activeSearchSession: NoteSearchSession?
@@ -2384,6 +2387,8 @@ final class LibraryWindowController: NSWindowController,
         list.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(tint)
         container.addSubview(smartNavigation)
+        container.addSubview(sidebarHeaderView)
+        sidebarHeaderView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(modeContainer)
         modeContainer.addSubview(tree)
         modeContainer.addSubview(list)
@@ -2403,7 +2408,10 @@ final class LibraryWindowController: NSWindowController,
             smartNavigation.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
             modeContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             modeContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            modeContainer.topAnchor.constraint(equalTo: smartNavigation.bottomAnchor),
+            sidebarHeaderView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            sidebarHeaderView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            sidebarHeaderView.topAnchor.constraint(equalTo: smartNavigation.bottomAnchor),
+            modeContainer.topAnchor.constraint(equalTo: sidebarHeaderView.bottomAnchor),
             modeContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             tree.leadingAnchor.constraint(equalTo: modeContainer.leadingAnchor),
             tree.trailingAnchor.constraint(equalTo: modeContainer.trailingAnchor),
@@ -2592,13 +2600,25 @@ final class LibraryWindowController: NSWindowController,
         sidebarPresentationButtons.append(sidebarPresentationButton)
         let listHeaderSpacer = NSView()
         listHeaderSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        sidebarTreeHeaderButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarTreeHeader")
+        sidebarTreeHeaderButton.font = .systemFont(ofSize: 13, weight: .semibold)
+        sidebarTreeHeaderButton.contentTintColor = .labelColor
+        sidebarTreeHeaderButton.alignment = .left
+        sidebarTreeHeaderButton.isBordered = false
+        sidebarTreeHeaderButton.target = self
+        sidebarTreeHeaderButton.action = #selector(toggleSidebarFolderSectionPressed)
+        sidebarTreeHeaderButton.toolTip = "展开或收起文件夹"
+        sidebarListHeaderContent.orientation = .horizontal
+        sidebarListHeaderContent.spacing = 6
+        [noteListTitleLabel, noteListCountLabel, searchScopeControl].forEach {
+            sidebarListHeaderContent.addArrangedSubview($0)
+        }
         let listHeader = NSStackView(views: [
-            noteListTitleLabel,
-            noteListCountLabel,
-            listHeaderSpacer,
-            searchScopeControl,
-            sidebarPresentationButton
+            sidebarTreeHeaderButton, sidebarListHeaderContent, listHeaderSpacer, sidebarPresentationButton
         ])
+        sidebarHeaderView = listHeader
+        sidebarPresentationButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        sidebarPresentationButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
         listHeader.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarListHeader")
         listHeader.orientation = .horizontal
         listHeader.alignment = .centerY
@@ -2609,7 +2629,7 @@ final class LibraryWindowController: NSWindowController,
         searchScopeControl.setContentHuggingPriority(.required, for: .horizontal)
         listHeader.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
-        let stack = NSStackView(views: [listHeader, listContainer])
+        let stack = NSStackView(views: [listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
@@ -2632,7 +2652,7 @@ final class LibraryWindowController: NSWindowController,
             stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor)
         ])
         let stackHorizontalInsets = stack.edgeInsets.left + stack.edgeInsets.right
-        [listHeader, listContainer].forEach {
+        [listContainer].forEach {
             $0.widthAnchor.constraint(
                 equalTo: stack.widthAnchor,
                 constant: -stackHorizontalInsets
@@ -3154,7 +3174,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func configureNoteListHeaderLabels() {
         noteListTitleLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListTitle")
-        noteListTitleLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderTitleFontSize, weight: .bold)
+        noteListTitleLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderTitleFontSize, weight: .semibold)
         noteListTitleLabel.textColor = panelPrimaryTextColor()
         noteListTitleLabel.lineBreakMode = .byTruncatingTail
 
@@ -5316,6 +5336,8 @@ final class LibraryWindowController: NSWindowController,
 
         switch item.kind {
         case .group(let title, let section):
+            // The folder group's heading lives in the fixed shared header.
+            if section == .folders { return NSView() }
             let identifier: NSUserInterfaceItemIdentifier
             if section == .tags {
                 identifier = NSUserInterfaceItemIdentifier("LibrarySourceGroup-Tags")
@@ -5337,35 +5359,11 @@ final class LibraryWindowController: NSWindowController,
                     constant: LibraryNotesLayout.sourceGroupContentLeadingInset
                         + (section == .tags ? 0 : 4)
                 )
-                if section == .folders {
-                    let toggle = NSButton()
-                    toggle.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarPresentationButton")
-                    configureSidebarPresentationButton(toggle)
-                    sidebarPresentationButtons.append(toggle)
-                    cell.addSubview(toggle)
-                    toggle.translatesAutoresizingMaskIntoConstraints = false
-                    NSLayoutConstraint.activate([
-                        leading,
-                        label.trailingAnchor.constraint(lessThanOrEqualTo: toggle.leadingAnchor, constant: -6),
-                        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                        toggle.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -8),
-                        toggle.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
-                        toggle.widthAnchor.constraint(equalToConstant: 24),
-                        toggle.heightAnchor.constraint(equalToConstant: 24)
-                    ])
-                } else {
-                    NSLayoutConstraint.activate([
-                        leading,
-                        label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
-                        label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
-                    ])
-                }
-            }
-            if section == .folders,
-               let toggle = cell.subviews.compactMap({ $0 as? NSButton }).first(where: {
-                   $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
-               }) {
-                configureSidebarPresentationButton(toggle)
+                NSLayoutConstraint.activate([
+                    leading,
+                    label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+                    label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+                ])
             }
             label.stringValue = title
             label.identifier = identifier
@@ -5654,7 +5652,8 @@ final class LibraryWindowController: NSWindowController,
             return LibraryNotesLayout.sourceRowHeight
         }
         switch item.kind {
-        case .group:
+        case .group(_, let section):
+            if section == .folders { return 1 }
             return LibraryNotesLayout.sourceSectionHeaderHeight
         case .status:
             return LibraryNotesLayout.sourceStatusRowHeight
@@ -9847,7 +9846,13 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
+    @objc private func toggleSidebarFolderSectionPressed() {
+        toggleSourceFoldersSectionForLibrary()
+    }
+
     private func applySidebarPresentationChrome() {
+        sidebarTreeHeaderButton.isHidden = sidebarPresentation != .tree
+        sidebarListHeaderContent.isHidden = sidebarPresentation == .tree
         for button in sidebarPresentationButtons {
             configureSidebarPresentationButton(button)
         }
@@ -9857,9 +9862,9 @@ final class LibraryWindowController: NSWindowController,
         let showsTree = sidebarPresentation == .tree
         let label = showsTree ? "切换到列表" : "切换到文件树"
         button.image = toolbarSymbolImage(
-            symbolName: showsTree ? "list.bullet" : "list.bullet.indent",
+            symbolName: showsTree ? "list.bullet.rectangle" : "folder",
             label: label,
-            pointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
+            pointSize: 14
         )
         button.imagePosition = .imageOnly
         button.isBordered = false
