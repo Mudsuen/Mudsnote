@@ -2365,11 +2365,7 @@ final class LibraryWindowController: NSWindowController,
         surface.material = .underWindowBackground
         surface.blendingMode = .withinWindow
         surface.state = .active
-        surface.wantsLayer = true
-        surface.layer?.cornerRadius = 16
-        surface.layer?.masksToBounds = true
-        surface.layer?.borderWidth = 0.5
-        surface.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
+        // The native sidebar host already supplies the rounded outer boundary.
         surface.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(surface)
 
@@ -2394,10 +2390,10 @@ final class LibraryWindowController: NSWindowController,
 
 
         NSLayoutConstraint.activate([
-            surface.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 6),
-            surface.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2),
-            surface.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
-            surface.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+            surface.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            surface.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            surface.topAnchor.constraint(equalTo: container.topAnchor),
+            surface.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             tint.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
             tint.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
             tint.topAnchor.constraint(equalTo: surface.topAnchor),

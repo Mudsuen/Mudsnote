@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-16, this prototype records 285 implementation iterations, including the initial MVP.
+As of 2026-09-16, this prototype records 286 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 286. Single sidebar outline
+
+- Problem: A custom inset border duplicated the native sidebar outline, creating a nested panel appearance.
+- Fix: Fill the native sidebar surface without an additional border, corner mask, or inset; keep native window controls in place.
+- Lesson: Let the system sidebar host own its outer boundary.
 
 ### 285. Sidebar panel with integrated window controls
 
