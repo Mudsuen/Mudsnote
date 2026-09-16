@@ -1688,7 +1688,7 @@ final class LibraryWindowController: NSWindowController,
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize
-        window.toolbarStyle = .unifiedCompact
+        window.toolbarStyle = .unified
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
@@ -2353,16 +2353,25 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildNavigationSidebar(tree: NSView, list: NSView) -> NSView {
-        let container = NSVisualEffectView()
+        let container = NSView()
         container.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSidebar")
         container.setAccessibilityLabel("笔记导航")
-        container.material = .sidebar
-        container.blendingMode = .withinWindow
-        container.state = .active
         container.translatesAutoresizingMaskIntoConstraints = false
         sourceListView = container
         sidebarTreeView = tree
         sidebarNoteListView = list
+
+        let surface = NSVisualEffectView()
+        surface.material = .underWindowBackground
+        surface.blendingMode = .withinWindow
+        surface.state = .active
+        surface.wantsLayer = true
+        surface.layer?.cornerRadius = 16
+        surface.layer?.masksToBounds = true
+        surface.layer?.borderWidth = 0.5
+        surface.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.35).cgColor
+        surface.translatesAutoresizingMaskIntoConstraints = false
+        container.addSubview(surface)
 
         let tint = LibraryPassthroughTintView()
         tint.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSidebarTint")
@@ -2377,7 +2386,7 @@ final class LibraryWindowController: NSWindowController,
         modeContainer.translatesAutoresizingMaskIntoConstraints = false
         tree.translatesAutoresizingMaskIntoConstraints = false
         list.translatesAutoresizingMaskIntoConstraints = false
-        container.addSubview(tint)
+        surface.addSubview(tint)
         container.addSubview(smartNavigation)
         container.addSubview(modeContainer)
         modeContainer.addSubview(tree)
@@ -2385,10 +2394,14 @@ final class LibraryWindowController: NSWindowController,
 
 
         NSLayoutConstraint.activate([
-            tint.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            tint.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            tint.topAnchor.constraint(equalTo: container.topAnchor),
-            tint.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            surface.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 6),
+            surface.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -2),
+            surface.topAnchor.constraint(equalTo: container.topAnchor, constant: 6),
+            surface.bottomAnchor.constraint(equalTo: container.bottomAnchor, constant: -6),
+            tint.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
+            tint.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
+            tint.topAnchor.constraint(equalTo: surface.topAnchor),
+            tint.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
             smartNavigation.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             smartNavigation.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             smartNavigation.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
@@ -3157,10 +3170,9 @@ final class LibraryWindowController: NSWindowController,
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         [
-            Self.toggleSidebarToolbarItemIdentifier,
-            Self.navigationBackToolbarItemIdentifier,
-            Self.navigationForwardToolbarItemIdentifier,
+            .flexibleSpace,
             Self.newNoteToolbarItemIdentifier,
+            Self.toggleSidebarToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.documentTabsToolbarItemIdentifier,
             .flexibleSpace,
@@ -3170,6 +3182,8 @@ final class LibraryWindowController: NSWindowController,
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolbarDefaultItemIdentifiers(toolbar) + [
+            Self.navigationBackToolbarItemIdentifier,
+            Self.navigationForwardToolbarItemIdentifier,
             Self.editorToolsToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.documentTabsToolbarItemIdentifier,

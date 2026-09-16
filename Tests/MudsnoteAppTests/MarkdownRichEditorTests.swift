@@ -2754,7 +2754,6 @@ struct MarkdownRichEditorTests {
         homeControl.sendAction(homeControl.action, to: homeControl.target)
         #expect(controller.selectedSourceTitleForLibrary == "首页")
         #expect(store.librarySidebarPresentationRawValue == 0)
-        #expect(window.toolbarStyle == .unifiedCompact)
         #expect(window.styleMask.contains(.resizable))
         let titlebarSeparators = window.contentView?.allSubviews.compactMap { $0 as? NSBox }.filter {
             $0.identifier?.rawValue.hasSuffix("TitlebarSeparator") == true
@@ -2801,8 +2800,6 @@ struct MarkdownRichEditorTests {
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-title"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-list-actions"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.new-note"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.navigation-back"))
-        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.navigation-forward"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.document-tabs"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.note-separator"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
@@ -2828,23 +2825,10 @@ struct MarkdownRichEditorTests {
             of: "mudsnote.library.toolbar.new-note"
         ))
         #expect(newNoteIndex < sourceSeparatorIndex)
-        let defaultToolbarItems = controller.toolbarDefaultItemIdentifiers(try #require(window.toolbar))
-        let defaultToolbarItemValues = defaultToolbarItems.map(\.rawValue)
-        #expect(defaultToolbarItemValues.first == "mudsnote.library.toolbar.toggle-sidebar")
-        let defaultNewNoteIndex = try #require(defaultToolbarItemValues.firstIndex(
-            of: "mudsnote.library.toolbar.new-note"
-        ))
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 2] == "mudsnote.library.toolbar.navigation-back")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 1] == "mudsnote.library.toolbar.navigation-forward")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 1] == "mudsnote.library.toolbar.source-separator")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.document-tabs")
-        #expect(defaultToolbarItems[defaultNewNoteIndex + 3] == .flexibleSpace)
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.search")
-        for toolbarButtonID in [
-            "mudsnote.library.toolbar.toggle-sidebar",
-            "mudsnote.library.toolbar.navigation-back",
-            "mudsnote.library.toolbar.navigation-forward"
-        ] {
+        let allowedItems = controller.toolbarAllowedItemIdentifiers(try #require(window.toolbar))
+        #expect(allowedItems.contains(NSToolbarItem.Identifier("mudsnote.library.toolbar.navigation-back")))
+        #expect(allowedItems.contains(NSToolbarItem.Identifier("mudsnote.library.toolbar.navigation-forward")))
+        for toolbarButtonID in ["mudsnote.library.toolbar.toggle-sidebar"] {
             let item = try #require((window.toolbar?.items ?? []).first {
                 $0.itemIdentifier.rawValue == toolbarButtonID
             })
@@ -3033,7 +3017,7 @@ struct MarkdownRichEditorTests {
         #expect(sourceTrackingSeparator.dividerIndex == 0)
         let sourceList = splitView.arrangedSubviews[0]
         let noteList = sourceList
-        let navigationSurface = try #require(sourceList.allSubviews.compactMap { $0 as? NSVisualEffectView }.first {
+        let navigationSurface = try #require(sourceList.allSubviews.first {
             $0.identifier?.rawValue == "LibraryNavigationSidebar"
         })
         let sourceSurface = try #require(sourceList.allSubviews.first {
@@ -3043,8 +3027,6 @@ struct MarkdownRichEditorTests {
         #expect(sourceSurface.accessibilityLabel() == "资料库")
         #expect(controller.tableView.accessibilityLabel() == "笔记列表")
         #expect(navigationSurface.identifier?.rawValue == "LibraryNavigationSidebar")
-        #expect(navigationSurface.material == .sidebar)
-        #expect(navigationSurface.blendingMode == .withinWindow)
         #expect(sourceSurface.layer?.backgroundColor == nil)
         #expect(!sourceSurface.allSubviews.contains {
             $0.identifier?.rawValue == "LibrarySourceDarkeningTint"

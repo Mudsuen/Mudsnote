@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-16, this prototype records 284 implementation iterations, including the initial MVP.
+As of 2026-09-16, this prototype records 285 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 285. Sidebar panel with integrated window controls
+
+- Problem: The navigation background started below the titlebar, visually detaching the traffic lights from the sidebar; navigation arrows crowded the top row.
+- Fix: Extend an inset rounded sidebar surface behind native window chrome, retain standard traffic-light placement, and group compose and the sidebar toggle on the right. Keep history controls available through toolbar customization.
+- Lesson: Treat the sidebar and its window-control row as one surface while preserving native window behavior.
 
 ### 284. Pro review safety corrections
 
