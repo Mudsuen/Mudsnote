@@ -73,7 +73,12 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let draftPersistenceErrorHandler: ((Error) -> Void)?
     lazy var draftPersistenceCoordinator = DraftPersistenceCoordinator(
         save: saveDraftSnapshot,
-        delete: deleteDraftSnapshot
+        delete: deleteDraftSnapshot,
+        publish: { [noteStore] snapshot, url, expectedContents in
+            try noteStore.updateNote(at: url, title: snapshot.title, body: snapshot.body,
+                                     tags: snapshot.tags, expectedContents: expectedContents,
+                                     updatesInPlace: true)
+        }
     )
 
     let toolbarButtonWidth: CGFloat = 30
@@ -261,6 +266,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
             performRevealAnimation(window: window, targetFrame: targetFrame, targetAlpha: targetAlpha)
         }
 
+        if isFloatingNoteMode && isDirty { markDocumentDirty() }
         window.makeFirstResponder(editorTextView)
         editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
     }

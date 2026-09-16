@@ -22,7 +22,8 @@ extension EditorWindowController {
         guard isDirty || force else { return }
 
         draftPersistenceGeneration &+= 1
-        try draftPersistenceCoordinator.flush(currentDraftPersistenceAction())
+        let result = try draftPersistenceCoordinator.flush(currentDraftPersistenceAction())
+        applyPublishedFloatingNote(result)
         isDirty = false
     }
 
@@ -42,7 +43,8 @@ extension EditorWindowController {
                 return
             }
             switch result {
-            case .success:
+            case .success(let published):
+                self.applyPublishedFloatingNote(published)
                 self.isDirty = false
             case .failure(let error):
                 self.handleDraftPersistenceFailure(error)
@@ -58,6 +60,15 @@ extension EditorWindowController {
 
     private func currentDraftPersistenceAction() -> DraftPersistenceAction {
         let document = currentDocument()
+        if isFloatingNoteMode, let url = activeFloatingNoteURL ?? fileURL,
+           let sourceContentsAtLoad {
+            return .publish(DraftSnapshot(
+                id: currentDraftID, sourcePath: url.path,
+                selectedDirectoryPath: selectedDirectoryURL.path,
+                title: document.title, body: document.body, tags: document.tags,
+                updatedAt: Date()
+            ), expectedContents: sourceContentsAtLoad)
+        }
         guard !document.title.isEmpty || !document.body.isEmpty else {
             return .delete(currentDraftID)
         }
@@ -70,6 +81,19 @@ extension EditorWindowController {
             tags: document.tags,
             updatedAt: Date()
         ))
+    }
+
+    private func applyPublishedFloatingNote(_ result: NoteUpdateResult?) {
+        guard let result else { return }
+        activeFloatingNoteURL = result.url
+        if fileURL != nil { fileURL = result.url }
+        selectedDirectoryURL = result.url.deletingLastPathComponent()
+        sourceContentsAtLoad = result.sourceContents
+        onSave(result.url)
+        if let original = result.conflictedOriginalURL {
+            presentErrorAlert(message: "检测到外部修改",
+                              details: "外部版本保留在：\n\(original.path)\n\n浮窗内容另存为：\n\(result.url.path)")
+        }
     }
 
     @discardableResult

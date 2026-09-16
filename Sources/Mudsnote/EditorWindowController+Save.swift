@@ -5,6 +5,13 @@ import MudsnoteCore
 extension EditorWindowController {
 
     @objc func savePressed() {
+        if isFloatingNoteMode {
+            do { try persistDraft(force: true) }
+            catch {
+                presentErrorAlert(message: "无法保存笔记", details: error.localizedDescription)
+                return
+            }
+        }
         _ = commitPendingTagIfNeeded()
         let current = currentDocument()
         let migration = MarkdownEditorDocument.extractingInlineTags(from: current.body)
@@ -98,6 +105,7 @@ extension EditorWindowController {
 
         do {
             let note = try noteStore.loadNoteDocument(at: url)
+            draftPersistenceCoordinator.resetPublishedNotes()
             activeFloatingNoteURL = url
             selectedDirectoryURL = url.deletingLastPathComponent()
             sourceContentsAtLoad = note.sourceContents

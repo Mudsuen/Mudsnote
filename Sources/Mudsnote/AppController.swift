@@ -1128,6 +1128,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
                 : nil,
             remembersWindowFrame: remembersWindowFrame,
             onSave: { [weak self] savedURL in
+                if let self, let controller = controllerReference,
+                   self.editorControllers.values.contains(where: { $0 === controller }) {
+                    let savedPath = savedURL.standardizedFileURL.path
+                    let previousKeys = self.editorControllers.compactMap { key, value in
+                        value === controller && key != savedPath ? key : nil
+                    }
+                    for key in previousKeys { self.editorControllers.removeValue(forKey: key) }
+                    self.editorControllers[savedPath] = controller
+                }
                 self?.didSaveNote(at: savedURL)
             },
             onClose: { [weak self] in

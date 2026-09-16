@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-16, this prototype records 287 implementation iterations, including the initial MVP.
+As of 2026-09-16, this prototype records 288 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 288. Publish floating-note autosaves to the library
+
+- Problem: Floating editors saved only draft snapshots, leaving their backing Markdown files empty or stale in the library.
+- Fix: Publish file-backed floating edits on the serial background persistence queue, retain drafts until successful writes, track committed baselines across queued revisions, and preserve external edits in conflict copies. Restored floating drafts resume autosave without closing the window.
+- Lesson: A recoverable draft and a published document are separate states; both must be handled explicitly.
 
 ### 287. Stable sidebar view switch
 
