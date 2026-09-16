@@ -3235,6 +3235,10 @@ enum MarkdownRichTextCodec {
               !isImageFile(fileURL) else {
             return nil
         }
+        // Notes remain navigable text links instead of generic file previews.
+        if case .localMarkdown = markdownLinkDestination(path, relativeTo: baseURL) {
+            return nil
+        }
         let metadata = attachmentMetadataText(for: fileURL)
 
         let attachment = NSTextAttachment()

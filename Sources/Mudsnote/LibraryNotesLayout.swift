@@ -18,7 +18,7 @@ enum LibraryNotesLayout {
     static let noteColumnMinimumWidth: CGFloat = 200
     static let noteColumnMaximumWidth: CGFloat = 320
     static let editorColumnMinimumWidth: CGFloat = 480
-    static let noteTableInitialWidth: CGFloat = 254
+    static let noteTableInitialWidth: CGFloat = 276
     static let noteTableMinimumWidth: CGFloat = 194
     static let toolbarSearchWidth: CGFloat = 160
     static let toolbarSearchHeight: CGFloat = 32
@@ -33,7 +33,7 @@ enum LibraryNotesLayout {
     static let toolbarEditorToolSymbolPointSize: CGFloat = 13
     static let toolbarEditorFormatFontSize: CGFloat = 17
     static let toolbarCircularButtonSize: CGFloat = 30
-    static let toolbarNewNoteWrapperWidth: CGFloat = 44
+    static let toolbarNewNoteWrapperWidth: CGFloat = 30
     static let toolbarCollapsedSidebarWrapperWidth: CGFloat = 34
     static let toolbarExpandedTitleLeadingOffset: CGFloat = 12
     static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11.5
@@ -54,9 +54,9 @@ enum LibraryNotesLayout {
     static let sourceSectionHeaderHeight: CGFloat = 22
     static let sourceStatusRowHeight: CGFloat = 22
     static let sourceListTopInset: CGFloat = 0
-    static let sourceListLeadingInset: CGFloat = 14
+    static let sourceListLeadingInset: CGFloat = 4
     static let sourceListBottomInset: CGFloat = 14
-    static let sourceListTrailingInset: CGFloat = 6
+    static let sourceListTrailingInset: CGFloat = 4
     static let sourceCollapseAnimationDuration: TimeInterval = 0.22
     static let sourceRowCornerRadius: CGFloat = 8
     static let sourceRowHighlightLeadingInset: CGFloat = 10
@@ -96,8 +96,8 @@ enum LibraryNotesLayout {
     static let gallerySectionHeaderHeight: CGFloat = 32
     static let noteListHeaderTitleFontSize: CGFloat = 13
     static let noteListHeaderCountFontSize: CGFloat = 12
-    static let noteListLeadingInset: CGFloat = 14
-    static let noteListTrailingInset: CGFloat = 12
+    static let noteListLeadingInset: CGFloat = 2
+    static let noteListTrailingInset: CGFloat = 2
     static let noteListTopInset: CGFloat = 0
     static let noteListStackTopOffset: CGFloat = -1
     static let noteListBottomInset: CGFloat = 14

@@ -2,9 +2,9 @@ import AppKit
 
 @MainActor
 final class LibraryDocumentTabView: NSView {
-    static let minimumWidth: CGFloat = 96
+    static let minimumWidth: CGFloat = 88
     static let maximumWidth: CGFloat = 168
-    static let height: CGFloat = 26
+    static let height: CGFloat = 28
 
     let tabID: UUID
     var onSelect: (() -> Void)?
@@ -15,15 +15,15 @@ final class LibraryDocumentTabView: NSView {
         super.init(frame: .zero)
         identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTab-\(tab.id)")
         wantsLayer = true
-        layer?.cornerRadius = 6
-        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(selected ? 0.075 : 0).cgColor
+        layer?.cornerRadius = 7
+        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(selected ? 0.045 : 0).cgColor
 
         let titleButton = NSButton(title: (tab.isDirty ? "• " : "") + tab.title, target: self, action: #selector(selectPressed))
         titleButton.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabTitle")
         titleButton.isBordered = false
         titleButton.alignment = .left
         titleButton.lineBreakMode = .byTruncatingTail
-        titleButton.font = .systemFont(ofSize: 12, weight: selected ? .semibold : .regular)
+        titleButton.font = .systemFont(ofSize: 12, weight: .medium)
         titleButton.contentTintColor = selected ? .labelColor : .secondaryLabelColor
         titleButton.toolTip = tab.url?.path ?? "新标签页"
         titleButton.setAccessibilityLabel(tab.title)
@@ -33,7 +33,7 @@ final class LibraryDocumentTabView: NSView {
         closeButton.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabClose")
         closeButton.isBordered = false
         closeButton.image = closeButton.image?.withSymbolConfiguration(
-            NSImage.SymbolConfiguration(pointSize: 10, weight: .medium)
+            NSImage.SymbolConfiguration(pointSize: 9, weight: .regular)
         )
         closeButton.contentTintColor = selected ? .secondaryLabelColor : .tertiaryLabelColor
         closeButton.toolTip = "关闭 \(tab.title)"
@@ -60,9 +60,9 @@ final class LibraryDocumentTabView: NSView {
     static func preferredWidth(title: String, isDirty: Bool) -> CGFloat {
         let displayedTitle = (isDirty ? "• " : "") + title
         let titleWidth = ceil((displayedTitle as NSString).size(withAttributes: [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold)
+            .font: NSFont.systemFont(ofSize: 12, weight: .medium)
         ]).width)
-        return min(maximumWidth, max(minimumWidth, titleWidth + 48))
+        return min(maximumWidth, max(minimumWidth, titleWidth + 44))
     }
 
     @available(*, unavailable)

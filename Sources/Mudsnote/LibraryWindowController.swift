@@ -947,9 +947,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 4.5
-    static let contentLeadingInset: CGFloat = 20
+    static let contentLeadingInset: CGFloat = 16
     static let contentBottomInset: CGFloat = 7.5
-    static let contentTrailingInset: CGFloat = 22
+    static let contentTrailingInset: CGFloat = 18
     static let selectionTextTrailingPadding: CGFloat = 10
     static let stackTextTrailingAdjustment: CGFloat = 2
     static let minimumTextWidth: CGFloat = 40
@@ -1061,8 +1061,8 @@ final class LibraryNoteCellView: NSTableCellView {
 
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
-    static let selectionLeadingInset: CGFloat = 10
-    static let selectionTrailingInset: CGFloat = 10
+    static let selectionLeadingInset: CGFloat = 6
+    static let selectionTrailingInset: CGFloat = 6
     static let selectionTopInset: CGFloat = 6
     static let selectionBottomInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
@@ -1072,8 +1072,8 @@ final class LibraryNoteRowView: NSTableRowView {
     static let hoverVerticalInset: CGFloat = 3
     static let hoverCornerRadius: CGFloat = 8
     static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
-    static let separatorLeadingInset: CGFloat = 22
-    static let separatorTrailingInset: CGFloat = 20
+    static let separatorLeadingInset: CGFloat = 18
+    static let separatorTrailingInset: CGFloat = 16
     static let separatorAlpha: CGFloat = 0.28
 
     private var hoverTrackingArea: NSTrackingArea?
@@ -1685,6 +1685,7 @@ final class LibraryWindowController: NSWindowController,
         window.title = "\(MudsnoteBrand.appName) 笔记"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize
         window.toolbarStyle = .unified
@@ -2382,16 +2383,14 @@ final class LibraryWindowController: NSWindowController,
         modeContainer.addSubview(tree)
         modeContainer.addSubview(list)
 
-        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryNavigationTitlebarSeparator")
-        container.addSubview(titlebarSeparator)
 
         NSLayoutConstraint.activate([
             tint.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             tint.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             tint.topAnchor.constraint(equalTo: container.topAnchor),
             tint.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            smartNavigation.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 8),
-            smartNavigation.trailingAnchor.constraint(equalTo: container.trailingAnchor, constant: -8),
+            smartNavigation.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            smartNavigation.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             smartNavigation.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
             modeContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             modeContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
@@ -2404,11 +2403,7 @@ final class LibraryWindowController: NSWindowController,
             list.leadingAnchor.constraint(equalTo: modeContainer.leadingAnchor),
             list.trailingAnchor.constraint(equalTo: modeContainer.trailingAnchor),
             list.topAnchor.constraint(equalTo: modeContainer.topAnchor),
-            list.bottomAnchor.constraint(equalTo: modeContainer.bottomAnchor),
-            titlebarSeparator.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            titlebarSeparator.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            titlebarSeparator.bottomAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
-            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
+            list.bottomAnchor.constraint(equalTo: modeContainer.bottomAnchor)
         ])
         return container
     }
@@ -2656,7 +2651,7 @@ final class LibraryWindowController: NSWindowController,
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 0
-        stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
+        stack.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 8, right: 8)
         let horizontalInsets = stack.edgeInsets.left + stack.edgeInsets.right
         controls.forEach {
             $0.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -horizontalInsets).isActive = true
@@ -2890,8 +2885,6 @@ final class LibraryWindowController: NSWindowController,
         editor.addSubview(stack)
         editor.addSubview(galleryScrollView)
         editor.addSubview(galleryEmptyLabel)
-        let titlebarSeparator = makeLibraryTitlebarSeparator(identifier: "LibraryEditorTitlebarSeparator")
-        editor.addSubview(titlebarSeparator)
         stack.translatesAutoresizingMaskIntoConstraints = false
         galleryScrollView.translatesAutoresizingMaskIntoConstraints = false
         galleryEmptyLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -2907,11 +2900,7 @@ final class LibraryWindowController: NSWindowController,
             galleryEmptyLabel.centerXAnchor.constraint(equalTo: editor.centerXAnchor),
             galleryEmptyLabel.centerYAnchor.constraint(equalTo: editor.centerYAnchor, constant: -20),
             galleryEmptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: editor.leadingAnchor, constant: 24),
-            galleryEmptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: editor.trailingAnchor, constant: -24),
-            titlebarSeparator.leadingAnchor.constraint(equalTo: editor.leadingAnchor),
-            titlebarSeparator.trailingAnchor.constraint(equalTo: editor.trailingAnchor),
-            titlebarSeparator.bottomAnchor.constraint(equalTo: editor.safeAreaLayoutGuide.topAnchor),
-            titlebarSeparator.heightAnchor.constraint(equalToConstant: 1)
+            galleryEmptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: editor.trailingAnchor, constant: -24)
         ])
         let editorContentWidthOffset = -(LibraryNotesLayout.editorHorizontalInset * 2)
         NSLayoutConstraint.activate([
@@ -2964,11 +2953,12 @@ final class LibraryWindowController: NSWindowController,
         addButton.identifier = NSUserInterfaceItemIdentifier("LibraryNewDocumentTab")
         addButton.isBordered = false
         addButton.contentTintColor = .secondaryLabelColor
+        addButton.image = addButton.image?.withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
         addButton.toolTip = "新标签页"
         addButton.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
-            addButton.widthAnchor.constraint(equalToConstant: 24),
-            addButton.heightAnchor.constraint(equalToConstant: 24)
+            addButton.widthAnchor.constraint(equalToConstant: 28),
+            addButton.heightAnchor.constraint(equalToConstant: 28)
         ])
 
         let header = NSStackView(views: [scrollView, addButton])
@@ -3116,14 +3106,6 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    private func makeLibraryTitlebarSeparator(identifier: String) -> NSBox {
-        let separator = NSBox()
-        separator.identifier = NSUserInterfaceItemIdentifier(identifier)
-        separator.boxType = .separator
-        separator.translatesAutoresizingMaskIntoConstraints = false
-        return separator
-    }
-
     private func configureToolbar() {
         searchField.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarSearchField")
         searchField.placeholderString = LibraryCopy.search
@@ -3196,6 +3178,7 @@ final class LibraryWindowController: NSWindowController,
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolbarDefaultItemIdentifiers(toolbar) + [
+            Self.editorToolsToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.documentTabsToolbarItemIdentifier,
             Self.noteTrackingSeparatorToolbarItemIdentifier,
@@ -3254,7 +3237,7 @@ final class LibraryWindowController: NSWindowController,
                 action: #selector(goForwardInKnowledgeRelations)
             )
         case Self.newNoteToolbarItemIdentifier:
-            return toolbarCircularButtonItem(
+            return toolbarNewNoteButtonItem(
                 identifier: itemIdentifier,
                 label: "新建笔记",
                 symbolName: "square.and.pencil",
@@ -3637,7 +3620,7 @@ final class LibraryWindowController: NSWindowController,
         return item
     }
 
-    private func toolbarCircularButtonItem(
+    private func toolbarNewNoteButtonItem(
         identifier: NSToolbarItem.Identifier,
         label: String,
         symbolName: String,
@@ -3662,8 +3645,8 @@ final class LibraryWindowController: NSWindowController,
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
         button.toolTip = label
         button.setAccessibilityLabel(label)
-        button.bezelStyle = .glass
-        button.isBordered = true
+        button.bezelStyle = .shadowlessSquare
+        button.isBordered = false
         button.focusRingType = .none
         button.imagePosition = .imageOnly
         button.imageScaling = .scaleNone
@@ -10209,8 +10192,7 @@ final class LibraryWindowController: NSWindowController,
         })
         recordInternalFileSystemChanges(for: [folderURL], includingDescendants: true)
         let trashResult = try noteStore.trashFolderWithNoteURLs(
-            at: folderURL,
-            knownNoteURLs: notesInFolderByPath.values.map(\.url)
+            at: folderURL
         )
         let trashedFolderURL = trashResult.directory
         let deletedAt = Date()

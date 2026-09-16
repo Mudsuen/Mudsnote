@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-16, this prototype records 281 implementation iterations, including the initial MVP.
+As of 2026-09-16, this prototype records 282 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 282. Integrated Mac titlebar and reliable regressions
+
+- Problem: Sidebar padding accumulated across containers, the titlebar mixed circular and rectangular controls, and stale tests obscured local-note link failures.
+- Fix: Narrow navigation insets, remove titlebar rules, soften and align tab controls, restore optional editor tools, render local note links as navigable text, and count actual files when moving folders to Recently Deleted. Update fixtures for the unified title/body editor and keep AppKit test events running until Swift Testing reports its result.
+- Lesson: A zero exit code without a completed test summary is not verification; check the runner as well as the assertions.
 
 ### 281. Calmer, more readable Mac sidebar
 
