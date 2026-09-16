@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-14, this prototype records 280 implementation iterations, including the initial MVP.
+As of 2026-09-16, this prototype records 281 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 281. Calmer, more readable Mac sidebar
+
+- Problem: Repeated sidebar headings, deep note insets, and saturated selections crowded the two-column navigation.
+- Fix: Consolidate the list header and view switch, remove the redundant brand heading, widen the minimum sidebar, and use compact section labels, balanced note insets, and translucent theme selections.
+- Lesson: Allocate sidebar space to readable note titles and use typography and spacing to distinguish navigation from content.
 
 ### 280. Continuous two-column sidebar surface
 - Problem: Tree mode nested an opaque dark surface, a black tint, and large top corners inside the full-height sidebar material, creating a sharp color seam below the toolbar and making navigation look like a card pasted into the window. Switching modes could also replace the list's previous scope with an ordinary folder selection made in the tree.

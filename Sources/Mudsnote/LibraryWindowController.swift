@@ -899,8 +899,8 @@ private struct LibraryFormattingUndoSnapshot {
 final class LibraryGroupHeaderCellView: NSTableCellView {
     static let titleLeadingInset: CGFloat = 16
     static let titleTrailingInset: CGFloat = 10
-    static let firstTitleBottomInset: CGFloat = 15
-    static let followingTitleBottomInset: CGFloat = 2
+    static let firstTitleBottomInset: CGFloat = 6
+    static let followingTitleBottomInset: CGFloat = 6
 
     let titleLabel = NSTextField(labelWithString: "")
     private var titleBottomConstraint: NSLayoutConstraint?
@@ -922,7 +922,7 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
             ofSize: LibraryNotesLayout.noteGroupFontSize,
             weight: LibraryNotesLayout.noteGroupFontWeight
         )
-        titleLabel.textColor = panelPrimaryTextColor()
+        titleLabel.textColor = panelSecondaryTextColor()
         titleLabel.lineBreakMode = .byTruncatingTail
         addSubview(titleLabel)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
@@ -947,9 +947,9 @@ final class LibraryGroupHeaderCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteCellView: NSTableCellView {
     static let contentTopInset: CGFloat = 4.5
-    static let contentLeadingInset: CGFloat = 35
+    static let contentLeadingInset: CGFloat = 20
     static let contentBottomInset: CGFloat = 7.5
-    static let contentTrailingInset: CGFloat = 39
+    static let contentTrailingInset: CGFloat = 22
     static let selectionTextTrailingPadding: CGFloat = 10
     static let stackTextTrailingAdjustment: CGFloat = 2
     static let minimumTextWidth: CGFloat = 40
@@ -1062,7 +1062,7 @@ final class LibraryNoteCellView: NSTableCellView {
 @MainActor
 final class LibraryNoteRowView: NSTableRowView {
     static let selectionLeadingInset: CGFloat = 10
-    static let selectionTrailingInset: CGFloat = 27
+    static let selectionTrailingInset: CGFloat = 10
     static let selectionTopInset: CGFloat = 6
     static let selectionBottomInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
@@ -1072,8 +1072,8 @@ final class LibraryNoteRowView: NSTableRowView {
     static let hoverVerticalInset: CGFloat = 3
     static let hoverCornerRadius: CGFloat = 8
     static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
-    static let separatorLeadingInset: CGFloat = 37
-    static let separatorTrailingInset: CGFloat = 28
+    static let separatorLeadingInset: CGFloat = 22
+    static let separatorTrailingInset: CGFloat = 20
     static let separatorAlpha: CGFloat = 0.28
 
     private var hoverTrackingArea: NSTrackingArea?
@@ -1305,19 +1305,19 @@ final class LibraryNoteScrollView: NSScrollView {
     }
 
     override func layout() {
-        let targetWidth = max(LibraryNotesLayout.noteTableMinimumWidth, frame.width)
         super.layout()
+        let targetWidth = max(LibraryNotesLayout.noteTableMinimumWidth, contentView.bounds.width)
         guard let tableView = documentView as? LibraryNoteTableView else { return }
 
+        if let column = tableView.tableColumns.first,
+           abs(column.width - targetWidth) > 0.5 {
+            column.width = targetWidth
+        }
         var frame = tableView.frame
         if abs(frame.origin.x) > 0.5 || abs(frame.width - targetWidth) > 0.5 {
             frame.origin.x = 0
             frame.size.width = targetWidth
             tableView.frame = frame
-        }
-        if let column = tableView.tableColumns.first,
-           abs(column.width - targetWidth) > 0.5 {
-            column.width = targetWidth
         }
     }
 }
@@ -2586,38 +2586,26 @@ final class LibraryWindowController: NSWindowController,
         sidebarPresentationButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarPresentationButton")
         configureSidebarPresentationButton(sidebarPresentationButton)
         sidebarPresentationButtons.append(sidebarPresentationButton)
-        let filesTitle = NSTextField(labelWithString: "FILES")
-        filesTitle.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
-        filesTitle.textColor = panelTertiaryTextColor()
-        let filesSpacer = NSView()
-        filesSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        let filesHeader = NSStackView(views: [filesTitle, filesSpacer, sidebarPresentationButton])
-        filesHeader.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarFilesHeader")
-        filesHeader.orientation = .horizontal
-        filesHeader.alignment = .centerY
-        filesHeader.spacing = 6
-        filesHeader.edgeInsets = NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 10)
-        filesHeader.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceSectionHeaderHeight).isActive = true
-
         let listHeaderSpacer = NSView()
         listHeaderSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let listHeader = NSStackView(views: [
             noteListTitleLabel,
             noteListCountLabel,
             listHeaderSpacer,
-            searchScopeControl
+            searchScopeControl,
+            sidebarPresentationButton
         ])
         listHeader.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarListHeader")
         listHeader.orientation = .horizontal
         listHeader.alignment = .centerY
         listHeader.spacing = 6
-        listHeader.edgeInsets = NSEdgeInsets(top: 0, left: 14, bottom: 0, right: 0)
+        listHeader.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 10)
         noteListTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         noteListCountLabel.setContentHuggingPriority(.required, for: .horizontal)
         searchScopeControl.setContentHuggingPriority(.required, for: .horizontal)
         listHeader.heightAnchor.constraint(equalToConstant: 32).isActive = true
 
-        let stack = NSStackView(views: [filesHeader, listHeader, listContainer])
+        let stack = NSStackView(views: [listHeader, listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
         stack.alignment = .width
@@ -2640,7 +2628,7 @@ final class LibraryWindowController: NSWindowController,
             stack.bottomAnchor.constraint(equalTo: sidebar.bottomAnchor)
         ])
         let stackHorizontalInsets = stack.edgeInsets.left + stack.edgeInsets.right
-        [filesHeader, listHeader, listContainer].forEach {
+        [listHeader, listContainer].forEach {
             $0.widthAnchor.constraint(
                 equalTo: stack.widthAnchor,
                 constant: -stackHorizontalInsets
@@ -2650,13 +2638,6 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func buildListSmartNavigation() -> NSView {
-        let title = NSTextField(labelWithString: MudsnoteBrand.appName)
-        title.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarBrandTitle")
-        title.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
-        title.textColor = panelTertiaryTextColor()
-        title.alignment = .left
-        title.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceSectionHeaderHeight).isActive = true
-
         let scopes: [(LibraryScope, Int)] = [(.recent, 0), (.favorites, 1), (.all, 2)]
         let controls = scopes.map { scope, tag in
             let control = LibraryListSmartScopeControl(
@@ -2670,14 +2651,14 @@ final class LibraryWindowController: NSWindowController,
             return control
         }
         listSmartScopeControls = controls
-        let stack = NSStackView(views: [title] + controls)
+        let stack = NSStackView(views: controls)
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryListSmartNavigation")
         stack.orientation = .vertical
         stack.alignment = .width
         stack.spacing = 0
-        stack.edgeInsets = NSEdgeInsets(top: 0, left: 10, bottom: 0, right: 10)
+        stack.edgeInsets = NSEdgeInsets(top: 10, left: 10, bottom: 10, right: 10)
         let horizontalInsets = stack.edgeInsets.left + stack.edgeInsets.right
-        ([title] + controls).forEach {
+        controls.forEach {
             $0.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -horizontalInsets).isActive = true
         }
         updateListSmartScopeButtons()

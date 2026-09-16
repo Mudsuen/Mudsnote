@@ -2714,7 +2714,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.selectedSourceTitleForLibrary == "首页")
         #expect(window.firstResponder === editorResponderBeforePresentationChange)
         let listFilesHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
-            $0.identifier?.rawValue == "LibrarySidebarFilesHeader"
+            $0.identifier?.rawValue == "LibrarySidebarListHeader"
         })
         let listPresentationButton = try #require(listFilesHeader.allSubviews.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
@@ -2725,7 +2725,6 @@ struct MarkdownRichEditorTests {
         })
         let smartControls = smartNavigation.arrangedSubviews.compactMap { $0 as? LibraryListSmartScopeControl }
         let firstSmartControl = try #require(smartControls.first)
-        let smartTitle = try #require(smartNavigation.arrangedSubviews.first as? NSTextField)
         let navigationSidebar = try #require(smartNavigation.superview)
         #expect(abs(smartNavigation.frame.minX - 8) < 0.5)
         #expect(abs(smartNavigation.frame.width
@@ -2733,8 +2732,6 @@ struct MarkdownRichEditorTests {
         #expect(abs(firstSmartControl.frame.minX - smartNavigation.edgeInsets.left) < 0.5)
         #expect(abs(firstSmartControl.frame.width
             - (smartNavigation.bounds.width - smartNavigation.edgeInsets.left - smartNavigation.edgeInsets.right)) < 0.5)
-        #expect(abs(smartTitle.frame.midX - firstSmartControl.frame.midX) < 0.5)
-        #expect(smartTitle.frame.width >= firstSmartControl.frame.width - 4.5)
         #expect(listPresentationButton.toolTip == "切换到文件树")
         #expect(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceSurface"
@@ -3055,7 +3052,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceCollapseAnimationDuration == 0.22)
         #expect(sourceList.frame.width >= LibraryNotesLayout.sourceColumnMinimumWidth)
         #expect(noteList.frame.width >= LibraryNotesLayout.noteColumnMinimumWidth)
-        #expect(LibraryNotesLayout.sourceColumnMinimumWidth == 220)
+        #expect(LibraryNotesLayout.sourceColumnMinimumWidth == 260)
         #expect(LibraryNotesLayout.sourceColumnMaximumWidth == 380)
         #expect(LibraryNotesLayout.noteColumnMinimumWidth == 200)
         #expect(LibraryNotesLayout.noteColumnMaximumWidth == 320)
@@ -3132,10 +3129,9 @@ struct MarkdownRichEditorTests {
         #expect(libraryGroup.superview?.subviews.contains {
             $0.identifier?.rawValue == "LibrarySourceFloatingGroupBackground"
         } == false)
-        let smartGroup = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
+        #expect(window.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibrarySidebarBrandTitle"
-        })
-        #expect(smartGroup.stringValue == "Mudsnote")
+        } == false)
         let recentScope = try #require(window.contentView?.allSubviews.compactMap {
             $0 as? LibraryListSmartScopeControl
         }.first {
@@ -3237,27 +3233,27 @@ struct MarkdownRichEditorTests {
         #expect(LibraryGroupHeaderCellView.titleTrailingInset == 10)
         #expect(groupCell.isFirstGroup)
         #expect(groupCell.titleBottomInset == LibraryGroupHeaderCellView.firstTitleBottomInset)
-        #expect(LibraryGroupHeaderCellView.firstTitleBottomInset == 15)
+        #expect(LibraryGroupHeaderCellView.firstTitleBottomInset == 6)
         groupCell.isFirstGroup = false
         #expect(groupCell.titleBottomInset == LibraryGroupHeaderCellView.followingTitleBottomInset)
-        #expect(LibraryGroupHeaderCellView.followingTitleBottomInset == 2)
+        #expect(LibraryGroupHeaderCellView.followingTitleBottomInset == 6)
         groupCell.isFirstGroup = true
         #expect(
-            LibraryNotesLayout.noteGroupRowHeight - LibraryGroupHeaderCellView.firstTitleBottomInset == 30
+            LibraryNotesLayout.noteGroupRowHeight - LibraryGroupHeaderCellView.firstTitleBottomInset == 24
         )
         let groupRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 0) as? LibraryNoteRowView)
         groupRowView.setPointerHovered(true)
         #expect(!groupRowView.isPointerHovered)
         #expect(controller.tableView(controller.tableView, heightOfRow: 0) == LibraryNotesLayout.noteGroupRowHeight)
-        #expect(LibraryNotesLayout.noteGroupRowHeight == 45)
+        #expect(LibraryNotesLayout.noteGroupRowHeight == 30)
         #expect(controller.tableView(controller.tableView, heightOfRow: 1) == LibraryNotesLayout.noteRowHeight)
-        #expect(LibraryNotesLayout.noteRowHeight == 76)
+        #expect(LibraryNotesLayout.noteRowHeight == 68)
         let notePasteboardWriter = try #require(controller.tableView(controller.tableView, pasteboardWriterForRow: 1) as? NSURL)
         #expect(notePasteboardWriter as URL == noteURL)
         let noteRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 1) as? LibraryNoteRowView)
         #expect(!noteRowView.isGroupRow)
         #expect(LibraryNoteRowView.selectionLeadingInset == 10)
-        #expect(LibraryNoteRowView.selectionTrailingInset == 27)
+        #expect(LibraryNoteRowView.selectionTrailingInset == 10)
         #expect(LibraryNoteRowView.selectionTopInset == 6)
         #expect(LibraryNoteRowView.selectionBottomInset == 4)
         #expect(LibraryNoteRowView.selectionCornerRadius == 8)
@@ -3271,7 +3267,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNoteRowView.hoverCornerRadius == LibraryNoteRowView.selectionCornerRadius)
         #expect(LibraryNoteRowView.hoverFillColor.alphaComponent < 0.3)
         #expect(LibraryNoteRowView.separatorLeadingInset == LibraryNoteCellView.contentLeadingInset + 2)
-        #expect(LibraryNoteRowView.separatorTrailingInset == 28)
+        #expect(LibraryNoteRowView.separatorTrailingInset == 20)
         #expect(LibraryNoteRowView.separatorAlpha < 0.4)
         #expect(!noteRowView.isPointerHovered)
         controller.tableView.setPointerHoveredRow(noteRowView)
@@ -3298,9 +3294,9 @@ struct MarkdownRichEditorTests {
         #expect(windowAspectRatio > 1.45 && windowAspectRatio < 1.60)
         #expect(LibraryNotesLayout.sourceColumnWidth == LibraryNotesLayout.noteColumnWidth)
         #expect(LibraryNoteCellView.contentTopInset == 4.5)
-        #expect(LibraryNoteCellView.contentLeadingInset == 35)
+        #expect(LibraryNoteCellView.contentLeadingInset == 20)
         #expect(LibraryNoteCellView.contentBottomInset == 7.5)
-        #expect(LibraryNoteCellView.contentTrailingInset == 39)
+        #expect(LibraryNoteCellView.contentTrailingInset == 22)
         #expect(
             LibraryNoteCellView.contentTrailingInset
                 == LibraryNoteRowView.selectionTrailingInset
@@ -3311,10 +3307,10 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNoteCellView.stackTextTrailingAdjustment == 2)
         #expect(LibraryNoteCellView.minimumTextWidth == 40)
         #expect(LibraryNoteCellView.textRowSpacing == 2.5)
-        #expect(LibraryNotesLayout.noteGroupFontSize == 15)
-        #expect(LibraryNotesLayout.noteGroupFontWeight == .bold)
+        #expect(LibraryNotesLayout.noteGroupFontSize == 11)
+        #expect(LibraryNotesLayout.noteGroupFontWeight == .semibold)
         #expect(LibraryNotesLayout.noteTitleFontSize == 14)
-        #expect(LibraryNotesLayout.noteTitleFontWeight == .bold)
+        #expect(LibraryNotesLayout.noteTitleFontWeight == .semibold)
         #expect(LibraryNotesLayout.noteSnippetFontSize == 12)
         #expect(LibraryNotesLayout.noteSnippetFontWeight == .regular)
         #expect(LibraryNotesLayout.noteMetaFontSize == 11)
@@ -3846,7 +3842,7 @@ struct MarkdownRichEditorTests {
         )
         firstWindow.setFrame(desiredWindowFrame, display: false)
         firstWindow.contentView?.layoutSubtreeIfNeeded()
-        let desiredSourceWidth: CGFloat = 240
+        let desiredSourceWidth: CGFloat = 300
 
         firstSplitView.setPosition(desiredSourceWidth, ofDividerAt: 0)
         firstSplitView.layoutSubtreeIfNeeded()
@@ -4264,6 +4260,7 @@ struct MarkdownRichEditorTests {
     @Test
     func libraryNoteScrollViewFitsSingleColumnToVisibleWidth() {
         let tableView = LibraryNoteTableView()
+        tableView.style = .plain
         let column = NSTableColumn(identifier: NSUserInterfaceItemIdentifier("library-note"))
         column.width = LibraryNotesLayout.noteTableInitialWidth
         column.minWidth = LibraryNotesLayout.noteTableMinimumWidth
@@ -4271,20 +4268,23 @@ struct MarkdownRichEditorTests {
         tableView.addTableColumn(column)
         tableView.columnAutoresizingStyle = .noColumnAutoresizing
         let scrollView = LibraryNoteScrollView(frame: NSRect(x: 0, y: 0, width: 340, height: 300))
+        scrollView.scrollerStyle = .legacy
+        scrollView.hasVerticalScroller = true
         let clipView = LibraryNoteClipView(frame: scrollView.bounds)
         scrollView.contentView = clipView
         scrollView.hasHorizontalScroller = false
         scrollView.horizontalScrollElasticity = .none
         scrollView.usesPredominantAxisScrolling = true
         scrollView.documentView = tableView
-        scrollView.contentView.bounds = NSRect(x: 0, y: 0, width: 340, height: 300)
-        tableView.frame = NSRect(x: 92, y: 0, width: LibraryNotesLayout.noteTableInitialWidth, height: 300)
+        scrollView.tile()
+        tableView.frame = NSRect(x: 92, y: 0, width: LibraryNotesLayout.noteTableInitialWidth, height: 600)
 
         scrollView.layout()
 
-        let visibleWidth = scrollView.frame.width
+        let visibleWidth = scrollView.contentView.bounds.width
         #expect(tableView.frame.origin.x == 0)
-        #expect(tableView.frame.width >= visibleWidth)
+        #expect(tableView.frame.width == visibleWidth)
+        #expect(visibleWidth < scrollView.frame.width)
         #expect(column.width == visibleWidth)
         #expect(scrollView.hasHorizontalScroller == false)
         #expect(scrollView.horizontalScrollElasticity == .none)

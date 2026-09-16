@@ -50,15 +50,7 @@ enum MudsnoteThemeColor: String, CaseIterable {
     }
 
     var noteSelectionColor: NSColor {
-        switch self {
-        case .classicYellow:
-            return NSColor(calibratedRed: 0.492, green: 0.377, blue: 0.09, alpha: 0.96)
-        case .black:
-            return NSColor(calibratedWhite: 0.115, alpha: 0.98)
-        default:
-            return foregroundColor.blended(withFraction: 0.48, of: .black)?
-                .withAlphaComponent(0.94) ?? foregroundColor.withAlphaComponent(0.78)
-        }
+        foregroundColor.withAlphaComponent(self == .black ? 0.32 : 0.16)
     }
 
     var swatchImage: NSImage {
