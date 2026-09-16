@@ -8,7 +8,7 @@ cd "$ROOT_DIR"
 run_macos_tests() {
     local configuration="$1"
     shift
-    swift build --build-tests -c "$configuration"
+    swift build --build-tests -c "$configuration" -Xswiftc -enable-testing
     local bin_path developer_dir frameworks runner
     bin_path="$(swift build -c "$configuration" --show-bin-path)"
     developer_dir="$(xcode-select -p)"

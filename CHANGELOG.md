@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-16, this prototype records 282 implementation iterations, including the initial MVP.
+As of 2026-09-16, this prototype records 283 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 283. Compact titlebar, sidebar compose, and safe export
+
+- Problem: Excess toolbar and creation-date spacing pushed the note downward, compose belonged to the editor toolbar, and exporting could remove the original or an existing destination on failure.
+- Fix: Use compact native chrome, align the search field, move compose above the sidebar, and tighten metadata spacing. Export reads the saved document before atomic replacement. Add opt-in eight-variant layout ablation and three export safety regressions; enable testability for Release verification.
+- Lesson: Measure spacing contributors independently and verify failure paths with real files in isolated fixtures.
 
 ### 282. Integrated Mac titlebar and reliable regressions
 

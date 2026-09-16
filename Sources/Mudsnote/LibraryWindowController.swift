@@ -1688,7 +1688,7 @@ final class LibraryWindowController: NSWindowController,
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize
-        window.toolbarStyle = .unified
+        window.toolbarStyle = .unifiedCompact
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
@@ -2769,10 +2769,7 @@ final class LibraryWindowController: NSWindowController,
         configureEditorTextView()
         createdDateLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorCreatedDateLabel")
         createdDateLabel.setAccessibilityLabel("创建时间")
-        createdDateLabel.font = .systemFont(
-            ofSize: LibraryNotesLayout.editorStatusFontSize,
-            weight: .semibold
-        )
+        createdDateLabel.font = .systemFont(ofSize: 11, weight: .regular)
         createdDateLabel.textColor = panelTertiaryTextColor()
         createdDateLabel.alignment = .center
         createdDateLabel.lineBreakMode = .byTruncatingTail
@@ -3168,8 +3165,8 @@ final class LibraryWindowController: NSWindowController,
             Self.toggleSidebarToolbarItemIdentifier,
             Self.navigationBackToolbarItemIdentifier,
             Self.navigationForwardToolbarItemIdentifier,
-            Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.newNoteToolbarItemIdentifier,
+            Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.documentTabsToolbarItemIdentifier,
             .flexibleSpace,
             Self.searchToolbarItemIdentifier
@@ -3333,8 +3330,11 @@ final class LibraryWindowController: NSWindowController,
                 width: LibraryNotesLayout.toolbarSearchWrapperWidth,
                 height: LibraryNotesLayout.toolbarSearchWrapperHeight
             ))
+            wrapper.translatesAutoresizingMaskIntoConstraints = false
             wrapper.addSubview(searchField)
             NSLayoutConstraint.activate([
+                wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWrapperWidth),
+                wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWrapperHeight),
                 searchField.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
                 searchField.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
             ])
@@ -9547,15 +9547,16 @@ final class LibraryWindowController: NSWindowController,
 
     @discardableResult
     func exportSelectedMarkdownForLibrary(to destinationURL: URL) throws -> URL? {
-        guard canExportSelectedNote,
-              let sourceURL = selectedMarkdownFileURLForLibrary() else { return nil }
+        guard canExportSelectedNote else { return nil }
 
         try saveCurrentNoteIfNeeded()
+        // Saving a changed title may rename the document. Resolve its path afterward.
+        guard let sourceURL = selectedMarkdownFileURLForLibrary() else { return nil }
         let destination = destinationURL.standardizedFileURL
-        if FileManager.default.fileExists(atPath: destination.path) {
-            try FileManager.default.removeItem(at: destination)
-        }
-        try FileManager.default.copyItem(at: sourceURL, to: destination)
+        guard destination != sourceURL.standardizedFileURL else { return destination }
+        // Read first, then replace atomically: failed exports must preserve both files.
+        let contents = try Data(contentsOf: sourceURL)
+        try contents.write(to: destination, options: .atomic)
         return destination
     }
 

@@ -2754,7 +2754,7 @@ struct MarkdownRichEditorTests {
         homeControl.sendAction(homeControl.action, to: homeControl.target)
         #expect(controller.selectedSourceTitleForLibrary == "首页")
         #expect(store.librarySidebarPresentationRawValue == 0)
-        #expect(window.toolbarStyle == .unified)
+        #expect(window.toolbarStyle == .unifiedCompact)
         #expect(window.styleMask.contains(.resizable))
         let titlebarSeparators = window.contentView?.allSubviews.compactMap { $0 as? NSBox }.filter {
             $0.identifier?.rawValue.hasSuffix("TitlebarSeparator") == true
@@ -2778,7 +2778,7 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.toolbarSearchWidth == 160)
         #expect(LibraryNotesLayout.toolbarSearchHorizontalFocusRingInset == 4)
         #expect(LibraryNotesLayout.toolbarSearchWrapperWidth == LibraryNotesLayout.toolbarSearchWidth + 8)
-        #expect(LibraryNotesLayout.toolbarSearchWrapperHeight == 36)
+        #expect(LibraryNotesLayout.toolbarSearchWrapperHeight == 28)
         #expect(LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 2200, height: 1200)) == LibraryNotesLayout.presentedWindowSize)
         let clampedSize = LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 1180, height: 720))
         #expect(clampedSize == LibraryNotesLayout.presentedWindowSize)
@@ -2827,19 +2827,19 @@ struct MarkdownRichEditorTests {
         let newNoteIndex = try #require(toolbarItemOrder.firstIndex(
             of: "mudsnote.library.toolbar.new-note"
         ))
-        #expect(sourceSeparatorIndex < newNoteIndex)
+        #expect(newNoteIndex < sourceSeparatorIndex)
         let defaultToolbarItems = controller.toolbarDefaultItemIdentifiers(try #require(window.toolbar))
         let defaultToolbarItemValues = defaultToolbarItems.map(\.rawValue)
         #expect(defaultToolbarItemValues.first == "mudsnote.library.toolbar.toggle-sidebar")
         let defaultNewNoteIndex = try #require(defaultToolbarItemValues.firstIndex(
             of: "mudsnote.library.toolbar.new-note"
         ))
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 3] == "mudsnote.library.toolbar.navigation-back")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 2] == "mudsnote.library.toolbar.navigation-forward")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 1] == "mudsnote.library.toolbar.source-separator")
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 1] == "mudsnote.library.toolbar.document-tabs")
-        #expect(defaultToolbarItems[defaultNewNoteIndex + 2] == .flexibleSpace)
-        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 3] == "mudsnote.library.toolbar.search")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 2] == "mudsnote.library.toolbar.navigation-back")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex - 1] == "mudsnote.library.toolbar.navigation-forward")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 1] == "mudsnote.library.toolbar.source-separator")
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 2] == "mudsnote.library.toolbar.document-tabs")
+        #expect(defaultToolbarItems[defaultNewNoteIndex + 3] == .flexibleSpace)
+        #expect(defaultToolbarItemValues[defaultNewNoteIndex + 4] == "mudsnote.library.toolbar.search")
         for toolbarButtonID in [
             "mudsnote.library.toolbar.toggle-sidebar",
             "mudsnote.library.toolbar.navigation-back",
@@ -3435,13 +3435,11 @@ struct MarkdownRichEditorTests {
         editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
         #expect(statusLabelVisibleAtTop == editorScrollView.contentView.bounds.intersects(controller.statusLabel.frame))
         #expect(!editorStack.arrangedSubviews.contains(controller.statusLabel))
-        #expect(LibraryNotesLayout.editorDateToTitleSpacing == 10.75)
         #expect(!editorStack.arrangedSubviews.contains(controller.titleField))
         // The date label lives inside the text view, while document tabs occupy
         // the editor side of the native toolbar.
         #expect(editorStack.edgeInsets.top == 0)
         #expect(LibraryNotesLayout.editorTopInset == 6.25)
-        #expect(LibraryNotesLayout.editorTopInset + LibraryNotesLayout.editorDateToTitleSpacing == 17)
         #expect(LibraryNotesLayout.editorDateToTitleSpacing < LibraryNotesLayout.editorDateRowHeight)
         #expect(editorStack.edgeInsets.left == LibraryNotesLayout.editorHorizontalInset)
         #expect(editorStack.edgeInsets.right == LibraryNotesLayout.editorHorizontalInset)

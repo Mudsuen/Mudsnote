@@ -21,10 +21,10 @@ enum LibraryNotesLayout {
     static let noteTableInitialWidth: CGFloat = 276
     static let noteTableMinimumWidth: CGFloat = 194
     static let toolbarSearchWidth: CGFloat = 160
-    static let toolbarSearchHeight: CGFloat = 32
+    static let toolbarSearchHeight: CGFloat = 24
     static let toolbarSearchHorizontalFocusRingInset: CGFloat = 4
     static let toolbarSearchWrapperWidth: CGFloat = toolbarSearchWidth + toolbarSearchHorizontalFocusRingInset * 2
-    static let toolbarSearchWrapperHeight: CGFloat = 36
+    static let toolbarSearchWrapperHeight: CGFloat = 28
     static let toolbarEditorToolsWidth: CGFloat = 155
     static let toolbarEditorToolsSlotWidth: CGFloat = 162
     static let toolbarEditorToolsHeight: CGFloat = 32
@@ -105,8 +105,8 @@ enum LibraryNotesLayout {
     static let editorHorizontalInset: CGFloat = 23
     static let editorTextContainerHorizontalInset: CGFloat = 2
     static let editorBottomInset: CGFloat = 20
-    static let editorDateRowHeight: CGFloat = 20
-    static let editorDateToTitleSpacing: CGFloat = 10.75
+    static let editorDateRowHeight: CGFloat = 16
+    static let editorDateToTitleSpacing: CGFloat = 4
     static let editorTitleToBodySpacing: CGFloat = 8
     static let editorStatusHorizontalOffset: CGFloat = -8.5
     static let editorStatusBottomGap: CGFloat = 6
