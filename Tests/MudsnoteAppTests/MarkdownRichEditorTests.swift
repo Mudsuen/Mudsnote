@@ -6301,6 +6301,9 @@ struct MarkdownRichEditorTests {
             .first { $0.title == "Source" })
         sourceButton.performClick(nil)
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == sourceURL.standardizedFileURL)
+        // No action from the old note may remain clickable while the new
+        // note's background relations are being resolved.
+        #expect(controller.noteLinksView.knowledgeRelations == .empty)
 
         let backButton = try #require(controller.noteLinksView.allSubviews
             .compactMap { $0 as? NSButton }
@@ -7624,12 +7627,17 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
+        #expect(!controller.sourceOutlineView.isHiddenOrHasHiddenAncestor)
+        let originalPresentation = store.librarySidebarPresentationRawValue
         controller.searchField.stringValue = "a"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
         controller.searchField.stringValue = "alpha"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
 
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) != ["Alpha Debounced"])
+        #expect(!controller.tableView.isHiddenOrHasHiddenAncestor)
+        #expect(controller.sourceOutlineView.isHiddenOrHasHiddenAncestor)
+        #expect(store.librarySidebarPresentationRawValue == originalPresentation)
         #expect(!controller.searchScopeControl.isHidden)
         #expect(controller.noteListCountLabel.stringValue == "正在搜索…")
 
@@ -7645,6 +7653,11 @@ struct MarkdownRichEditorTests {
         controller.searchField.stringValue = "beta"
         controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
         let fieldEditor = NSTextView()
+        for command in [#selector(NSResponder.deleteBackward(_:)), #selector(NSResponder.moveLeft(_:))] {
+            #expect(!controller.control(controller.searchField, textView: fieldEditor, doCommandBy: command))
+            #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Alpha Debounced"])
+            #expect(controller.noteListCountLabel.stringValue == "正在搜索…")
+        }
         #expect(controller.control(controller.searchField, textView: fieldEditor, doCommandBy: #selector(NSResponder.insertNewline(_:))))
         #expect(controller.titleField.stringValue == "Beta Debounced")
 
@@ -7653,6 +7666,9 @@ struct MarkdownRichEditorTests {
         #expect(controller.searchScopeControl.isHidden)
         #expect(Set(controller.noteListSearchResultsForLibrary().map(\.title)) == Set(["Alpha Debounced", "Beta Debounced"]))
         #expect(controller.noteListCountLabel.stringValue == "2 条笔记")
+        #expect(!controller.sourceOutlineView.isHiddenOrHasHiddenAncestor)
+        #expect(controller.tableView.isHiddenOrHasHiddenAncestor)
+        #expect(store.librarySidebarPresentationRawValue == originalPresentation)
     }
 
     @MainActor

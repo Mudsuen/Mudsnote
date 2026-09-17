@@ -2097,6 +2097,7 @@ final class LibraryWindowController: NSWindowController,
         cancelActiveNoteLoad()
         notePrefetchTask?.cancel()
         notePrefetchTask = nil
+        cancelNoteLinksRefresh()
         thumbnailImageLoadTasks.values.forEach { $0.cancel() }
         thumbnailImageLoadTasks.removeAll()
         pendingThumbnailReloadPaths.removeAll()
@@ -2432,9 +2433,14 @@ final class LibraryWindowController: NSWindowController,
         applySidebarPresentation(animated: animated)
     }
 
+    private var isShowingSidebarTree: Bool {
+        sidebarPresentation == .tree
+            && searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+    }
+
     private func applySidebarPresentation(animated _: Bool) {
         guard let tree = sidebarTreeView, let list = sidebarNoteListView else { return }
-        let showsTree = sidebarPresentation == .tree
+        let showsTree = isShowingSidebarTree
         tree.isHidden = !showsTree
         list.isHidden = showsTree
         tree.alphaValue = 1
@@ -4926,6 +4932,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateNoteListHeader(query: String) {
+        // Search results must be visible even when the persisted presentation
+        // is the file tree. Clearing the query restores that preference.
+        if let tree = sidebarTreeView, tree.isHidden == isShowingSidebarTree {
+            applySidebarPresentation(animated: false)
+        }
         let title = query.isEmpty
             ? noteListTitle(for: selectedScope)
             : (searchScopeControl.selectedSegment == 1 ? noteListTitle(for: .all) : noteListTitle(for: selectedScope))
@@ -6670,11 +6681,17 @@ final class LibraryWindowController: NSWindowController,
         }
 
         guard control === searchField else { return false }
-        flushPendingSearchReload()
-
         if commandSelector == #selector(NSResponder.cancelOperation(_:)) {
             return clearSearchFromKeyboard()
         }
+        // Text editing commands (including Backspace and caret movement) must
+        // retain the typing debounce rather than synchronously scan the library.
+        guard commandSelector == #selector(NSResponder.moveDown(_:))
+            || commandSelector == #selector(NSResponder.moveUp(_:))
+            || commandSelector == #selector(NSResponder.insertNewline(_:)) else {
+            return false
+        }
+        flushPendingSearchReload()
 
         if commandSelector == #selector(NSResponder.moveDown(_:)) {
             return stepSearchResult(.next)
@@ -6823,6 +6840,11 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func toggleSidebarPresentationPressed() {
+        if !searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            _ = clearSearchFromKeyboard()
+            setSidebarPresentation(.tree, animated: false)
+            return
+        }
         setSidebarPresentation(
             sidebarPresentation == .tree ? .list : .tree,
             animated: window?.isVisible == true && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
@@ -6956,6 +6978,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func scheduleSearchReloadFromTyping() {
         searchReloadWorkItem?.cancel()
+        cancelActiveSearchResultReload()
 
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         if query.isEmpty {
@@ -7666,13 +7689,22 @@ final class LibraryWindowController: NSWindowController,
         prefetchAdjacentNotes(around: note)
     }
 
-    private func refreshNoteLinks(for noteURL: URL, body: String) {
+    private func cancelNoteLinksRefresh() {
         noteLinksRefreshTask?.cancel()
+        noteLinksRefreshTask = nil
         noteLinksRefreshGeneration += 1
+    }
+
+    private func refreshNoteLinks(for noteURL: URL, body: String) {
+        cancelNoteLinksRefresh()
         let generation = noteLinksRefreshGeneration
         let noteStore = noteStore
         let roots = noteStore.preferredDirectories + [noteURL.deletingLastPathComponent()]
         let task = Task.detached(priority: .utility) { [weak self] in
+            // Rapid keyboard navigation only needs relations for the final note.
+            do { try await Task.sleep(for: .milliseconds(120)) }
+            catch { return }
+            guard !Task.isCancelled else { return }
             let relations = noteStore.knowledgeRelations(
                 for: noteURL,
                 currentBody: body,
@@ -7853,6 +7885,10 @@ final class LibraryWindowController: NSWindowController,
 
     private func setSelectedURLForLibrary(_ nextURL: URL?) {
         cancelKnowledgeSynthesisForSelectionChange(to: nextURL)
+        if selectedURL?.standardizedFileURL != nextURL?.standardizedFileURL {
+            cancelNoteLinksRefresh()
+            noteLinksView.update(.empty)
+        }
         selectedURL = nextURL
         knowledgeGraphWindowController?.setRoot(nextURL, reload: true)
     }
@@ -9851,15 +9887,15 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applySidebarPresentationChrome() {
-        sidebarTreeHeaderButton.isHidden = sidebarPresentation != .tree
-        sidebarListHeaderContent.isHidden = sidebarPresentation == .tree
+        sidebarTreeHeaderButton.isHidden = !isShowingSidebarTree
+        sidebarListHeaderContent.isHidden = isShowingSidebarTree
         for button in sidebarPresentationButtons {
             configureSidebarPresentationButton(button)
         }
     }
 
     private func configureSidebarPresentationButton(_ button: NSButton) {
-        let showsTree = sidebarPresentation == .tree
+        let showsTree = isShowingSidebarTree
         let label = showsTree ? "切换到列表" : "切换到文件树"
         button.image = toolbarSymbolImage(
             symbolName: showsTree ? "list.bullet.rectangle" : "folder",

@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-16, this prototype records 288 implementation iterations, including the initial MVP.
+As of 2026-09-17, this prototype records 289 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 289. Responsive search and readable knowledge relations
+
+- Problem: Tree-mode searches hid their results, search-field editing keys prematurely flushed the typing debounce, superseded searches continued until the next debounce fired, and rapid note switches started unnecessary relation scans. Relation suggestions were squeezed into one small horizontal row.
+- Fix: Temporarily show the results list during a search and restore the saved tree/list preference when cleared. Reserve immediate search execution for result navigation and Return, cancel superseded work immediately, coalesce relation refreshes during fast navigation, clear stale relation actions, and cancel relation work on window close. Show suggestions in separate readable rows with a collapsible relationship panel.
+- Lesson: Keyboard editing should remain cheap, background work should follow the latest selection, and secondary actions need enough space to remain legible.
 
 ### 288. Publish floating-note autosaves to the library
 
