@@ -4941,6 +4941,7 @@ final class LibraryWindowController: NSWindowController,
             ? noteListTitle(for: selectedScope)
             : (searchScopeControl.selectedSegment == 1 ? noteListTitle(for: .all) : noteListTitle(for: selectedScope))
         noteListTitleLabel.stringValue = title
+        noteListTitleLabel.isHidden = !query.isEmpty
         if query.isEmpty {
             noteListCountLabel.stringValue = notesCountText(notes.count)
         } else if hasPendingSearchReload || isSearchResultReloading {

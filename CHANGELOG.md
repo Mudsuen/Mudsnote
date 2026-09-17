@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-17, this prototype records 289 implementation iterations, including the initial MVP.
+As of 2026-09-17, this prototype records 290 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 290. Narrower library sidebar
+
+- Problem: The sidebar took too much horizontal space from the editor and its minimum width prevented a compact layout.
+- Fix: Reduce the default sidebar width from 280 to 240 points and allow resizing down to 220 points, while preserving saved custom widths. Hide the redundant scope title during search so the result count and scope control fit in the narrower header.
+- Lesson: A two-column library should give reading and writing the larger share of the window.
 
 ### 289. Responsive search and readable knowledge relations
 
