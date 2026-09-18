@@ -3609,6 +3609,23 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryExposesAddTagForNotesWithoutTags() throws {
+        let harness = try makeEditorControllerHarness(draftID: "add-tag-ui", showsSaveButton: false)
+        defer { harness.tearDown() }
+        _ = try harness.store.saveNewNote(title: "Untagged", body: "Body")
+        let controller = LibraryWindowController(noteStore: harness.store,
+            onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close() }
+        #expect(controller.editorTextView.allSubviews.contains { $0.identifier?.rawValue == "AddNoteTagButton" })
+        controller.addSelectedMetadataTag("#Created")
+        controller.addSelectedMetadataTag("created")
+        let badges = controller.editorTextView.allSubviews.compactMap { $0 as? NSButton }
+        #expect(badges.filter { $0.title == "#Created  ×" }.count == 1)
+        #expect(controller.editorTextView.string.contains("Body"))
+    }
+
+    @MainActor
+    @Test
     func positionalTitleFormattingDoesNotFollowTextIntoBody() throws {
         let harness = try makeEditorControllerHarness(draftID: "title-provenance", showsSaveButton: false)
         defer { harness.tearDown() }

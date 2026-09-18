@@ -135,22 +135,38 @@ extension NoteStore {
     }
 
     @discardableResult
-    public func deleteTag(_ input: String) throws -> Int {
+    public func deleteTag(_ input: String, roots: [URL]? = nil, additionalNoteURLs: [URL] = []) throws -> Int {
+        try replaceTag(input, with: nil, roots: roots, additionalNoteURLs: additionalNoteURLs)
+    }
+
+    public func renameTag(_ input: String, to newName: String, roots: [URL]? = nil, additionalNoteURLs: [URL] = []) throws -> Int {
+        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        guard !name.isEmpty, !name.contains("\n"), !name.contains("\r") else {
+            throw NoteTagMutationError.invalidTag
+        }
+        return try replaceTag(input, with: name, roots: roots, additionalNoteURLs: additionalNoteURLs)
+    }
+
+    private func replaceTag(_ input: String, with replacement: String?, roots: [URL]?, additionalNoteURLs: [URL]) throws -> Int {
         let tag = input
             .trimmingCharacters(in: .whitespacesAndNewlines)
             .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
         guard !tag.isEmpty else { throw NoteTagMutationError.invalidTag }
 
-        let urls = listNotesRefreshingIndex(limit: .max).map(\.url)
+        let matches = listNotesRefreshingIndex(limit: .max, roots: roots).filter { note in
+            note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+        }.map(\.url)
+        let urls = Set((matches + additionalNoteURLs).map(\.standardizedFileURL))
         var backups: [(url: URL, contents: String)] = []
         var changedURLs: [URL] = []
 
         do {
             for url in urls {
                 let document = try loadNoteDocument(at: url)
-                let tags = document.tags.filter {
-                    $0.localizedCaseInsensitiveCompare(tag) != .orderedSame
-                }
+                let tags = MarkdownEditorDocument.normalizedTags(document.tags.compactMap { existing in
+                    existing.localizedCaseInsensitiveCompare(tag) == .orderedSame ? replacement : existing
+                })
                 guard tags != document.tags else { continue }
 
                 backups.append((url, document.sourceContents))

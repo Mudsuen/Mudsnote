@@ -2250,6 +2250,39 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func renamingTagMergesDuplicatesAndPreservesBody() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        store.notesDirectory = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let first = try store.saveNewNote(title: "First", body: "Keep #old in body", tags: ["old", "new", "other"])
+        let second = try store.saveNewNote(title: "Second", body: "Second body", tags: ["OLD"])
+        #expect(try store.renameTag("old", to: "new") == 2)
+        #expect(try store.loadNoteDocument(at: first).tags == ["new", "other"])
+        #expect(try store.loadNoteDocument(at: first).body == "Keep #old in body")
+        #expect(try store.loadNoteDocument(at: second).tags == ["new"])
+        #expect(throws: NoteTagMutationError.self) { try store.renameTag("new", to: "#") }
+    }
+
+    @Test
+    func scopedTagRenameIncludesOpenExternalNoteWithoutScanningItsDirectory() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let library = harness.root.appendingPathComponent("Library", isDirectory: true)
+        store.notesDirectory = library
+        _ = try store.saveNewNote(title: "Library", body: "Body", tags: ["old"])
+        let external = harness.root.appendingPathComponent("External", isDirectory: true)
+        try FileManager.default.createDirectory(at: external, withIntermediateDirectories: true)
+        let openNote = external.appendingPathComponent("open.md")
+        let otherNote = external.appendingPathComponent("other.md")
+        let content = "---\ntags: [old]\n---\n\n# External\n\nBody"
+        try content.write(to: openNote, atomically: true, encoding: .utf8)
+        try content.write(to: otherNote, atomically: true, encoding: .utf8)
+        #expect(try store.renameTag("old", to: "new", roots: [library], additionalNoteURLs: [openNote]) == 2)
+        #expect(try store.loadNoteDocument(at: openNote).tags == ["new"])
+        #expect(try store.loadNoteDocument(at: otherNote).tags == ["old"])
+    }
+
+    @Test
     func deletingTagRemovesOnlyFrontMatterAndPreservesBodyText() throws {
         let harness = try TestHarness()
         let store = harness.store

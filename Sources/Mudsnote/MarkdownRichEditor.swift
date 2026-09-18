@@ -276,7 +276,7 @@ private final class MetadataTagButton: NSButton {
         target = self
         action = #selector(removeTag)
         isEnabled = onRemove != nil
-        setAccessibilityLabel(onRemove == nil ? "#\(tag)" : "删除标签 #\(tag)")
+        setAccessibilityLabel(onRemove == nil ? "#\(tag)" : "从当前笔记移除标签 #\(tag)")
     }
 
     @available(*, unavailable)
@@ -424,6 +424,8 @@ private final class SelectionFormattingPanelButton: NSButton {
 
 final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var minimumScrollableContentHeight: CGFloat = 0
+    var onAddMetadataTag: (() -> Void)?
+    @objc private func addMetadataTagPressed() { onAddMetadataTag?() }
     private var metadataTags: [String] = []
     private var metadataTagScrollView: NSScrollView?
 
@@ -452,15 +454,15 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     func setMetadataTags(_ tags: [String], onRemove: ((String) -> Void)? = nil) {
         let normalized = MarkdownEditorDocument.normalizedTags(tags)
         guard normalized != metadataTags || metadataTagScrollView == nil else {
-            updateMetadataTagSpacing(hasTags: !normalized.isEmpty)
+            updateMetadataTagSpacing(hasTags: !normalized.isEmpty || onAddMetadataTag != nil)
             layoutMetadataTagBar()
             return
         }
         metadataTags = normalized
         metadataTagScrollView?.removeFromSuperview()
         metadataTagScrollView = nil
-        updateMetadataTagSpacing(hasTags: !normalized.isEmpty)
-        guard !normalized.isEmpty else { return }
+        updateMetadataTagSpacing(hasTags: !normalized.isEmpty || onAddMetadataTag != nil)
+        guard !normalized.isEmpty || onAddMetadataTag != nil else { return }
 
         let stack = NSStackView()
         stack.orientation = .horizontal
@@ -474,6 +476,15 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         for tag in normalized {
             let button = MetadataTagButton(tag: tag, onRemove: onRemove)
             stack.addArrangedSubview(button)
+        }
+        if onAddMetadataTag != nil {
+            let addButton = NSButton(title: "+", target: self, action: #selector(addMetadataTagPressed))
+            addButton.bezelStyle = .rounded
+            addButton.font = .systemFont(ofSize: 12)
+            addButton.identifier = NSUserInterfaceItemIdentifier("AddNoteTagButton")
+            addButton.toolTip = "添加标签"
+            addButton.setAccessibilityLabel("添加标签")
+            stack.addArrangedSubview(addButton)
         }
         stack.frame = NSRect(
             x: 0,
@@ -705,7 +716,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     override func didChangeText() {
         super.didChangeText()
-        updateMetadataTagSpacing(hasTags: !metadataTags.isEmpty)
+        updateMetadataTagSpacing(hasTags: !metadataTags.isEmpty || onAddMetadataTag != nil)
         layoutMetadataTagBar()
         window?.invalidateCursorRects(for: self)
     }

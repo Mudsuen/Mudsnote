@@ -1564,6 +1564,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceFoldersLoaded = false
     private var sourceFoldersLoading = false
     private var sourceFolderLoadGeneration = 0
+    private var tagMutationInProgress = false
     private var sourceTagsLoaded = false
     private var sourceTagsLoading = false
     private var sourceTagLoadGeneration = 0
@@ -3817,6 +3818,7 @@ final class LibraryWindowController: NSWindowController,
 
     private func configureEditorTextView() {
         editorTextView.setAccessibilityLabel("笔记内容")
+        editorTextView.onAddMetadataTag = { [weak self] in self?.addSelectedNoteTagPressed() }
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
         editorTextView.markdownPasteTheme = theme
@@ -4184,7 +4186,7 @@ final class LibraryWindowController: NSWindowController,
         let preferredDirectories = noteStore.preferredDirectories
         DispatchQueue.global(qos: .utility).async { [weak self] in
             noteStore.prewarmSearchIndex(roots: preferredDirectories)
-            let tags = noteStore.knownTags(limit: 12, roots: preferredDirectories)
+            let tags = noteStore.knownTags(limit: .max, roots: preferredDirectories)
             DispatchQueue.main.async {
                 guard let self,
                       generation == self.sourceTagLoadGeneration else { return }
@@ -4195,7 +4197,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applyCachedSourceTags(from notes: [NoteSearchResult]) {
-        let tags = Self.mostFrequentTags(in: notes, limit: 12)
+        let tags = Self.mostFrequentTags(in: notes, limit: .max)
         guard !tags.isEmpty else { return }
         sourceTagLoadGeneration += 1
         sourceTagsLoading = false
@@ -4205,7 +4207,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func applySourceTagsFromValidatedSnapshot(_ notes: [NoteSearchResult]) {
-        let tags = Self.mostFrequentTags(in: notes, limit: 12)
+        let tags = Self.mostFrequentTags(in: notes, limit: .max)
         guard tags != sourceTagNames || !sourceTagsLoaded else { return }
         sourceTagLoadGeneration += 1
         sourceTagsLoading = false
@@ -4238,7 +4240,7 @@ final class LibraryWindowController: NSWindowController,
 
     func loadSourceTagsForLibrary() {
         guard !sourceTagsLoaded, !sourceTagsLoading else { return }
-        applySourceTagsForLibrary(noteStore.knownTags(limit: 12, roots: noteStore.preferredDirectories))
+        applySourceTagsForLibrary(noteStore.knownTags(limit: .max, roots: noteStore.preferredDirectories))
     }
 
     private func applySourceTagsForLibrary(_ tags: [String]) {
@@ -5398,8 +5400,38 @@ final class LibraryWindowController: NSWindowController,
                 )
                 NSLayoutConstraint.activate([
                     leading,
-                    label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+                    label.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: section == .tags ? -56 : -6),
                     label.centerYAnchor.constraint(equalTo: cell.centerYAnchor)
+                ])
+            }
+            if section == .tags, !cell.subviews.contains(where: { $0.identifier?.rawValue == "CreateLibraryTagButton" }) {
+                let add = NSButton(image: NSImage(systemSymbolName: "plus", accessibilityDescription: "添加标签")!,
+                                   target: self, action: #selector(addSelectedNoteTagPressed))
+                add.identifier = NSUserInterfaceItemIdentifier("CreateLibraryTagButton")
+                add.isBordered = false
+                add.toolTip = "为当前笔记添加标签"
+                add.setAccessibilityLabel("添加标签")
+                add.translatesAutoresizingMaskIntoConstraints = false
+                cell.addSubview(add)
+                let manage = NSButton(image: NSImage(systemSymbolName: "ellipsis", accessibilityDescription: "管理标签")!,
+                                      target: self, action: #selector(manageLibraryTagsPressed(_:)))
+                manage.isBordered = false
+                manage.identifier = NSUserInterfaceItemIdentifier("ManageLibraryTagsButton")
+                manage.toolTip = "管理标签"
+                manage.setAccessibilityLabel("管理标签")
+                manage.translatesAutoresizingMaskIntoConstraints = false
+                cell.addSubview(manage)
+                NSLayoutConstraint.activate([
+                    manage.trailingAnchor.constraint(equalTo: add.leadingAnchor, constant: -4),
+                    manage.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                    manage.widthAnchor.constraint(equalToConstant: 20),
+                    manage.heightAnchor.constraint(equalToConstant: 20)
+                ])
+                NSLayoutConstraint.activate([
+                    add.trailingAnchor.constraint(equalTo: cell.trailingAnchor, constant: -6),
+                    add.centerYAnchor.constraint(equalTo: cell.centerYAnchor),
+                    add.widthAnchor.constraint(equalToConstant: 20),
+                    add.heightAnchor.constraint(equalToConstant: 20)
                 ])
             }
             label.stringValue = title
@@ -10903,20 +10935,52 @@ final class LibraryWindowController: NSWindowController,
             menu.addItem(addItem)
             return menu
         }
-        if case .tag(let tag)? = item.scope {
-            let menu = NSMenu()
-            let deleteItem = NSMenuItem(
-                title: "删除标签",
-                action: #selector(deleteLibraryTagMenuItemPressed(_:)),
-                keyEquivalent: ""
-            )
-            deleteItem.target = self
-            deleteItem.representedObject = tag
-            menu.addItem(deleteItem)
-            return menu
-        }
+        if case .tag(let tag)? = item.scope { return makeLibraryTagMenu(tag) }
         guard case .folder(let folderURL)? = item.scope else { return nil }
         return makeFolderContextMenu(for: folderURL)
+    }
+
+    private func makeLibraryTagMenu(_ tag: String) -> NSMenu {
+        let menu = NSMenu()
+        let add = NSMenuItem(title: "添加到当前笔记", action: #selector(addLibraryTagToNote(_:)), keyEquivalent: "")
+        add.target = self
+        add.representedObject = tag
+        add.isEnabled = canEditCurrentDocument
+        menu.addItem(add)
+        if selectedTags.contains(where: { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }) {
+            let remove = NSMenuItem(title: "从当前笔记移除", action: #selector(removeLibraryTagFromNote(_:)), keyEquivalent: "")
+            remove.target = self
+            remove.representedObject = tag
+            menu.addItem(remove)
+        }
+        menu.addItem(.separator())
+        let rename = NSMenuItem(title: "重命名标签…", action: #selector(renameLibraryTagPressed(_:)), keyEquivalent: "")
+        rename.target = self
+        rename.representedObject = tag
+        menu.addItem(rename)
+        let deleteItem = NSMenuItem(
+            title: "从所有笔记删除标签…",
+            action: #selector(deleteLibraryTagMenuItemPressed(_:)),
+            keyEquivalent: ""
+        )
+        deleteItem.target = self
+        deleteItem.representedObject = tag
+        menu.addItem(deleteItem)
+        return menu
+    }
+
+    @objc private func manageLibraryTagsPressed(_ sender: NSButton) {
+        let menu = NSMenu()
+        let add = NSMenuItem(title: "添加标签…", action: #selector(addSelectedNoteTagPressed), keyEquivalent: "")
+        add.target = self
+        menu.addItem(add)
+        if !sourceTagNames.isEmpty { menu.addItem(.separator()) }
+        for tag in sourceTagNames {
+            let item = NSMenuItem(title: libraryDisplayTag(tag), action: nil, keyEquivalent: "")
+            item.submenu = makeLibraryTagMenu(tag)
+            menu.addItem(item)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: sender.bounds.maxY + 4), in: sender)
     }
 
     @objc
@@ -10956,6 +11020,7 @@ final class LibraryWindowController: NSWindowController,
 
     @objc
     private func deleteLibraryTagMenuItemPressed(_ sender: NSMenuItem) {
+        guard !tagMutationInProgress else { return }
         guard let tag = sender.representedObject as? String else { return }
         let alert = NSAlert()
         alert.alertStyle = .warning
@@ -10965,13 +11030,21 @@ final class LibraryWindowController: NSWindowController,
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
 
+        do { drainBackgroundAutosaves(); try saveCurrentNoteIfNeeded() }
+        catch { presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription); return }
         let noteStore = self.noteStore
+        let roots = noteStore.preferredDirectories
+        let extraURLs = externallyOpenedDocumentsByPath.keys.map { URL(fileURLWithPath: $0) }
+        tagMutationInProgress = true
+        updateEditorStatus("正在删除标签…")
         Task { [weak self] in
+            defer { self?.tagMutationInProgress = false; self?.updateEditorStatus("") }
             do {
                 _ = try await Task.detached(priority: .userInitiated) {
-                    try noteStore.deleteTag(tag)
+                    try noteStore.deleteTag(tag, roots: roots, additionalNoteURLs: extraURLs)
                 }.value
                 guard let self else { return }
+                removeSelectedMetadataTag(tag)
                 if case .tag(let selectedTag) = selectedScope,
                    selectedTag.localizedCaseInsensitiveCompare(tag) == .orderedSame {
                     selectedScope = .all
@@ -13421,7 +13494,89 @@ final class LibraryWindowController: NSWindowController,
         return true
     }
 
+    @objc private func addSelectedNoteTagPressed() {
+        guard canEditCurrentDocument else { return }
+        let alert = NSAlert()
+        alert.messageText = "添加标签"
+        alert.informativeText = "选择已有标签，或输入新标签名称。"
+        let input = NSComboBox(frame: NSRect(x: 0, y: 0, width: 280, height: 26))
+        input.addItems(withObjectValues: sourceTagNames)
+        input.completes = true
+        input.placeholderString = "标签名称"
+        input.setAccessibilityLabel("标签名称")
+        alert.accessoryView = input
+        alert.addButton(withTitle: "添加")
+        alert.addButton(withTitle: "取消")
+        alert.window.initialFirstResponder = input
+        guard alert.runModal() == .alertFirstButtonReturn else { return }
+        addSelectedMetadataTag(input.stringValue)
+    }
+
+    func addSelectedMetadataTag(_ input: String) {
+        guard canEditCurrentDocument,
+              let tag = MarkdownEditorDocument.normalizedTags([input]).first,
+              !tag.isEmpty else { return }
+        selectedTags = MarkdownEditorDocument.normalizedTags(selectedTags + [tag])
+        editorTextView.setMetadataTags(selectedTags) { [weak self] in self?.removeSelectedMetadataTag($0) }
+        sourceTagNames = MarkdownEditorDocument.normalizedTags(sourceTagNames + [tag])
+        markDirty()
+        rebuildSourceRows(includeTags: true)
+    }
+
+    @objc private func addLibraryTagToNote(_ sender: NSMenuItem) {
+        guard let tag = sender.representedObject as? String else { return }
+        addSelectedMetadataTag(tag)
+    }
+
+    @objc private func removeLibraryTagFromNote(_ sender: NSMenuItem) {
+        guard canEditCurrentDocument, let tag = sender.representedObject as? String else { return }
+        removeSelectedMetadataTag(tag)
+    }
+
+    @objc private func renameLibraryTagPressed(_ sender: NSMenuItem) {
+        guard !tagMutationInProgress else { return }
+        guard let tag = sender.representedObject as? String else { return }
+        let alert = NSAlert()
+        alert.messageText = "重命名标签"
+        alert.informativeText = "更新所有使用此标签的笔记；同名标签会合并。"
+        let input = NSTextField(string: tag)
+        input.frame = NSRect(x: 0, y: 0, width: 280, height: 26)
+        input.setAccessibilityLabel("新标签名称")
+        alert.accessoryView = input
+        alert.addButton(withTitle: "重命名")
+        alert.addButton(withTitle: "取消")
+        alert.window.initialFirstResponder = input
+        guard alert.runModal() == .alertFirstButtonReturn,
+              let name = MarkdownEditorDocument.normalizedTags([input.stringValue]).first,
+              !name.isEmpty, name != tag else { return }
+        do { drainBackgroundAutosaves(); try saveCurrentNoteIfNeeded() }
+        catch { presentErrorAlert(message: "无法保存当前笔记", details: error.localizedDescription); return }
+        let store = noteStore
+        let roots = store.preferredDirectories
+        let extraURLs = externallyOpenedDocumentsByPath.keys.map { URL(fileURLWithPath: $0) }
+        tagMutationInProgress = true
+        updateEditorStatus("正在重命名标签…")
+        Task { [weak self] in
+            defer { self?.tagMutationInProgress = false; self?.updateEditorStatus("") }
+            do {
+                _ = try await Task.detached(priority: .userInitiated) { try store.renameTag(tag, to: name, roots: roots, additionalNoteURLs: extraURLs) }.value
+                guard let self else { return }
+                selectedTags = MarkdownEditorDocument.normalizedTags(selectedTags.map {
+                    $0.localizedCaseInsensitiveCompare(tag) == .orderedSame ? name : $0
+                })
+                editorTextView.setMetadataTags(selectedTags) { [weak self] in self?.removeSelectedMetadataTag($0) }
+                if case .tag(let selected) = selectedScope, selected.localizedCaseInsensitiveCompare(tag) == .orderedSame {
+                    selectedScope = .tag(name)
+                }
+                invalidateSourceTagsForLibrary()
+                forceFullLibrarySnapshotReload()
+                scheduleDeferredSourceTagLoad()
+            } catch { self?.presentErrorAlert(message: "无法重命名标签", details: error.localizedDescription) }
+        }
+    }
+
     private func removeSelectedMetadataTag(_ tag: String) {
+        guard selectedTags.contains(where: { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }) else { return }
         selectedTags.removeAll {
             $0.localizedCaseInsensitiveCompare(tag) == .orderedSame
         }

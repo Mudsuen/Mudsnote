@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-18, this prototype records 295 implementation iterations, including the initial MVP.
+As of 2026-09-18, this prototype records 296 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 296. Discoverable tag editing and management
+
+- Problem: Creating tags required inline syntax, global deletion was hidden, and only twelve tags were shown.
+- Fix: Add a note-level tag button, sidebar add/manage actions, existing-tag selection, and library-wide rename/merge. Distinguish removing a tag from one note from deleting it everywhere, and expose all tags. Scope bulk changes to library roots and explicitly open external notes, with progress feedback and duplicate-submit protection.
+- Lesson: Common metadata actions need visible entry points and clear mutation scope.
 
 ### 295. Simpler sidebar typography
 
