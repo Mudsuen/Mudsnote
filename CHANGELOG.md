@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-18, this prototype records 293 implementation iterations, including the initial MVP.
+As of 2026-09-18, this prototype records 294 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 294. Positional title formatting stays in the title
+
+- Problem: Splitting or moving the first line into the body retained its automatic heading font and paragraph kind.
+- Fix: Track the original style beneath automatic title formatting and restore it when that text leaves the first paragraph; preserve explicit body headings.
+- Lesson: Positional presentation needs provenance so it can be removed without clearing intentional formatting.
 
 ### 293. Readable, balanced leading toolbar icons
 

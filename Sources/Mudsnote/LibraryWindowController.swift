@@ -7353,6 +7353,7 @@ final class LibraryWindowController: NSWindowController,
                     imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
                 )
             )
+            markLoadedUnifiedTitleFormatting()
             editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
             isEditorShowingMarkdownSource = false
         } else {
@@ -8163,6 +8164,7 @@ final class LibraryWindowController: NSWindowController,
                 imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
             )
         )
+        markLoadedUnifiedTitleFormatting()
         editorTextView.setMetadataTags(tags) { [weak self] tag in
             self?.removeSelectedMetadataTag(tag)
         }
@@ -8228,12 +8230,20 @@ final class LibraryWindowController: NSWindowController,
                 imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
             )
         )
+        markLoadedUnifiedTitleFormatting()
         editorTextView.setMetadataTags(selectedTags) { [weak self] tag in
             self?.removeSelectedMetadataTag(tag)
         }
         suppressEditorChanges = false
         let contentLength = editorTextView.textStorage?.length ?? 0
         editorTextView.setSelectedRange(NSRange(location: min(selection.location, contentLength), length: 0))
+    }
+
+    private func markLoadedUnifiedTitleFormatting() {
+        guard let storage = editorTextView.textStorage, storage.length > 0 else { return }
+        let first = (storage.string as NSString).paragraphRange(for: NSRange(location: 0, length: 0))
+        storage.addAttribute(.qmAutomaticTitleBaseline,
+                             value: theme.baseAttributes(for: .paragraph), range: first)
     }
 
     private func normalizeUnifiedTitleLineFormatting() {
@@ -8250,6 +8260,25 @@ final class LibraryWindowController: NSWindowController,
         let firstParagraph = (storage.string as NSString).paragraphRange(
             for: NSRange(location: 0, length: 0)
         )
+        // Only demote formatting that was applied because this text was the
+        // document title. Explicit headings elsewhere have no such marker.
+        let bodyRange = NSRange(location: NSMaxRange(firstParagraph),
+                                length: storage.length - NSMaxRange(firstParagraph))
+        var demotions: [(NSRange, [NSAttributedString.Key: Any])] = []
+        storage.enumerateAttribute(.qmAutomaticTitleBaseline, in: bodyRange) { value, range, _ in
+            if let baseline = value as? [NSAttributedString.Key: Any] {
+                demotions.append((range, baseline))
+            }
+        }
+        if !demotions.isEmpty {
+            storage.beginEditing()
+            for (range, baseline) in demotions {
+                storage.addAttributes(baseline, range: range)
+                storage.removeAttribute(.qmAutomaticTitleBaseline, range: range)
+                storage.removeAttribute(.qmMetadataTagReserve, range: range)
+            }
+            storage.endEditing()
+        }
         let hasTrailingNewline = (storage.string as NSString)
             .substring(with: firstParagraph)
             .hasSuffix("\n")
@@ -8278,7 +8307,17 @@ final class LibraryWindowController: NSWindowController,
         guard !changedRanges.isEmpty else { return }
         suppressEditorChanges = true
         storage.beginEditing()
-        for range in changedRanges { storage.addAttributes(headingAttributes, range: range) }
+        for range in changedRanges {
+            if storage.attribute(.qmAutomaticTitleBaseline, at: range.location, effectiveRange: nil) == nil {
+                let attributes = storage.attributes(at: range.location, effectiveRange: nil)
+                var baseline = theme.baseAttributes(for: .paragraph)
+                for key in headingAttributes.keys {
+                    if let value = attributes[key] { baseline[key] = value }
+                }
+                storage.addAttribute(.qmAutomaticTitleBaseline, value: baseline, range: range)
+            }
+            storage.addAttributes(headingAttributes, range: range)
+        }
         storage.endEditing()
         suppressEditorChanges = false
     }
@@ -12044,6 +12083,7 @@ final class LibraryWindowController: NSWindowController,
         storage.replaceCharacters(in: selection, with: replacement)
         suppressEditorChanges = false
         editorTextView.setSelectedRange(NSRange(location: selection.location + 1 + kind.prefixLength, length: 0))
+        normalizeUnifiedTitleLineFormatting()
         updateTypingAttributesFromInsertionPoint()
         markDirty()
     }

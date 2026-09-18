@@ -3609,6 +3609,34 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func positionalTitleFormattingDoesNotFollowTextIntoBody() throws {
+        let harness = try makeEditorControllerHarness(draftID: "title-provenance", showsSaveButton: false)
+        defer { harness.tearDown() }
+        _ = try harness.store.saveNewNote(title: "Alpha Beta", body: "## Explicit heading\n**Bold body**")
+        let controller = LibraryWindowController(noteStore: harness.store,
+            onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close() }
+        let view = controller.editorTextView
+        let storage = try #require(view.textStorage)
+        view.setSelectedRange(NSRange(location: 6, length: 0))
+        controller.markdownTextViewInsertNewline(view)
+        let beta = (view.string as NSString).range(of: "Beta")
+        #expect(storage.attribute(.qmParagraphKind, at: beta.location, effectiveRange: nil) as? String == "paragraph")
+        #expect(storage.attribute(.font, at: beta.location, effectiveRange: nil) as? NSFont == controller.theme.bodyFont)
+        let explicit = (view.string as NSString).range(of: "Explicit heading")
+        #expect(storage.attribute(.qmParagraphKind, at: explicit.location, effectiveRange: nil) as? String == "heading:2")
+        #expect(MarkdownRichTextCodec.serialize(storage, theme: controller.theme).contains("**Bold body**"))
+
+        // Moving the entire first line down must also remove its automatic style.
+        view.setSelectedRange(NSRange(location: 0, length: 0))
+        controller.markdownTextViewInsertNewline(view)
+        let alpha = (view.string as NSString).range(of: "Alpha")
+        #expect(storage.attribute(.qmParagraphKind, at: alpha.location, effectiveRange: nil) as? String == "paragraph")
+        #expect(storage.attribute(.font, at: alpha.location, effectiveRange: nil) as? NSFont == controller.theme.bodyFont)
+    }
+
+    @MainActor
+    @Test
     func libraryLongTitleWrapsInsideUnifiedEditorWithoutStretchingWindow() throws {
         let suiteName = "mudsnote-library-long-title-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))

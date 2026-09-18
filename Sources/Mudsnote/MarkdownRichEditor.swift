@@ -5,6 +5,7 @@ import ImageIO
 import MudsnoteCore
 
 extension NSAttributedString.Key {
+    static let qmAutomaticTitleBaseline = NSAttributedString.Key("MudsnoteAutomaticTitleBaseline")
     static let qmParagraphKind = NSAttributedString.Key("MudsnoteParagraphKind")
     static let qmCode = NSAttributedString.Key("MudsnoteCode")
     static let qmLinkURL = NSAttributedString.Key("MudsnoteLinkURL")
