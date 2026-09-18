@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-18, this prototype records 292 implementation iterations, including the initial MVP.
+As of 2026-09-18, this prototype records 293 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 293. Readable, balanced leading toolbar icons
+
+- Problem: Fixed toolbar templates retained an undersized symbol scale and different intrinsic image dimensions.
+- Fix: Increase the source symbols and normalize both glyphs to 18-point height within the same 24-by-22-point canvas, preserving their aspect ratios.
+- Lesson: Match visible glyph size as well as stable button geometry.
 
 ### 292. Stable sidebar toolbar icons
 

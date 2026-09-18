@@ -3680,9 +3680,17 @@ final class LibraryWindowController: NSWindowController,
         // Render a template with fixed intrinsic dimensions so both regions
         // draw exactly the same glyph when the tracking separator moves.
         let configuredImage = symbol.map { symbol in
-            let image = NSImage(size: symbol.size)
+            let canvasSize = NSSize(width: 24, height: 22)
+            let scale = min(18 / symbol.size.height, canvasSize.width / symbol.size.width)
+            let glyphSize = NSSize(width: symbol.size.width * scale, height: symbol.size.height * scale)
+            let image = NSImage(size: canvasSize)
             image.lockFocus()
-            symbol.draw(in: NSRect(origin: .zero, size: symbol.size))
+            symbol.draw(in: NSRect(
+                x: (canvasSize.width - glyphSize.width) / 2,
+                y: (canvasSize.height - glyphSize.height) / 2,
+                width: glyphSize.width,
+                height: glyphSize.height
+            ))
             image.unlockFocus()
             image.isTemplate = true
             image.accessibilityDescription = label

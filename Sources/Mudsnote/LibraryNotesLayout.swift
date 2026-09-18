@@ -38,7 +38,7 @@ enum LibraryNotesLayout {
     static let toolbarExpandedTitleLeadingOffset: CGFloat = 12
     static let toolbarCollapsedTitleLeadingOffset: CGFloat = -11.5
     static let toolbarSourceActionSymbolPointSize: CGFloat = 13
-    static let toolbarNewNoteSymbolPointSize: CGFloat = 13
+    static let toolbarNewNoteSymbolPointSize: CGFloat = 18
     static let toolbarCircularButtonSymbolPointSize: CGFloat = 12
     static let toolbarIconEnabledAlpha: CGFloat = 0.76
     static let toolbarIconDisabledAlpha: CGFloat = 0.42
