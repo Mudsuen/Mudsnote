@@ -502,13 +502,16 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             at: 0,
             effectiveRange: nil
         ) as? CGFloat ?? 0
+        let reserve: CGFloat = hasTags ? 36 : 0
+        // Typing in the body must not invalidate the title's layout or caret.
+        let currentStyle = storage.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle
+        if existingReserve == reserve, (currentStyle?.paragraphSpacing ?? 0) >= reserve { return }
         let style = (storage.attribute(
             .paragraphStyle,
             at: 0,
             effectiveRange: nil
         ) as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle
             ?? NSMutableParagraphStyle()
-        let reserve: CGFloat = hasTags ? 36 : 0
         style.paragraphSpacing = max(0, style.paragraphSpacing - existingReserve) + reserve
         storage.addAttributes([
             .paragraphStyle: style,
@@ -522,10 +525,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
               let textContainer,
               let storage = textStorage,
               storage.length > 0 else { return }
-        layoutManager.ensureLayout(for: textContainer)
         let paragraphRange = (storage.string as NSString).paragraphRange(
             for: NSRange(location: 0, length: 0)
         )
+        layoutManager.ensureLayout(forCharacterRange: paragraphRange)
         let glyphRange = layoutManager.glyphRange(
             forCharacterRange: paragraphRange,
             actualCharacterRange: nil
@@ -1377,6 +1380,13 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
         super.mouseDown(with: event)
         let selectionAfterMouseDown = selectedRange()
+        if selectionAfterMouseDown.length == 0,
+           selectionAfterMouseDown != selectionBeforeMouseDown,
+           window?.firstResponder === self {
+            // Resume AppKit's single blink cycle at the new insertion point,
+            // instead of inheriting the previous position's almost-expired phase.
+            updateInsertionPointStateAndRestartTimer(true)
+        }
         if selectionAfterMouseDown.length > 0,
            selectionAfterMouseDown != selectionBeforeMouseDown {
             showSelectionMenuIfNeeded()

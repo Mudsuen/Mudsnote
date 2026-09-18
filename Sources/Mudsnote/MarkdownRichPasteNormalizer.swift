@@ -4,6 +4,12 @@ import Foundation
 @MainActor
 enum MarkdownRichPasteNormalizer {
     static func markdown(from pasteboard: NSPasteboard, theme: MarkdownEditorTheme) -> String? {
+        if pasteboard.data(forType: .html) == nil,
+           pasteboard.data(forType: .rtf) == nil,
+           let plain = pasteboard.string(forType: .string),
+           let table = tabSeparatedTable(plain) {
+            return table
+        }
         guard let imported = importedAttributedString(from: pasteboard),
               imported.length > 0,
               !containsAttachment(imported) else {
@@ -17,6 +23,12 @@ enum MarkdownRichPasteNormalizer {
         var nextOrderedListIndex: Int?
 
         while location < source.length {
+            if let table = importedTable(in: imported, startingAt: location) {
+                lines.append(table.markdown)
+                location = table.end
+                nextOrderedListIndex = nil
+                continue
+            }
             let paragraphRange = source.paragraphRange(for: NSRange(location: location, length: 0))
             let paragraphText = source.substring(with: paragraphRange)
             let trailingBreakLength = paragraphText.hasSuffix("\n") || paragraphText.hasSuffix("\r") ? 1 : 0
@@ -46,6 +58,63 @@ enum MarkdownRichPasteNormalizer {
         }
         let markdown = lines.joined(separator: "\n")
         return markdown.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? nil : markdown
+    }
+
+    private static func tableMarkdown(_ rows: [[String]]) -> String {
+        let width = rows.map(\.count).max() ?? 0
+        guard width > 0, let first = rows.first else { return "" }
+        func line(_ cells: [String]) -> String {
+            let padded = cells + Array(repeating: "", count: max(0, width - cells.count))
+            return "| " + padded.map {
+                $0.replacingOccurrences(of: "|", with: "\\|")
+                    .replacingOccurrences(of: "\n", with: "<br>")
+            }.joined(separator: " | ") + " |"
+        }
+        return ([line(first), line(Array(repeating: "---", count: width))]
+            + rows.dropFirst().map(line)).joined(separator: "\n")
+    }
+
+    private static func tabSeparatedTable(_ text: String) -> String? {
+        let lines = text.replacingOccurrences(of: "\r\n", with: "\n")
+            .trimmingCharacters(in: .newlines).components(separatedBy: "\n")
+        let rows = lines.map { $0.components(separatedBy: "\t") }
+        guard rows.count >= 2, let width = rows.first?.count, width >= 2,
+              rows.allSatisfy({ $0.count == width }) else { return nil }
+        return tableMarkdown(rows.map { $0.map(escapedMarkdownText) })
+    }
+
+    private static func importedTable(
+        in source: NSAttributedString, startingAt start: Int
+    ) -> (markdown: String, end: Int)? {
+        func block(at index: Int) -> NSTextTableBlock? {
+            let style = source.attribute(.paragraphStyle, at: index, effectiveRange: nil) as? NSParagraphStyle
+            return style?.textBlocks.first as? NSTextTableBlock
+        }
+        guard let first = block(at: start) else { return nil }
+        var cells: [Int: [Int: String]] = [:]
+        var end = start
+        var width = first.table.numberOfColumns
+        var height = first.startingRow + 1
+        let text = source.string as NSString
+        while end < source.length, let cell = block(at: end), cell.table === first.table {
+            let paragraph = text.paragraphRange(for: NSRange(location: end, length: 0))
+            let raw = text.substring(with: paragraph)
+            let length = raw.hasSuffix("\n") ? paragraph.length - 1 : paragraph.length
+            let content = inlineMarkdown(
+                in: NSRange(location: paragraph.location, length: max(0, length)),
+                source: source, paragraphKind: .paragraph
+            )
+            let old = cells[cell.startingRow]?[cell.startingColumn]
+            cells[cell.startingRow, default: [:]][cell.startingColumn] = old.map { $0 + "<br>" + content } ?? content
+            width = max(width, cell.startingColumn + cell.columnSpan)
+            height = max(height, cell.startingRow + cell.rowSpan)
+            end = NSMaxRange(paragraph)
+        }
+        guard width > 0, height > 0 else { return nil }
+        let rows = (first.startingRow..<height).map { row in
+            (0..<width).map { cells[row]?[$0] ?? "" }
+        }
+        return (tableMarkdown(rows), end)
     }
 
     private static func importedAttributedString(from pasteboard: NSPasteboard) -> NSAttributedString? {

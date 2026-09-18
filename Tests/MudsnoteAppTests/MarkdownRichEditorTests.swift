@@ -22,6 +22,11 @@ private final class DisplayInvalidationRecordingClipView: NSClipView {
     }
 }
 
+@MainActor
+private final class TextStorageEditCounter {
+    var count = 0
+}
+
 private actor LibraryFileSystemChangeRecorder {
     private var changes: Set<LibraryFileSystemChange> = []
 
@@ -849,7 +854,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func wordCountScansVisibleEditorTextWithoutSerializingHiddenMarkdownTargets() throws {
+    func wordCountScansVisibleEditorTextWithoutSerializingHiddenMarkdownTargets() async throws {
         let harness = try makeEditorControllerHarness(
             draftID: "visible-word-count",
             showsSaveButton: false
@@ -886,6 +891,7 @@ struct MarkdownRichEditorTests {
             object: libraryController.editorTextView
         ))
         #expect(libraryController.titleField.stringValue == "Title")
+        try await Task.sleep(for: .milliseconds(250))
         #expect(libraryController.wordCountLabel.stringValue == "4 字")
     }
 
@@ -5909,6 +5915,51 @@ struct MarkdownRichEditorTests {
         #expect(floatingMarkdown.contains("![Image](Attachments/"))
         #expect(FileManager.default.fileExists(atPath: floatingController.selectedDirectoryURL
             .appendingPathComponent("Attachments", isDirectory: true).path))
+    }
+
+    @MainActor
+    @Test
+    func externalTablesKeepRowsAndColumnsWhenPasted() throws {
+        let html = "<p>Before</p><table><tr><td>Name</td><td>Value</td></tr><tr><td>A</td><td>42</td></tr></table><p>After</p>"
+        let board = NSPasteboard.withUniqueName()
+        defer { board.releaseGlobally() }
+        board.setData(Data(html.utf8), forType: .html)
+        let markdown = try #require(MarkdownRichPasteNormalizer.markdown(from: board, theme: theme))
+        #expect(markdown.contains("| Name | Value |\n| --- | --- |\n| A | 42 |"))
+        #expect(markdown.contains("Before"))
+        #expect(markdown.contains("After"))
+        let view = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
+        view.markdownPasteTheme = theme
+        #expect(view.pasteContents(from: board))
+        let stored = MarkdownRichTextCodec.serialize(view.attributedString(), theme: theme)
+        #expect(stored.contains("| A | 42 |"))
+
+        board.clearContents()
+        board.setString("Name\tValue\r\nA\t42\r\n", forType: .string)
+        #expect(MarkdownRichPasteNormalizer.markdown(from: board, theme: theme)
+            == "| Name | Value |\n| --- | --- |\n| A | 42 |")
+        board.clearContents()
+        board.setString("ordinary text\nnext line", forType: .string)
+        #expect(MarkdownRichPasteNormalizer.markdown(from: board, theme: theme) == nil)
+    }
+
+    @MainActor
+    @Test
+    func bodyTypingDoesNotRewriteTitleAttributes() throws {
+        let view = MarkdownTextView(frame: NSRect(x: 0, y: 0, width: 480, height: 320))
+        view.replaceAllContent(with: MarkdownRichTextCodec.render(markdown: "# Title\nBody", theme: theme))
+        view.setMetadataTags(["tag"])
+        let storage = try #require(view.textStorage)
+        let edits = TextStorageEditCounter()
+        let observer = NotificationCenter.default.addObserver(
+            forName: NSTextStorage.didProcessEditingNotification, object: storage, queue: nil
+        ) { _ in MainActor.assumeIsolated { edits.count += 1 } }
+        defer { NotificationCenter.default.removeObserver(observer) }
+        view.didChangeText()
+        view.didChangeText()
+        #expect(edits.count == 0)
+        let style = try #require(storage.attribute(.paragraphStyle, at: 0, effectiveRange: nil) as? NSParagraphStyle)
+        #expect(style.paragraphSpacing >= 36)
     }
 
     @MainActor

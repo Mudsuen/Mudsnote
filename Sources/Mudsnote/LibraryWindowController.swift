@@ -1483,6 +1483,7 @@ final class LibraryWindowController: NSWindowController,
     private var notePrefetchTask: Task<Void, Never>?
     private var searchReloadWorkItem: DispatchWorkItem?
     private var searchResultsTask: Task<Void, Never>?
+    private var editorMetricsRefreshTask: Task<Void, Never>?
     private var editorSearchHighlightRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshGeneration = 0
@@ -2116,6 +2117,8 @@ final class LibraryWindowController: NSWindowController,
         sourceCountRefreshGeneration += 1
         searchReloadWorkItem?.cancel()
         searchReloadWorkItem = nil
+        editorMetricsRefreshTask?.cancel()
+        editorMetricsRefreshTask = nil
         editorSearchHighlightRefreshTask?.cancel()
         editorSearchHighlightRefreshTask = nil
         knowledgeSynthesisTask?.cancel()
@@ -6726,10 +6729,26 @@ final class LibraryWindowController: NSWindowController,
     func textDidChange(_ notification: Notification) {
         if let object = notification.object as AnyObject?, object === editorTextView {
             normalizeUnifiedTitleLineFormatting()
-            let metadata = visibleEditorMetadata()
-            titleField.stringValue = metadata.title
-            updateWordCount(in: metadata.body)
-            layoutEditorStatusLabel()
+            let visibleText = editorTextView.string as NSString
+            if isEditorShowingMarkdownSource {
+                titleField.stringValue = visibleEditorMetadata().title
+            } else if visibleText.length > 0 {
+                titleField.stringValue = visibleText.substring(with: visibleText.paragraphRange(
+                    for: NSRange(location: 0, length: 0)
+                )).trimmingCharacters(in: .whitespacesAndNewlines)
+            } else {
+                titleField.stringValue = ""
+            }
+            editorMetricsRefreshTask?.cancel()
+            editorMetricsRefreshTask = Task { @MainActor [weak self] in
+                try? await Task.sleep(for: .milliseconds(150))
+                guard !Task.isCancelled, let self else { return }
+                let metadata = self.visibleEditorMetadata()
+                self.titleField.stringValue = metadata.title
+                self.updateWordCount(in: metadata.body)
+                self.layoutEditorStatusLabel()
+                self.editorMetricsRefreshTask = nil
+            }
             libraryUserDidEdit()
         } else {
             markDirty()
@@ -8099,6 +8118,8 @@ final class LibraryWindowController: NSWindowController,
         renderedBody: NSAttributedString? = nil,
         preservedSelection: NSRange? = nil
     ) {
+        editorMetricsRefreshTask?.cancel()
+        editorMetricsRefreshTask = nil
         editorSearchHighlightRefreshTask?.cancel()
         editorSearchHighlightRefreshTask = nil
         suppressEditorChanges = true
@@ -8216,9 +8237,27 @@ final class LibraryWindowController: NSWindowController,
         )
         guard titleRange.length > 0 else { return }
 
-        let headingAttributes = theme.baseAttributes(for: .heading(level: 1))
+        var headingAttributes = theme.baseAttributes(for: .heading(level: 1))
+        let reserve = storage.attribute(.qmMetadataTagReserve, at: 0, effectiveRange: nil) as? CGFloat ?? 0
+        if reserve > 0,
+           let style = (headingAttributes[.paragraphStyle] as? NSParagraphStyle)?.mutableCopy() as? NSMutableParagraphStyle {
+            style.paragraphSpacing += reserve
+            headingAttributes[.paragraphStyle] = style
+        }
+        var changedRanges: [NSRange] = []
+        storage.enumerateAttributes(in: titleRange) { attributes, range, _ in
+            if headingAttributes.contains(where: { key, value in
+                guard let existing = attributes[key] as? NSObject else { return true }
+                return !existing.isEqual(value)
+            }) {
+                changedRanges.append(range)
+            }
+        }
+        guard !changedRanges.isEmpty else { return }
         suppressEditorChanges = true
-        storage.addAttributes(headingAttributes, range: titleRange)
+        storage.beginEditing()
+        for range in changedRanges { storage.addAttributes(headingAttributes, range: range) }
+        storage.endEditing()
         suppressEditorChanges = false
     }
 

@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-17, this prototype records 290 implementation iterations, including the initial MVP.
+As of 2026-09-18, this prototype records 291 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 291. Editor typing and external table paste
+
+- Problem: Typing repeatedly invalidated title layout and synchronously laid out the entire document; external tables were flattened into paragraphs.
+- Fix: Restart the native caret blink cycle after click repositioning; preserve unchanged title and metadata styles, constrain tag layout to the title, coalesce library word-count/footer work, and avoid serializing quick-capture content just to show a placeholder. Import native HTML/RTF table cells and rectangular tab-separated clipboard text as Markdown tables.
+- Lesson: Keep layout and serialization out of the per-keystroke path; preserve clipboard structure before normalizing inline formatting.
 
 ### 290. Narrower library sidebar
 

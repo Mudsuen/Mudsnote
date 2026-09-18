@@ -689,20 +689,17 @@ extension EditorWindowController {
     func refreshFloatingNoteChrome() {
         guard isFloatingNoteMode else { return }
 
-        let document = currentDocument()
-        floatingNotePlaceholderLabel?.isHidden = !document.title.isEmpty || !document.body.isEmpty || editorTextView.hasMarkedText()
+        floatingNotePlaceholderLabel?.isHidden = editorTextView.string.contains { !$0.isWhitespace }
+            || editorTextView.hasMarkedText()
     }
 
     func refreshQuickCaptureChrome() {
         guard isQuickCaptureMode else { return }
 
-        let state = QuickCaptureDocumentState(
-            title: "",
-            bodyMarkdown: serializedBodyMarkdown()
-        )
+        let hasVisibleContent = editorTextView.string.contains { !$0.isWhitespace }
         let bodyHasMarkedText = editorTextView.hasMarkedText()
 
-        quickCapturePlaceholderBodyLabel?.isHidden = !state.normalizedBody.isEmpty || bodyHasMarkedText
+        quickCapturePlaceholderBodyLabel?.isHidden = hasVisibleContent || bodyHasMarkedText
 
         let destinationTitle = quickCaptureDestinationTitle()
         quickCaptureDirectoryButton?.title = destinationTitle
