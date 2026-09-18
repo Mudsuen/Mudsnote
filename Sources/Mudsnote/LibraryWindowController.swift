@@ -506,7 +506,7 @@ final class LibrarySourceOutlineCellView: NSTableCellView {
         imageView = icon
 
         countLabel.setAccessibilityElement(false)
-        countLabel.font = .systemFont(ofSize: LibraryNotesLayout.sourceCountFontSize, weight: .medium)
+        countLabel.font = .systemFont(ofSize: LibraryNotesLayout.sourceCountFontSize, weight: .regular)
         countLabel.alignment = .right
         countLabel.translatesAutoresizingMaskIntoConstraints = false
         countLabel.setContentHuggingPriority(.required, for: .horizontal)
@@ -733,7 +733,7 @@ final class LibraryListSmartScopeControl: NSControl {
             .withSymbolConfiguration(configuration)
         titleLabel.font = .systemFont(
             ofSize: LibraryNotesLayout.sourceButtonFontSize,
-            weight: selected ? .semibold : .regular
+            weight: .regular
         )
         titleLabel.textColor = color
         countLabel.stringValue = count.map(String.init) ?? ""
@@ -2610,7 +2610,7 @@ final class LibraryWindowController: NSWindowController,
         let listHeaderSpacer = NSView()
         listHeaderSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         sidebarTreeHeaderButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarTreeHeader")
-        sidebarTreeHeaderButton.font = .systemFont(ofSize: 13, weight: .semibold)
+        sidebarTreeHeaderButton.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderTitleFontSize, weight: .medium)
         sidebarTreeHeaderButton.contentTintColor = .labelColor
         sidebarTreeHeaderButton.alignment = .left
         sidebarTreeHeaderButton.isBordered = false
@@ -3183,12 +3183,12 @@ final class LibraryWindowController: NSWindowController,
 
     private func configureNoteListHeaderLabels() {
         noteListTitleLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListTitle")
-        noteListTitleLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderTitleFontSize, weight: .semibold)
+        noteListTitleLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderTitleFontSize, weight: .medium)
         noteListTitleLabel.textColor = panelPrimaryTextColor()
         noteListTitleLabel.lineBreakMode = .byTruncatingTail
 
         noteListCountLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListCount")
-        noteListCountLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderCountFontSize, weight: .semibold)
+        noteListCountLabel.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderCountFontSize, weight: .regular)
         noteListCountLabel.textColor = panelTertiaryTextColor()
         noteListCountLabel.lineBreakMode = .byTruncatingTail
     }
@@ -5404,7 +5404,7 @@ final class LibraryWindowController: NSWindowController,
             }
             label.stringValue = title
             label.identifier = identifier
-            label.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .semibold)
+            label.font = .systemFont(ofSize: LibraryNotesLayout.sourceGroupFontSize, weight: .medium)
             label.textColor = panelTertiaryTextColor()
             return cell
         case .status(let message):
@@ -6151,7 +6151,7 @@ final class LibraryWindowController: NSWindowController,
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         cell.titleLabel.attributedStringValue = highlightedSearchString(
             noteListDisplayTitle(for: note),
-            font: cell.titleLabel.font ?? .systemFont(ofSize: LibraryNotesLayout.noteTitleFontSize, weight: .semibold),
+            font: cell.titleLabel.font ?? .systemFont(ofSize: LibraryNotesLayout.noteTitleFontSize, weight: .medium),
             baseColor: panelPrimaryTextColor(),
             query: query
         )

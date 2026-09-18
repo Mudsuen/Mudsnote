@@ -3159,11 +3159,11 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceGroupContentLeadingInset == 5)
         #expect(LibraryNotesLayout.sourceCountTrailingInset == 6)
         #expect(LibraryNotesLayout.sourceCountWidth == 32)
-        #expect(LibraryNotesLayout.sourceButtonFontSize == 13.5)
+        #expect(LibraryNotesLayout.sourceButtonFontSize == 14)
         #expect(LibraryNotesLayout.sourceButtonFontWeight == LibraryNotesLayout.sourceSelectedButtonFontWeight)
         #expect(LibraryNotesLayout.sourceSelectedButtonFontWeight == .regular)
         #expect(LibraryNotesLayout.sourceUnselectedButtonFontWeight == .regular)
-        #expect(LibraryNotesLayout.sourceCountFontSize == 13)
+        #expect(LibraryNotesLayout.sourceCountFontSize == 12)
         #expect(LibraryNotesLayout.sourceSymbolWeight == .medium)
         let sourceOutline = controller.sourceOutlineView
         #expect(sourceOutline.identifier?.rawValue == "LibrarySourceOutline")
@@ -3208,7 +3208,7 @@ struct MarkdownRichEditorTests {
         })
         #expect(noteListTitle.stringValue == "首页")
         #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
-        #expect(LibraryNotesLayout.noteListHeaderTitleFontSize == 13)
+        #expect(LibraryNotesLayout.noteListHeaderTitleFontSize == 14)
         #expect(noteListCount.stringValue == "1 条笔记")
         #expect(noteListCount.font?.pointSize == LibraryNotesLayout.noteListHeaderCountFontSize)
         #expect(noteListEmpty.isHidden)
@@ -3295,14 +3295,14 @@ struct MarkdownRichEditorTests {
         #expect(LibraryNoteCellView.stackTextTrailingAdjustment == 2)
         #expect(LibraryNoteCellView.minimumTextWidth == 40)
         #expect(LibraryNoteCellView.textRowSpacing == 2.5)
-        #expect(LibraryNotesLayout.noteGroupFontSize == 11)
-        #expect(LibraryNotesLayout.noteGroupFontWeight == .semibold)
+        #expect(LibraryNotesLayout.noteGroupFontSize == 12)
+        #expect(LibraryNotesLayout.noteGroupFontWeight == .medium)
         #expect(LibraryNotesLayout.noteTitleFontSize == 14)
-        #expect(LibraryNotesLayout.noteTitleFontWeight == .semibold)
+        #expect(LibraryNotesLayout.noteTitleFontWeight == .medium)
         #expect(LibraryNotesLayout.noteSnippetFontSize == 12)
         #expect(LibraryNotesLayout.noteSnippetFontWeight == .regular)
-        #expect(LibraryNotesLayout.noteMetaFontSize == 11)
-        #expect(LibraryNotesLayout.noteMetaFontWeight == .medium)
+        #expect(LibraryNotesLayout.noteMetaFontSize == 12)
+        #expect(LibraryNotesLayout.noteMetaFontWeight == .regular)
         #expect(firstNoteCell.titleLabel.font?.pointSize == LibraryNotesLayout.noteTitleFontSize)
         #expect(firstNoteCell.snippetLabel.font?.pointSize == LibraryNotesLayout.noteSnippetFontSize)
         #expect(firstNoteCell.metaLabel.font?.pointSize == LibraryNotesLayout.noteMetaFontSize)
@@ -3488,7 +3488,7 @@ struct MarkdownRichEditorTests {
         let selectedSourceWeight = NSFontManager.shared.weight(of: try #require(allSourceControl.titleLabel.font))
         let expectedSelectedSourceWeight = NSFontManager.shared.weight(of: .systemFont(
             ofSize: LibraryNotesLayout.sourceButtonFontSize,
-            weight: .semibold
+            weight: .regular
         ))
         #expect(selectedSourceWeight == expectedSelectedSourceWeight)
         let folderSourceCell = try #require(window.contentView?.allSubviews.compactMap {

@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-18, this prototype records 294 implementation iterations, including the initial MVP.
+As of 2026-09-18, this prototype records 295 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 295. Simpler sidebar typography
+
+- Problem: Sidebar navigation, note rows, groups, and counts mixed five font sizes and several competing weights.
+- Fix: Use 14-point primary text and 12-point supporting text, with regular and medium weights; keep selection emphasis in color and background.
+- Lesson: A small type scale makes dense navigation easier to scan.
 
 ### 294. Positional title formatting stays in the title
 
