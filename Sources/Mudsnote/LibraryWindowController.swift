@@ -3246,12 +3246,13 @@ final class LibraryWindowController: NSWindowController,
             item.view = buildDocumentTabHeader()
             return item
         case Self.toggleSidebarToolbarItemIdentifier:
-            return toolbarButtonItem(
+            return toolbarNewNoteButtonItem(
                 identifier: itemIdentifier,
                 label: "隐藏资料库",
                 symbolName: "sidebar.left",
                 action: #selector(toggleSourceListPressed),
-                symbolPointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
+                wrapperWidth: LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth,
+                wrapperIdentifier: "LibraryToolbarSidebarWrapper"
             )
         case Self.navigationBackToolbarItemIdentifier:
             return toolbarButtonItem(
@@ -3658,7 +3659,9 @@ final class LibraryWindowController: NSWindowController,
         identifier: NSToolbarItem.Identifier,
         label: String,
         symbolName: String,
-        action: Selector
+        action: Selector,
+        wrapperWidth: CGFloat = LibraryNotesLayout.toolbarNewNoteWrapperWidth,
+        wrapperIdentifier: String = "LibraryToolbarNewNoteWrapper"
     ) -> NSToolbarItem {
         let item = NSToolbarItem(itemIdentifier: identifier)
         item.label = label
@@ -3668,12 +3671,23 @@ final class LibraryWindowController: NSWindowController,
         item.action = action
         item.isBordered = false
 
-        let configuredImage = toolbarCompactGlassSymbolImage(
+        let symbol = toolbarCompactGlassSymbolImage(
             symbolName: symbolName,
             label: label,
             pointSize: LibraryNotesLayout.toolbarNewNoteSymbolPointSize
         )
-        configuredImage?.isTemplate = true
+        // AppKit applies a different symbol scale inside the sidebar toolbar.
+        // Render a template with fixed intrinsic dimensions so both regions
+        // draw exactly the same glyph when the tracking separator moves.
+        let configuredImage = symbol.map { symbol in
+            let image = NSImage(size: symbol.size)
+            image.lockFocus()
+            symbol.draw(in: NSRect(origin: .zero, size: symbol.size))
+            image.unlockFocus()
+            image.isTemplate = true
+            image.accessibilityDescription = label
+            return image
+        }
 
         let button = NSButton(image: configuredImage ?? NSImage(), target: self, action: action)
         button.identifier = NSUserInterfaceItemIdentifier(identifier.rawValue)
@@ -3694,14 +3708,14 @@ final class LibraryWindowController: NSWindowController,
         let wrapper = NSView(frame: NSRect(
             x: 0,
             y: 0,
-            width: LibraryNotesLayout.toolbarNewNoteWrapperWidth,
+            width: wrapperWidth,
             height: LibraryNotesLayout.toolbarCircularButtonSize
         ))
-        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarNewNoteWrapper")
+        wrapper.identifier = NSUserInterfaceItemIdentifier(wrapperIdentifier)
         wrapper.translatesAutoresizingMaskIntoConstraints = false
         wrapper.addSubview(button)
         NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarNewNoteWrapperWidth),
+            wrapper.widthAnchor.constraint(equalToConstant: wrapperWidth),
             wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
             button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
             button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
@@ -9907,15 +9921,14 @@ final class LibraryWindowController: NSWindowController,
                 item.isHidden = !isVisible
             case Self.toggleSidebarToolbarItemIdentifier:
                 let label = isVisible ? "隐藏资料库" : "显示资料库"
-                updateToolbarItemPresentation(
-                    item,
-                    label: label,
-                    symbolName: "sidebar.left",
-                    symbolPointSize: isVisible
-                        ? LibraryNotesLayout.toolbarSourceActionSymbolPointSize
-                        : LibraryNotesLayout.toolbarCircularButtonSymbolPointSize
-                )
-                configureToggleSidebarToolbarItem(item, label: label, usesCompactGlass: !isVisible)
+                // Keep the same buttons, images and geometry across sidebar transitions.
+                item.label = label
+                item.paletteLabel = label
+                item.toolTip = label
+                if let button = item.view?.subviews.first as? NSButton {
+                    button.toolTip = label
+                    button.setAccessibilityLabel(label)
+                }
             default:
                 break
             }
@@ -10691,56 +10704,6 @@ final class LibraryWindowController: NSWindowController,
         button.setAccessibilityLabel(label)
     }
 
-    private func configureToggleSidebarToolbarItem(
-        _ item: NSToolbarItem,
-        label: String,
-        usesCompactGlass: Bool
-    ) {
-        item.isBordered = false
-        let image = usesCompactGlass
-            ? toolbarCompactGlassSymbolImage(symbolName: "sidebar.left", label: label)
-            : toolbarSymbolImage(
-                symbolName: "sidebar.left",
-                label: label,
-                pointSize: LibraryNotesLayout.toolbarSourceActionSymbolPointSize
-            )
-        image?.isTemplate = true
-        let button = NSButton(image: image ?? NSImage(), target: self, action: #selector(toggleSourceListPressed))
-        button.identifier = NSUserInterfaceItemIdentifier(Self.toggleSidebarToolbarItemIdentifier.rawValue)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
-        button.bezelStyle = usesCompactGlass ? .glass : .toolbar
-        button.isBordered = true
-        button.showsBorderOnlyWhileMouseInside = !usesCompactGlass
-        button.focusRingType = .none
-        button.imagePosition = .imageOnly
-        button.imageScaling = usesCompactGlass ? .scaleNone : .scaleProportionallyDown
-        button.contentTintColor = toolbarIconTintColor(isEnabled: true)
-        button.translatesAutoresizingMaskIntoConstraints = false
-        button.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
-        button.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize).isActive = true
-        guard usesCompactGlass else {
-            item.view = button
-            return
-        }
-
-        let wrapper = NSView(frame: NSRect(
-            x: 0,
-            y: 0,
-            width: LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth,
-            height: LibraryNotesLayout.toolbarCircularButtonSize
-        ))
-        wrapper.identifier = NSUserInterfaceItemIdentifier("LibraryToolbarCollapsedSidebarWrapper")
-        wrapper.translatesAutoresizingMaskIntoConstraints = false
-        wrapper.addSubview(button)
-        NSLayoutConstraint.activate([
-            wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth),
-            wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarCircularButtonSize),
-            button.trailingAnchor.constraint(equalTo: wrapper.trailingAnchor),
-            button.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
-        ])
-        item.view = wrapper
-    }
 
     private func popToolbarMenu(_ menu: NSMenu, from sender: Any?) {
         menu.autoenablesItems = false

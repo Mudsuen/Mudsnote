@@ -2838,7 +2838,7 @@ struct MarkdownRichEditorTests {
             let item = try #require((window.toolbar?.items ?? []).first {
                 $0.itemIdentifier.rawValue == toolbarButtonID
             })
-            #expect(toolbarButtonID == "mudsnote.library.toolbar.toggle-sidebar" ? item.isBordered : !item.isBordered)
+            #expect(!item.isBordered)
             #expect(item.image != nil)
             #expect(item.toolTip == item.label)
         }
@@ -3053,8 +3053,10 @@ struct MarkdownRichEditorTests {
         })
         #expect(controller.isSourceListVisibleForLibrary)
         #expect(!sourceTrackingSeparatorItem.isHidden)
-        #expect(toggleSourceItem.isBordered)
-        let expandedToggleButton = try #require(toggleSourceItem.view as? NSButton)
+        #expect(!toggleSourceItem.isBordered)
+        let expandedToggleWrapper = try #require(toggleSourceItem.view)
+        let expandedToggleButton = try #require(expandedToggleWrapper.subviews.first as? NSButton)
+        let expandedImageSize = expandedToggleButton.image?.size
         #expect(expandedToggleButton.image != nil)
         #expect(treePresentationButton.image != nil)
         #expect(treePresentationButton.toolTip == "切换到列表")
@@ -3068,7 +3070,7 @@ struct MarkdownRichEditorTests {
         #expect(sourceTrackingSeparatorItem.isHidden)
         #expect(!toggleSourceItem.isBordered)
         let collapsedToggleWrapper = try #require(toggleSourceItem.view)
-        #expect(collapsedToggleWrapper.identifier?.rawValue == "LibraryToolbarCollapsedSidebarWrapper")
+        #expect(collapsedToggleWrapper.identifier?.rawValue == "LibraryToolbarSidebarWrapper")
         #expect(collapsedToggleWrapper.frame.width == LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth)
         #expect(LibraryNotesLayout.toolbarCollapsedSidebarWrapperWidth == 34)
         let collapsedToggleButton = try #require(collapsedToggleWrapper.allSubviews.compactMap {
@@ -3080,8 +3082,8 @@ struct MarkdownRichEditorTests {
         #expect(collapsedToggleButton.constraints.contains {
             $0.firstAttribute == .height && $0.constant == LibraryNotesLayout.toolbarCircularButtonSize
         })
-        #expect(collapsedToggleButton.bezelStyle == .glass)
-        #expect(collapsedToggleButton.isBordered)
+        #expect(collapsedToggleButton.bezelStyle == .shadowlessSquare)
+        #expect(!collapsedToggleButton.isBordered)
         #expect(collapsedToggleButton.imageScaling == .scaleNone)
         #expect(toggleSourceItem.label == "显示资料库")
         #expect(toggleSourceItem.toolTip == "显示资料库")
@@ -3089,8 +3091,10 @@ struct MarkdownRichEditorTests {
         #expect(controller.isSourceListVisibleForLibrary)
         #expect(!sourceList.isHidden)
         #expect(!sourceTrackingSeparatorItem.isHidden)
-        #expect(toggleSourceItem.isBordered)
-        #expect(toggleSourceItem.view is NSButton)
+        #expect(!toggleSourceItem.isBordered)
+        #expect(toggleSourceItem.view === expandedToggleWrapper)
+        #expect(collapsedToggleButton === expandedToggleButton)
+        #expect(collapsedToggleButton.image?.size == expandedImageSize)
         #expect(toggleSourceItem.label == "隐藏资料库")
         #expect(toggleSourceItem.toolTip == "隐藏资料库")
         let noteListStack = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {

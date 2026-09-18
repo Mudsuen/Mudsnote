@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-18, this prototype records 291 implementation iterations, including the initial MVP.
+As of 2026-09-18, this prototype records 292 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 292. Stable sidebar toolbar icons
+
+- Problem: Collapsing the sidebar changed the toggle icon size and rebuilt its button with a different bezel and wrapper.
+- Fix: Keep both leading toolbar actions in fixed-size wrappers with fixed-size template images and unchanged buttons, preventing AppKit from rescaling symbols in the sidebar region; sidebar transitions update only visibility labels and the separator.
+- Lesson: Navigation state should not change toolbar action geometry.
 
 ### 291. Editor typing and external table paste
 
