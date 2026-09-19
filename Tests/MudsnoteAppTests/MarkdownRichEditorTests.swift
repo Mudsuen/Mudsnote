@@ -3616,8 +3616,22 @@ struct MarkdownRichEditorTests {
         let controller = LibraryWindowController(noteStore: harness.store,
             onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
         defer { controller.close() }
-        #expect(controller.editorTextView.allSubviews.contains { $0.identifier?.rawValue == "AddNoteTagButton" })
-        controller.addSelectedMetadataTag("#Created")
+        let addButton = try #require(controller.editorTextView.allSubviews.compactMap { $0 as? NSButton }
+            .first { $0.identifier?.rawValue == "AddNoteTagButton" })
+        addButton.performClick(nil)
+        let input = try #require(controller.editorTextView.allSubviews.compactMap { $0 as? NSComboBox }
+            .first { $0.identifier?.rawValue == "InlineNoteTagInput" })
+        #expect(NSApp.modalWindow == nil)
+        #expect(controller.window?.firstResponder === input.currentEditor())
+        input.cancelOperation(nil)
+        let restoredAddButton = try #require(controller.editorTextView.allSubviews.compactMap { $0 as? NSButton }
+            .first { $0.identifier?.rawValue == "AddNoteTagButton" })
+        #expect(!controller.editorTextView.allSubviews.contains { $0.identifier?.rawValue == "InlineNoteTagInput" })
+        restoredAddButton.performClick(nil)
+        let committedInput = try #require(controller.editorTextView.allSubviews.compactMap { $0 as? NSComboBox }
+            .first { $0.identifier?.rawValue == "InlineNoteTagInput" })
+        committedInput.stringValue = "#Created"
+        #expect(NSApp.sendAction(try #require(committedInput.action), to: committedInput.target, from: committedInput))
         controller.addSelectedMetadataTag("created")
         let badges = controller.editorTextView.allSubviews.compactMap { $0 as? NSButton }
         #expect(badges.filter { $0.title == "#Created  ×" }.count == 1)

@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-18, this prototype records 296 implementation iterations, including the initial MVP.
+As of 2026-09-19, this prototype records 297 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 297. Inline tag creation
+
+- Problem: Adding a tag interrupted note editing with a modal dialog.
+- Fix: Replace the dialog with an inline autocomplete field in the note's tag row, with Return to confirm and Escape to cancel.
+- Lesson: Lightweight metadata edits should stay in context and preserve the editing flow.
 
 ### 296. Discoverable tag editing and management
 

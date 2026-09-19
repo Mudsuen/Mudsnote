@@ -289,6 +289,40 @@ private final class MetadataTagButton: NSButton {
     }
 }
 
+private final class InlineMetadataTagComboBox: NSComboBox {
+    var onCommit: ((String) -> Void)?
+    var onCancel: (() -> Void)?
+    private var hasFinished = false
+
+    @objc private func commitValue() {
+        guard !hasFinished else { return }
+        hasFinished = true
+        onCommit?(stringValue)
+    }
+
+    override func textDidEndEditing(_ notification: Notification) {
+        let movement = notification.userInfo?["NSTextMovement"] as? Int
+        if movement == NSReturnTextMovement || movement == NSTabTextMovement || movement == NSBacktabTextMovement {
+            commitValue()
+        } else if !hasFinished {
+            hasFinished = true
+            onCancel?()
+        }
+        super.textDidEndEditing(notification)
+    }
+
+    override func cancelOperation(_ sender: Any?) {
+        guard !hasFinished else { return }
+        hasFinished = true
+        onCancel?()
+    }
+
+    func configureCommitAction() {
+        target = self
+        action = #selector(commitValue)
+    }
+}
+
 private final class ConciseEditorContextMenu: NSMenu {
     var isSealed = false
 
@@ -428,12 +462,18 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     @objc private func addMetadataTagPressed() { onAddMetadataTag?() }
     private var metadataTags: [String] = []
     private var metadataTagScrollView: NSScrollView?
+    private weak var metadataTagStack: NSStackView?
+    private var metadataTagAddButton: NSButton?
+    private weak var metadataTagInput: InlineMetadataTagComboBox?
 
     func replaceAllContent(with attributedString: NSAttributedString) {
         textStorage?.setAttributedString(attributedString)
         metadataTags = []
         metadataTagScrollView?.removeFromSuperview()
         metadataTagScrollView = nil
+        metadataTagStack = nil
+        metadataTagAddButton = nil
+        metadataTagInput = nil
 
         // This view is transparent. TextKit can invalidate only the new glyph
         // range after a shorter replacement, leaving pixels from the previous
@@ -461,6 +501,9 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         metadataTags = normalized
         metadataTagScrollView?.removeFromSuperview()
         metadataTagScrollView = nil
+        metadataTagStack = nil
+        metadataTagAddButton = nil
+        metadataTagInput = nil
         updateMetadataTagSpacing(hasTags: !normalized.isEmpty || onAddMetadataTag != nil)
         guard !normalized.isEmpty || onAddMetadataTag != nil else { return }
 
@@ -485,6 +528,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             addButton.toolTip = "添加标签"
             addButton.setAccessibilityLabel("添加标签")
             stack.addArrangedSubview(addButton)
+            metadataTagAddButton = addButton
         }
         stack.frame = NSRect(
             x: 0,
@@ -501,6 +545,63 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         scroll.documentView = stack
         addSubview(scroll)
         metadataTagScrollView = scroll
+        metadataTagStack = stack
+        layoutMetadataTagBar()
+    }
+
+    func beginAddingMetadataTag(suggestions: [String], onCommit: @escaping (String) -> Void) {
+        if let input = metadataTagInput {
+            window?.makeFirstResponder(input)
+            return
+        }
+        guard let stack = metadataTagStack, let addButton = metadataTagAddButton else { return }
+
+        stack.removeArrangedSubview(addButton)
+        addButton.removeFromSuperview()
+        let input = InlineMetadataTagComboBox()
+        input.identifier = NSUserInterfaceItemIdentifier("InlineNoteTagInput")
+        input.placeholderString = "标签名称"
+        input.setAccessibilityLabel("标签名称")
+        input.completes = true
+        input.addItems(withObjectValues: suggestions.filter { suggestion in
+            !metadataTags.contains { $0.localizedCaseInsensitiveCompare(suggestion) == .orderedSame }
+        })
+        input.translatesAutoresizingMaskIntoConstraints = false
+        input.widthAnchor.constraint(equalToConstant: 160).isActive = true
+        input.heightAnchor.constraint(equalToConstant: 24).isActive = true
+        input.onCommit = { [weak self] value in
+            self?.finishAddingMetadataTag()
+            onCommit(value)
+        }
+        input.onCancel = { [weak self] in self?.finishAddingMetadataTag() }
+        input.configureCommitAction()
+        stack.addArrangedSubview(input)
+        metadataTagInput = input
+        resizeMetadataTagStack()
+        window?.makeFirstResponder(input)
+        input.currentEditor()?.selectAll(nil)
+        if let scroll = metadataTagScrollView {
+            scrollToVisible(scroll.frame)
+        }
+        metadataTagScrollView?.contentView.scrollToVisible(input.frame)
+    }
+
+    private func finishAddingMetadataTag() {
+        guard let stack = metadataTagStack, let input = metadataTagInput else { return }
+        stack.removeArrangedSubview(input)
+        input.removeFromSuperview()
+        metadataTagInput = nil
+        if let addButton = metadataTagAddButton {
+            stack.addArrangedSubview(addButton)
+        }
+        resizeMetadataTagStack()
+        window?.makeFirstResponder(self)
+    }
+
+    private func resizeMetadataTagStack() {
+        guard let stack = metadataTagStack else { return }
+        stack.frame.size = NSSize(width: stack.fittingSize.width, height: 26)
+        metadataTagScrollView?.documentView = stack
         layoutMetadataTagBar()
     }
 

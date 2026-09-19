@@ -13496,20 +13496,9 @@ final class LibraryWindowController: NSWindowController,
 
     @objc private func addSelectedNoteTagPressed() {
         guard canEditCurrentDocument else { return }
-        let alert = NSAlert()
-        alert.messageText = "添加标签"
-        alert.informativeText = "选择已有标签，或输入新标签名称。"
-        let input = NSComboBox(frame: NSRect(x: 0, y: 0, width: 280, height: 26))
-        input.addItems(withObjectValues: sourceTagNames)
-        input.completes = true
-        input.placeholderString = "标签名称"
-        input.setAccessibilityLabel("标签名称")
-        alert.accessoryView = input
-        alert.addButton(withTitle: "添加")
-        alert.addButton(withTitle: "取消")
-        alert.window.initialFirstResponder = input
-        guard alert.runModal() == .alertFirstButtonReturn else { return }
-        addSelectedMetadataTag(input.stringValue)
+        editorTextView.beginAddingMetadataTag(suggestions: sourceTagNames) { [weak self] input in
+            self?.addSelectedMetadataTag(input)
+        }
     }
 
     func addSelectedMetadataTag(_ input: String) {
