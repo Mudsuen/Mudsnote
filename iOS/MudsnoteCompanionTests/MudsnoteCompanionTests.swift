@@ -5694,6 +5694,90 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertNil(MarkdownLinkEditing.normalizedDestination("   "))
     }
 
+    func testNoteLinksProjectionPerformance() {
+        let path = "Current.md"
+        let outgoingPaths: Set<String> = ["Note17.md", "Note52.md", "Note104.md", "Note501.md"]
+        let tags: Set<String> = [MarkdownTagSyntax.key("#work")]
+        let files = (0..<3_000).map { position in
+            let index = (position * 1_877) % 3_000
+            return RecentMarkdownFile(
+                id: "Note\(index).md", relativePath: "Note\(index).md",
+                title: "Note \(index)", modifiedAt: .distantPast,
+                tags: index.isMultiple(of: 11) ? ["#work"] : [],
+                linkedNotePaths: index.isMultiple(of: 53) ? [path] : []
+            )
+        }
+        var samples: [Double] = []
+        var checksum = 0
+        for _ in 0..<7 {
+            let start = Date.timeIntervalSinceReferenceDate
+            let result = legacyNoteLinks(files: files, path: path, outgoingPaths: outgoingPaths, tags: tags)
+            samples.append((Date.timeIntervalSinceReferenceDate - start) * 1_000)
+            checksum += result.outgoing.count + result.incoming.count + result.suggestions.count
+        }
+        XCTAssertGreaterThan(checksum, 0)
+        let baseline = samples.sorted()[3]
+        let expected = legacyNoteLinks(files: files, path: path, outgoingPaths: outgoingPaths, tags: tags)
+        samples = []
+        for _ in 0..<7 {
+            let start = Date.timeIntervalSinceReferenceDate
+            let result = NoteLinksProjection(files: files, sourcePath: path, outgoingPaths: outgoingPaths, tagKeys: tags)
+            samples.append((Date.timeIntervalSinceReferenceDate - start) * 1_000)
+            XCTAssertEqual(result.outgoing, expected.outgoing)
+            XCTAssertEqual(result.incoming, expected.incoming)
+            XCTAssertEqual(result.suggestions, expected.suggestions)
+        }
+        let optimized = samples.sorted()[3]
+        print("NOTE_LINKS_BENCH count=3000 baseline_median_ms=\(baseline) optimized_median_ms=\(optimized) speedup=\(baseline / optimized) checksum=\(checksum)")
+    }
+
+    func testNoteLinksProjectionPreservesRelationsSuggestionsAndEmptyState() {
+        func file(_ path: String, _ title: String, links: Set<String> = [], loaded: Bool = true) -> RecentMarkdownFile {
+            RecentMarkdownFile(id: path, relativePath: path, title: title, modifiedAt: .distantPast,
+                               tags: ["#Work"], linkedNotePaths: links, isContentLoaded: loaded)
+        }
+        let files = [
+            file("Current.md", "Current"),
+            file("Both.md", "Both", links: ["Current.md"]),
+            file("Incoming.md", "Incoming", links: ["Current.md"]),
+            file("10.md", "Note 10"), file("2.md", "Note 2"),
+            file("1a.md", "Note 1"), file("1b.md", "Note 1"),
+        ]
+        let links = NoteLinksProjection(files: files, sourcePath: "Current.md",
+                                        outgoingPaths: ["Both.md", "Current.md"], tagKeys: ["#work"])
+        XCTAssertEqual(links.outgoing.map(\.relativePath), ["Both.md"])
+        XCTAssertEqual(links.incoming.map(\.relativePath), ["Both.md", "Incoming.md"])
+        XCTAssertEqual(links.linkedCount, 2)
+        XCTAssertEqual(links.suggestions.map(\.relativePath), ["1a.md", "1b.md", "2.md"])
+        XCTAssertTrue(links.isVisible)
+        XCTAssertFalse(links.isIndexing)
+
+        let empty = NoteLinksProjection(files: files, sourcePath: "Other.md", outgoingPaths: [], tagKeys: [])
+        XCTAssertFalse(empty.isVisible)
+        let loading = NoteLinksProjection(files: [file("Current.md", "Current", loaded: false)],
+                                         sourcePath: "Current.md", outgoingPaths: [], tagKeys: [])
+        XCTAssertTrue(loading.isVisible)
+        XCTAssertTrue(loading.isIndexing)
+    }
+
+    private func legacyNoteLinks(
+        files: [RecentMarkdownFile], path: String, outgoingPaths: Set<String>, tags: Set<String>
+    ) -> (outgoing: [RecentMarkdownFile], incoming: [RecentMarkdownFile], suggestions: [RecentMarkdownFile]) {
+        // Control: the reader's original three full-library sorts.
+        func linkableNotes() -> [RecentMarkdownFile] {
+            files.filter { $0.relativePath != path }.sorted {
+                $0.title.localizedStandardCompare($1.title) == .orderedAscending
+            }
+        }
+        let outgoing = linkableNotes().filter { outgoingPaths.contains($0.relativePath) }
+        let incoming = linkableNotes().filter { $0.linkedNotePaths.contains(path) }
+        let linkedPaths = Set((outgoing + incoming).map(\.relativePath))
+        let suggestions = linkableNotes().filter {
+            !linkedPaths.contains($0.relativePath) && !tags.isDisjoint(with: $0.tags.map(MarkdownTagSyntax.key))
+        }.prefix(3)
+        return (outgoing, incoming, Array(suggestions))
+    }
+
     func testBacklinkMetadataExcludesImagesExternalLinksAndTraversal() {
         let markdown = "[Note](../Reference/Next.md) ![Image](./Picture.md) [Web](https://example.com) [Escape](../../outside.md)"
         let metadata = MarkdownListMetadata.extract(from: markdown, fallbackTitle: "Current")

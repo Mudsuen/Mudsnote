@@ -690,45 +690,59 @@ struct MarkdownPreviewView: View {
         }
     }
 
+    @ViewBuilder
     private var noteLinksSection: some View {
         let path = currentSourceRelativePath
-        let outgoingPaths = MarkdownNoteLink.linkedPaths(in: draftMarkdown, from: path)
-        let outgoing = linkableNotes.filter { outgoingPaths.contains($0.relativePath) }
-        let incoming = linkableNotes.filter { $0.linkedNotePaths.contains(path) }
-        let linkedPaths = Set((outgoing + incoming).map(\.relativePath))
-        let tags = Set((noteTags + MarkdownTagSyntax.tags(in: draftMarkdown)).map(MarkdownTagSyntax.key))
-        let suggestions = linkableNotes.filter {
-            !linkedPaths.contains($0.relativePath) && !tags.isDisjoint(with: $0.tags.map(MarkdownTagSyntax.key))
-        }.prefix(3)
-        return DisclosureGroup(isExpanded: $showsNoteLinks) {
-            VStack(alignment: .leading, spacing: 12) {
-                noteLinkRows("Links to", notes: outgoing)
-                noteLinkRows("Referenced by", notes: incoming)
-                if !appModel.libraryFiles.allSatisfy(\.isContentLoaded) {
-                    ProgressView("Indexing links…").font(.caption)
-                }
-                if !suggestions.isEmpty {
-                    Text("Suggested links").font(.caption).foregroundStyle(.secondary)
-                    ForEach(Array(suggestions)) { note in
-                        HStack {
-                            Button { Task { await openLinkedNote(note) } } label: {
-                                Label(note.title, systemImage: "doc.text")
-                            }
-                            Spacer()
-                            Button("Link") { addSuggestedLink(note) }
+        let links = NoteLinksProjection(
+            files: appModel.libraryFiles,
+            sourcePath: path,
+            outgoingPaths: MarkdownNoteLink.linkedPaths(in: draftMarkdown, from: path),
+            tagKeys: Set((noteTags + MarkdownTagSyntax.tags(in: draftMarkdown)).map(MarkdownTagSyntax.key))
+        )
+        if links.isVisible {
+            DisclosureGroup(isExpanded: $showsNoteLinks) {
+                VStack(alignment: .leading, spacing: 12) {
+                    noteLinkRows("Links to", notes: links.outgoing)
+                    noteLinkRows("Referenced by", notes: links.incoming)
+                    if links.isIndexing {
+                        ProgressView("Indexing links…").font(.caption)
+                    }
+                    if !links.suggestions.isEmpty {
+                        Text("Suggested links").font(.caption).foregroundStyle(.secondary)
+                        ForEach(links.suggestions) { note in
+                            HStack {
+                                Button { Task { await openLinkedNote(note) } } label: {
+                                    Label(note.title, systemImage: "doc.text")
+                                        .frame(maxWidth: .infinity, minHeight: MudsnoteSpacing.tapTargetMin, alignment: .leading)
+                                        .contentShape(Rectangle())
+                                }
+                                Spacer()
+                                Button { addSuggestedLink(note) } label: {
+                                    Text("Link").frame(minHeight: MudsnoteSpacing.tapTargetMin)
+                                }
                                 .buttonStyle(.bordered)
+                            }
                         }
                     }
                 }
-            }
-            .padding(.top, 8)
-        } label: {
-            Label("Links · \(linkedPaths.count)", systemImage: "link")
+                .padding(.top, 8)
+            } label: {
+                Label {
+                    if links.linkedCount == 0, !links.suggestions.isEmpty {
+                        Text("Suggested links")
+                    } else {
+                        Text("Links · \(links.linkedCount)")
+                    }
+                } icon: {
+                    Image(systemName: "link")
+                }
                 .font(.subheadline)
-                .foregroundStyle(.secondary)
+                .foregroundStyle(MudsnoteColors.muted)
+                .frame(minHeight: MudsnoteSpacing.tapTargetMin)
+                .accessibilityIdentifier("note-bidirectional-links")
+            }
+            .padding(.top, 24)
         }
-        .padding(.top, 24)
-        .accessibilityIdentifier("note-bidirectional-links")
     }
 
     private func addSuggestedLink(_ note: RecentMarkdownFile) {
@@ -745,10 +759,12 @@ struct MarkdownPreviewView: View {
                 ForEach(notes) { note in
                     Button { Task { await openLinkedNote(note) } } label: {
                         Label(note.title, systemImage: "doc.text")
-                            .frame(maxWidth: .infinity, minHeight: 32, alignment: .leading)
+                            .frame(maxWidth: .infinity, minHeight: MudsnoteSpacing.tapTargetMin, alignment: .leading)
+                            .contentShape(Rectangle())
                     }
                     .buttonStyle(.plain)
-                    .foregroundStyle(.tint)
+                    .foregroundStyle(MudsnoteColors.primary)
+                    .accessibilityIdentifier("note-link-\(note.relativePath)")
                 }
             }
         }

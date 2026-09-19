@@ -144,3 +144,56 @@ enum MarkdownNoteLink {
         return value.addingPercentEncoding(withAllowedCharacters: allowed) ?? value
     }
 }
+
+struct NoteLinksProjection {
+    let outgoing: [RecentMarkdownFile]
+    let incoming: [RecentMarkdownFile]
+    let suggestions: [RecentMarkdownFile]
+    let isIndexing: Bool
+
+    var linkedCount: Int {
+        Set(outgoing.map(\.relativePath)).union(incoming.map(\.relativePath)).count
+    }
+
+    var isVisible: Bool {
+        isIndexing || !outgoing.isEmpty || !incoming.isEmpty || !suggestions.isEmpty
+    }
+
+    init(
+        files: [RecentMarkdownFile],
+        sourcePath: String,
+        outgoingPaths: Set<String>,
+        tagKeys: Set<String>
+    ) {
+        var outgoing: [RecentMarkdownFile] = []
+        var incoming: [RecentMarkdownFile] = []
+        var suggestions: [RecentMarkdownFile] = []
+        var isIndexing = false
+        for file in files {
+            isIndexing = isIndexing || !file.isContentLoaded
+            guard file.relativePath != sourcePath else { continue }
+            let linksOut = outgoingPaths.contains(file.relativePath)
+            let linksIn = file.linkedNotePaths.contains(sourcePath)
+            if linksOut { outgoing.append(file) }
+            if linksIn { incoming.append(file) }
+            guard !linksOut, !linksIn, !tagKeys.isEmpty,
+                  file.tags.contains(where: { tagKeys.contains(MarkdownTagSyntax.key($0)) }) else {
+                continue
+            }
+            // Keep only the first three titles without sorting the whole library.
+            let insertion = suggestions.firstIndex { Self.titleOrder(file, $0) } ?? suggestions.count
+            if insertion < 3 {
+                suggestions.insert(file, at: insertion)
+                if suggestions.count > 3 { suggestions.removeLast() }
+            }
+        }
+        self.outgoing = outgoing.sorted(by: Self.titleOrder)
+        self.incoming = incoming.sorted(by: Self.titleOrder)
+        self.suggestions = suggestions
+        self.isIndexing = isIndexing
+    }
+
+    private static func titleOrder(_ lhs: RecentMarkdownFile, _ rhs: RecentMarkdownFile) -> Bool {
+        lhs.title.localizedStandardCompare(rhs.title) == .orderedAscending
+    }
+}

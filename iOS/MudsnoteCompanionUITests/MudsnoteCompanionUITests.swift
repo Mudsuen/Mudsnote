@@ -1242,6 +1242,18 @@ final class MudsnoteCompanionUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "Original inbox note")
         ).firstMatch
         XCTAssertTrue(targetBody.waitForExistence(timeout: 5))
+        let related = app.buttons["note-bidirectional-links"]
+        XCTAssertTrue(related.waitForExistence(timeout: 5))
+        related.tap()
+        let backlink = app.buttons["note-link-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(backlink.waitForExistence(timeout: 5))
+        XCTAssertGreaterThanOrEqual(backlink.frame.height, 44)
+        let relatedScreenshot = XCTAttachment(screenshot: app.screenshot())
+        relatedScreenshot.name = "Readable backlink with full touch target"
+        relatedScreenshot.lifetime = .keepAlways
+        add(relatedScreenshot)
+        backlink.tap()
+        XCTAssertTrue(app.links["Inbox"].waitForExistence(timeout: 5))
     }
 
     func testRenderedNoteDetectsEmailAndPhoneActions() {
@@ -2156,9 +2168,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         projects.tap()
         XCTAssertTrue(first.waitForExistence(timeout: 5))
         first.tap()
-        XCTAssertTrue(app.descendants(matching: .any)["note-bidirectional-links"].waitForExistence(timeout: 5))
+        XCTAssertTrue(app.staticTexts["note-modified-date"].waitForExistence(timeout: 5))
+        XCTAssertFalse(app.buttons["note-bidirectional-links"].exists)
         let screenshot = XCTAttachment(screenshot: app.screenshot())
-        screenshot.name = "Native reader and collapsed bidirectional links"
+        screenshot.name = "Native reader without empty links"
         screenshot.lifetime = .keepAlways
         add(screenshot)
     }
