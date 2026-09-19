@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-19, this prototype records 297 implementation iterations, including the initial MVP.
+As of 2026-09-19, this prototype records 298 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 298. Sidebar category hover feedback
+
+- Problem: Recent, Favorites, and Home gave no visual feedback when hovered.
+- Fix: Track pointer entry and exit and use the sidebar's rounded hover fill, preserving the selected category's appearance.
+- Lesson: Custom navigation controls need the same pointer feedback as native list rows.
 
 ### 297. Inline tag creation
 

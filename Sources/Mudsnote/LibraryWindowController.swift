@@ -674,6 +674,9 @@ final class LibraryListSmartScopeControl: NSControl {
     let iconView = NSImageView()
     let titleLabel = NSTextField(labelWithString: "")
     let countLabel = NSTextField(labelWithString: "")
+    private var hoverTrackingArea: NSTrackingArea?
+    private var isPointerHovered = false
+    private var isScopeSelected = false
 
     init(title: String, symbolName: String) {
         super.init(frame: .zero)
@@ -713,6 +716,40 @@ final class LibraryListSmartScopeControl: NSControl {
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
 
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+        let area = NSTrackingArea(
+            rect: .zero,
+            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
+            owner: self,
+            userInfo: nil
+        )
+        addTrackingArea(area)
+        hoverTrackingArea = area
+        isPointerHovered = window.map {
+            $0.isKeyWindow && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil))
+        } ?? false
+        updateBackground()
+    }
+
+    override func mouseEntered(with event: NSEvent) {
+        isPointerHovered = true
+        updateBackground()
+    }
+
+    override func mouseExited(with event: NSEvent) {
+        isPointerHovered = false
+        updateBackground()
+    }
+
+    private func updateBackground() {
+        let color = isScopeSelected
+            ? LibrarySourceSelectionPalette.backgroundColor
+            : (isPointerHovered ? LibrarySourceOutlineRowView.hoverColor : .clear)
+        layer?.backgroundColor = color.cgColor
+    }
+
     override func mouseDown(with event: NSEvent) {
         sendAction(action, to: target)
     }
@@ -740,9 +777,8 @@ final class LibraryListSmartScopeControl: NSControl {
         countLabel.textColor = selected
             ? LibrarySourceSelectionPalette.selectedCountColor
             : NSColor.secondaryLabelColor
-        layer?.backgroundColor = selected
-            ? LibrarySourceSelectionPalette.backgroundColor.cgColor
-            : NSColor.clear.cgColor
+        isScopeSelected = selected
+        updateBackground()
         setAccessibilityValue(selected ? "已选中" : "未选中")
     }
 }
