@@ -4516,6 +4516,81 @@ final class MudsnoteCompanionTests: XCTestCase {
     }
 
     @MainActor
+    func testLatestDocumentOpenCancelsSupersededFailure() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try "# Latest".write(to: root.appendingPathComponent("Latest.md"), atomically: true, encoding: .utf8)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let model = AppModel(bootstrapImmediately: false, fileStore: store)
+        let missing = RecentMarkdownFile(id: "Missing.md", relativePath: "Missing.md", title: "Missing", modifiedAt: .now)
+        let latest = RecentMarkdownFile(id: "Latest.md", relativePath: "Latest.md", title: "Latest", modifiedAt: .now)
+
+        let first = model.openFile(missing, mode: .edit)
+        let second = model.openFile(latest)
+        await first.value
+        await second.value
+
+        XCTAssertEqual(model.selectedDocument?.relativePath, "Latest.md")
+        XCTAssertNil(model.statusToast)
+        if case .edit = model.noteOpenMode { XCTFail("A superseded edit request must not set the final mode") }
+    }
+
+    @MainActor
+    func testSelectingMemoCancelsPendingDocumentOpen() async throws {
+        let model = AppModel(bootstrapImmediately: false)
+        let pending = model.openFile(RecentMarkdownFile(
+            id: "Missing.md", relativePath: "Missing.md", title: "Missing", modifiedAt: .now
+        ))
+        let memo = MemoBlock(id: "memo", dateText: "", body: "Selected memo", tags: [])
+        model.selectedMemo = memo
+        await pending.value
+        XCTAssertEqual(model.selectedMemo, memo)
+        XCTAssertNil(model.selectedDocument)
+        XCTAssertNil(model.statusToast)
+    }
+
+    @MainActor
+    func testForgettingLibraryClearsSearchIdentityAndPendingOpen() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let suiteName = "MudsnoteCompanionTests.forget.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let model = AppModel(bootstrapImmediately: false,
+                             folderAccess: FolderAccessService(defaults: defaults),
+                             fileStore: store, defaults: defaults)
+        await model.searchLibrary(query: "needle", scope: .notes)
+        let pending = model.openFile(RecentMarkdownFile(
+            id: "Missing.md", relativePath: "Missing.md", title: "Missing", modifiedAt: .now
+        ))
+        model.forgetFolderAndChooseAgain()
+        await pending.value
+        XCTAssertEqual(model.completedSearchQuery, "")
+        XCTAssertEqual(model.completedSearchScope, .all)
+        XCTAssertFalse(model.isSearching)
+        XCTAssertNil(model.selectedDocument)
+        XCTAssertNil(model.statusToast)
+    }
+
+    @MainActor
+    func testCancelledEmptyLibrarySearchClearsProgress() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let model = AppModel(bootstrapImmediately: false, fileStore: store)
+        let task = Task { await model.searchLibrary(query: "needle") }
+        task.cancel()
+        await task.value
+        XCTAssertFalse(model.isSearching)
+        XCTAssertTrue(model.searchResults.isEmpty)
+        XCTAssertEqual(model.completedSearchQuery, "")
+    }
+
+    @MainActor
     func testAppModelPublishesCompletedSearchIdentity() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

@@ -4378,7 +4378,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         view.smartDashesType = .no
         view.smartQuotesType = .no
         view.text = text
-        view.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+        view.selectedRange = NSRange(location: 0, length: 0)
         let checklistTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleChecklistTap(_:))

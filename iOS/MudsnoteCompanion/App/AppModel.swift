@@ -58,7 +58,13 @@ final class AppModel: ObservableObject {
     @Published var trashedFiles: [TrashedMarkdownFile] = []
     @Published var attachments: [LibraryAttachment] = []
     @Published var smartFolders: [SmartFolderDefinition] = []
-    @Published var selectedMemo: MemoBlock?
+    @Published var selectedMemo: MemoBlock? {
+        didSet {
+            if selectedMemo?.id != oldValue?.id, selectedMemo != nil {
+                documentOpenTask?.cancel()
+            }
+        }
+    }
     @Published var selectedDocument: MarkdownDocument?
     @Published var noteOpenMode: NoteOpenMode = .read
     @Published var isReaderExpanded = false
@@ -105,6 +111,7 @@ final class AppModel: ObservableObject {
     private var activeSearchScope = MarkdownSearchScope.all
     private var activeSearchFilter = MarkdownSearchFilter()
     private var searchGeneration = 0
+    private var documentOpenTask: Task<Void, Never>?
     private var libraryConfigurationID = UUID()
     private var draftPersistenceTask: Task<Void, Never>?
     private var postWriteRefreshTask: Task<Void, Never>?
@@ -245,6 +252,11 @@ final class AppModel: ObservableObject {
 
     func forgetFolderAndChooseAgain() {
         libraryConfigurationID = UUID()
+        documentOpenTask?.cancel()
+        selectedDocument = nil
+        selectedMemo = nil
+        noteOpenMode = .read
+        clearSearch()
         folderAccess.forgetPersistedFolder()
         isInitialLibraryLoading = false
         folderStatus = .missing
@@ -260,8 +272,6 @@ final class AppModel: ObservableObject {
         tagSummaries = []
         conflictWarnings = []
         queueRecoveryWarning = nil
-        searchResults = []
-        isSearching = false
         libraryRevision += 1
         queue = nil
         currentLibraryID = ""
@@ -991,20 +1001,32 @@ final class AppModel: ObservableObject {
         }
     }
 
-    func openFile(_ file: RecentMarkdownFile, mode: NoteOpenMode = .read) {
-        noteOpenMode = mode
-        Task {
+    @discardableResult
+    func openFile(_ file: RecentMarkdownFile, mode: NoteOpenMode = .read) -> Task<Void, Never> {
+        documentOpenTask?.cancel()
+        let task = Task {
             do {
-                selectedDocument = try await fileStore.loadMarkdownDocument(
+                try Task.checkCancellation()
+                let document = try await fileStore.loadMarkdownDocument(
                     relativePath: file.relativePath
                 )
+                try Task.checkCancellation()
+                noteOpenMode = mode
+                selectedMemo = nil
+                selectedDocument = document
+            } catch is CancellationError {
+                return
             } catch {
+                guard !Task.isCancelled else { return }
                 statusToast = .error(String(localized: "Could not open Markdown file"))
             }
         }
+        documentOpenTask = task
+        return task
     }
 
     func createNote(inFolder relativeFolderPath: String? = nil) {
+        documentOpenTask?.cancel()
         noteOpenMode = .edit
         Task {
             do {
@@ -1555,6 +1577,9 @@ final class AppModel: ObservableObject {
             return
         }
         isSearching = true
+        defer {
+            if searchGeneration == generation { isSearching = false }
+        }
         do {
             let results = try await fileStore.search(
                 query: trimmed,
@@ -1571,7 +1596,6 @@ final class AppModel: ObservableObject {
             completedSearchScope = scope
             completedSearchFilter = filter
         } catch is CancellationError {
-            if searchGeneration == generation { isSearching = false }
             return
         } catch {
             guard searchGeneration == generation else { return }
@@ -1581,7 +1605,6 @@ final class AppModel: ObservableObject {
             completedSearchFilter = filter
             statusToast = .error(String(localized: "Search could not be completed"))
         }
-        if searchGeneration == generation { isSearching = false }
     }
 
     func clearSearch() {
@@ -2215,6 +2238,7 @@ final class AppModel: ObservableObject {
     }
 
     private func beginLibraryConfiguration() -> UUID {
+        documentOpenTask?.cancel()
         postWriteRefreshGeneration += 1
         postWriteRefreshTask?.cancel()
         postWriteRefreshTask = nil
