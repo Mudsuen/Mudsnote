@@ -2259,6 +2259,24 @@ final class LibraryWindowController: NSWindowController,
         }
         guard !externalChanges.isEmpty else { return }
 
+        let invalidatesAllThumbnails = externalChanges.contains(where: \.changesDirectoryStructure)
+        let imagePaths = Set(externalChanges.filter(\.isImageFile).map {
+            URL(fileURLWithPath: $0.path).standardizedFileURL.path
+        })
+        if invalidatesAllThumbnails {
+            thumbnailImageLoadTasks.values.forEach { $0.cancel() }
+            thumbnailImageLoadTasks.removeAll()
+            thumbnailImageCache.removeAllObjects()
+        } else {
+            for path in imagePaths {
+                thumbnailImageLoadTasks.removeValue(forKey: path)?.cancel()
+                thumbnailImageCache.removeObject(forKey: path as NSString)
+                scheduleThumbnailReload(for: path)
+            }
+        }
+        // Attachment-only changes do not change note metadata or search results.
+        guard invalidatesAllThumbnails || externalChanges.contains(where: \.isMarkdownFile) else { return }
+
         let markdownPaths = Set(externalChanges.filter(\.isMarkdownFile).map {
             URL(fileURLWithPath: $0.path).standardizedFileURL.path
         })
@@ -6302,9 +6320,8 @@ final class LibraryWindowController: NSWindowController,
             let decoded = LibraryThumbnailDecodeResult(image: thumbnailDecoder(url))
             guard !Task.isCancelled else { return }
             await MainActor.run {
-                guard let self else { return }
+                guard !Task.isCancelled, let self else { return }
                 self.thumbnailImageLoadTasks[key] = nil
-                guard !Task.isCancelled else { return }
 
                 let image = decoded.image.map {
                     NSImage(cgImage: $0, size: NSSize(width: 44, height: 44))

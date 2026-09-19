@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-19, this prototype records 299 implementation iterations, including the initial MVP.
+As of 2026-09-19, this prototype records 300 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 300. Refresh externally changed image thumbnails
+
+- Problem: Replacing, deleting, or restoring an attachment at the same path left stale list and gallery previews, including cached failures.
+- Fix: Observe image file changes, map physical event paths back to registered roots, invalidate the affected thumbnail and pending decode, and refresh matching rows and cards without rebuilding note search results. Directory changes and dropped events clear all thumbnails.
+- Lesson: File-backed preview caches need invalidation for both successful and failed loads; canceled decodes must not remove a newer request.
 
 ### 299. Responsive library category switching
 

@@ -4512,6 +4512,25 @@ struct MarkdownRichEditorTests {
     }
 
     @Test
+    func libraryFileSystemMonitorMapsPhysicalEventsToRegisteredRoot() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let physical = root.appendingPathComponent("Physical")
+        let alias = root.appendingPathComponent("Alias")
+        try FileManager.default.createDirectory(at: physical, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FileManager.default.createSymbolicLink(at: alias, withDestinationURL: physical)
+        let monitor = LibraryFileSystemMonitor(roots: [alias]) { _ in }
+        let resolvedPath = try #require(realpath(physical.path, nil))
+        defer { free(resolvedPath) }
+        let physicalPath = String(cString: resolvedPath)
+        #expect(monitor.libraryPath(for: physicalPath) == alias.path)
+        #expect(monitor.libraryPath(for: physicalPath + "/deleted.png") == alias.path + "/deleted.png")
+        #expect(monitor.libraryPath(for: physicalPath + "-other/file.png") == physicalPath + "-other/file.png")
+        let temporaryMonitor = LibraryFileSystemMonitor(roots: [URL(fileURLWithPath: "/tmp")]) { _ in }
+        #expect(temporaryMonitor.libraryPath(for: "/private/tmp/deleted.png") == "/tmp/deleted.png")
+    }
+
+    @Test
     func libraryFileSystemMonitorRequiresFullRescanForDroppedOrInvalidatedEvents() {
         let flags = [
             kFSEventStreamEventFlagMustScanSubDirs,
@@ -4543,6 +4562,14 @@ struct MarkdownRichEditorTests {
             path: "/tmp/Note.txt",
             flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
         ).isMarkdownFile)
+        let imageChange = LibraryFileSystemChange(
+            path: "/tmp/Attachments/Photo.HEIC",
+            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified)
+        )
+        #expect(imageChange.isImageFile)
+        #expect(imageChange.requiresLibraryRefresh)
+        #expect(!imageChange.changesDirectoryStructure)
+        #expect(!LibraryFileSystemChange(path: "/tmp/unrelated.log", flags: 0).requiresLibraryRefresh)
     }
 
     @Test
@@ -7492,6 +7519,24 @@ struct MarkdownRichEditorTests {
         }
         #expect(editorHasImagePreview)
         #expect(MarkdownRichTextCodec.serialize(editorContent, theme: controller.theme) == "# Image Attachment\n\n![Preview](Attachments/thumb.png)")
+
+        // External deletion must discard the successful cache entry; recreation
+        // must also discard a cached decoding failure without rescanning notes.
+        try FileManager.default.removeItem(at: imageURL)
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(path: imageURL.path, flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemRemoved))
+        ])
+        let deletedCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
+        #expect(deletedCell.thumbnailImageView.image == nil)
+        #expect(controller.thumbnailImageDecodeCountForLibrary == decodeCountAfterFirstCell + 1)
+
+        try pngData.write(to: imageURL)
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(path: imageURL.path, flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemCreated))
+        ])
+        let restoredCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
+        #expect(restoredCell.thumbnailImageView.image != nil)
+        #expect(controller.thumbnailImageDecodeCountForLibrary == decodeCountAfterFirstCell + 2)
     }
 
     @MainActor

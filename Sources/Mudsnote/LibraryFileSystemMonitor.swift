@@ -3,6 +3,9 @@ import Foundation
 
 struct LibraryFileSystemChange: Hashable, Sendable {
     private static let supportedNoteFileExtensions = Set(["md", "markdown", "txt"])
+    private static let imageFileExtensions = Set([
+        "apng", "avif", "gif", "heic", "heif", "jpeg", "jpg", "png", "tif", "tiff", "webp"
+    ])
     private static let unconditionalFullRescanFlags = FSEventStreamEventFlags(
         kFSEventStreamEventFlagMustScanSubDirs
             | kFSEventStreamEventFlagUserDropped
@@ -27,6 +30,10 @@ struct LibraryFileSystemChange: Hashable, Sendable {
         flags & Self.fullRescanFlags != 0
     }
 
+    var isImageFile: Bool {
+        Self.imageFileExtensions.contains(URL(fileURLWithPath: path).pathExtension.lowercased())
+    }
+
     var requiresUnconditionalFullRescan: Bool {
         flags & Self.unconditionalFullRescanFlags != 0
     }
@@ -45,7 +52,7 @@ struct LibraryFileSystemChange: Hashable, Sendable {
     }
 
     var requiresLibraryRefresh: Bool {
-        isMarkdownFile || changesDirectoryStructure
+        isMarkdownFile || isImageFile || changesDirectoryStructure
     }
 }
 
@@ -53,6 +60,7 @@ final class LibraryFileSystemMonitor: @unchecked Sendable {
     typealias ChangeHandler = @Sendable (Set<LibraryFileSystemChange>) -> Void
 
     private let roots: [String]
+    private let rootPathMappings: [(physical: String, logical: String)]
     private let latency: CFTimeInterval
     private let debounceInterval: DispatchTimeInterval
     private let handler: ChangeHandler
@@ -69,11 +77,19 @@ final class LibraryFileSystemMonitor: @unchecked Sendable {
         handler: @escaping ChangeHandler
     ) {
         var seenPaths = Set<String>()
-        self.roots = roots.compactMap { root in
+        let rootPaths = roots.compactMap { root -> String? in
             let path = root.standardizedFileURL.path
             guard seenPaths.insert(path).inserted else { return nil }
             return path
         }
+        self.roots = rootPaths
+        self.rootPathMappings = rootPaths.map { path in
+            // Foundation can collapse /private/tmp back to /tmp; FSEvents uses
+            // the actual filesystem spelling returned by realpath.
+            guard let resolved = realpath(path, nil) else { return (physical: path, logical: path) }
+            defer { free(resolved) }
+            return (physical: String(cString: resolved), logical: path)
+        }.sorted { $0.physical.count > $1.physical.count }
         self.latency = latency
         self.debounceInterval = debounceInterval
         self.handler = handler
@@ -153,10 +169,22 @@ final class LibraryFileSystemMonitor: @unchecked Sendable {
         guard !paths.isEmpty else { return }
 
         let changes = (0..<min(eventCount, paths.count)).compactMap { index -> LibraryFileSystemChange? in
-            let change = LibraryFileSystemChange(path: paths[index], flags: eventFlags[index])
+            let change = LibraryFileSystemChange(path: monitor.libraryPath(for: paths[index]), flags: eventFlags[index])
             return change.requiresLibraryRefresh ? change : nil
         }
         monitor.enqueue(changes)
+    }
+
+    // FSEvents reports physical paths, while note and preview caches use the
+    // user's registered root. Keep that spelling even after a file is removed.
+    func libraryPath(for eventPath: String) -> String {
+        for mapping in rootPathMappings {
+            if eventPath == mapping.physical { return mapping.logical }
+            if eventPath.hasPrefix(mapping.physical + "/") {
+                return mapping.logical + eventPath.dropFirst(mapping.physical.count)
+            }
+        }
+        return eventPath
     }
 
     private func enqueue(_ changes: [LibraryFileSystemChange]) {
