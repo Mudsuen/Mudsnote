@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-19, this prototype records 300 implementation iterations, including the initial MVP.
+As of 2026-09-19, this prototype records 301 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 301. Refresh open image attachments without replacing editor state
+
+- Problem: External image updates refreshed library thumbnails but left the open body stale. Manual floating-panel resizing did not notify the window delegate, bypassing the existing shadow and blur suppression.
+- Fix: Reload matching attachment cells in place, bypass stale decoded pixels, and preserve text and selection. Emit resize-start and resize-end notifications around the custom edge drag.
+- Lesson: Visual refresh should update presentation without reloading editable content; custom window gestures must drive the lifecycle expected by their chrome.
 
 ### 300. Refresh externally changed image thumbnails
 

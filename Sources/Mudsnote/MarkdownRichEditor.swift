@@ -2217,7 +2217,8 @@ actor MarkdownImageDecodeService {
 
     func thumbnail(
         at imageURL: URL,
-        maximumPixelSize: Int = MarkdownImageDecoding.maximumThumbnailPixelSize
+        maximumPixelSize: Int = MarkdownImageDecoding.maximumThumbnailPixelSize,
+        forceReload: Bool = false
     ) -> CGImage? {
         let standardizedURL = imageURL.standardizedFileURL
         let values = try? standardizedURL.resourceValues(forKeys: [
@@ -2232,7 +2233,7 @@ actor MarkdownImageDecodeService {
             String(fileSize),
             String(maximumPixelSize)
         ].joined(separator: "|") as NSString
-        if let cached = cache.object(forKey: key) {
+        if !forceReload, let cached = cache.object(forKey: key) {
             return cached.image
         }
         guard let image = MarkdownImageDecoding.thumbnail(
@@ -2288,14 +2289,23 @@ final class AsyncImageAttachmentCell: NSTextAttachmentCell {
         }
     }
 
-    func beginDecodingIfNeeded(in controlView: NSView?) {
+    func reloadImage(in controlView: NSView?) {
+        decodeTask?.cancel()
+        decodeTask = nil
+        hasDecodedImage = false
+        image = nil
+        controlView?.needsDisplay = true
+        beginDecodingIfNeeded(in: controlView, forceReload: true)
+    }
+
+    func beginDecodingIfNeeded(in controlView: NSView?, forceReload: Bool = false) {
         guard decodeTask == nil, !hasDecodedImage else { return }
         let imageURL = imageURL
         let naturalSize = naturalSize
         weak let textView = controlView as? NSTextView
         decodeTask = Task { [weak self, weak textView] in
             guard !Task.isCancelled,
-                  let thumbnail = await MarkdownImageDecodeService.shared.thumbnail(at: imageURL),
+                  let thumbnail = await MarkdownImageDecodeService.shared.thumbnail(at: imageURL, forceReload: forceReload),
                   !Task.isCancelled,
                   let self else {
                 return

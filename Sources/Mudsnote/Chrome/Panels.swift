@@ -153,6 +153,7 @@ final class QuickEntryPanel: NSPanel {
         activeResizeEdges = edges
         resizeInitialFrame = frame
         resizeInitialMouseScreen = convertPoint(toScreen: location)
+        NotificationCenter.default.post(name: NSWindow.willStartLiveResizeNotification, object: self)
         return true
     }
 
@@ -200,6 +201,7 @@ final class QuickEntryPanel: NSPanel {
     private func endManualResizeIfActive() -> Bool {
         guard !activeResizeEdges.isEmpty else { return false }
         activeResizeEdges = []
+        NotificationCenter.default.post(name: NSWindow.didEndLiveResizeNotification, object: self)
         return true
     }
 

@@ -2263,6 +2263,18 @@ final class LibraryWindowController: NSWindowController,
         let imagePaths = Set(externalChanges.filter(\.isImageFile).map {
             URL(fileURLWithPath: $0.path).standardizedFileURL.path
         })
+        if invalidatesAllThumbnails || !imagePaths.isEmpty,
+           let storage = editorTextView.textStorage {
+            // Refresh attachment cells in place so unsaved text, selection,
+            // scroll position, and undo history are not replaced by a reload.
+            storage.enumerateAttribute(.qmImageFilePath, in: NSRange(location: 0, length: storage.length)) { value, range, _ in
+                guard let path = value as? String,
+                      invalidatesAllThumbnails || imagePaths.contains(URL(fileURLWithPath: path).standardizedFileURL.path),
+                      let attachment = storage.attribute(.attachment, at: range.location, effectiveRange: nil) as? NSTextAttachment,
+                      let cell = attachment.attachmentCell as? AsyncImageAttachmentCell else { return }
+                cell.reloadImage(in: editorTextView)
+            }
+        }
         if invalidatesAllThumbnails {
             thumbnailImageLoadTasks.values.forEach { $0.cancel() }
             thumbnailImageLoadTasks.removeAll()

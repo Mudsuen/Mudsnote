@@ -27,6 +27,14 @@ private final class TextStorageEditCounter {
     var count = 0
 }
 
+@MainActor
+private final class ManualResizeDelegate: NSObject, NSWindowDelegate {
+    var starts = 0
+    var ends = 0
+    func windowWillStartLiveResize(_ notification: Notification) { starts += 1 }
+    func windowDidEndLiveResize(_ notification: Notification) { ends += 1 }
+}
+
 private actor LibraryFileSystemChangeRecorder {
     private var changes: Set<LibraryFileSystemChange> = []
 
@@ -329,6 +337,24 @@ struct MarkdownRichEditorTests {
 
         #expect(recentFirst.first?.url == recentURL)
         #expect(pinnedFirst.first?.url == pinnedURL)
+    }
+
+    @MainActor
+    @Test func manualPanelResizeNotifiesItsWindowDelegate() throws {
+        let panel = QuickEntryPanel(size: NSSize(width: 400, height: 300))
+        let delegate = ManualResizeDelegate()
+        panel.delegate = delegate
+        defer { panel.close() }
+        func event(_ type: NSEvent.EventType) throws -> NSEvent {
+            try #require(NSEvent.mouseEvent(with: type, location: NSPoint(x: 1, y: 100), modifierFlags: [], timestamp: 0, windowNumber: panel.windowNumber, context: nil, eventNumber: 0, clickCount: 1, pressure: 1))
+        }
+        panel.sendEvent(try event(.leftMouseDown))
+        #expect(delegate.starts == 1)
+        #expect(delegate.ends == 0)
+        panel.sendEvent(try event(.leftMouseUp))
+        #expect(delegate.ends == 1)
+        panel.sendEvent(try event(.leftMouseUp))
+        #expect(delegate.ends == 1)
     }
 
     @Test func rankedTitleProjectionStaysInteractiveAtSnapshotLimit() {
@@ -1628,6 +1654,13 @@ struct MarkdownRichEditorTests {
         #expect(revisedCell.hasDecodedImage)
         let revisedDecodeCount = await MarkdownImageDecodeService.shared.decodeCount
         #expect(revisedDecodeCount == 2)
+        revisedCell.reloadImage(in: nil)
+        for _ in 0..<100 where !revisedCell.hasDecodedImage {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(revisedCell.hasDecodedImage)
+        let forcedDecodeCount = await MarkdownImageDecodeService.shared.decodeCount
+        #expect(forcedDecodeCount == 3)
     }
 
     @MainActor
@@ -7451,7 +7484,7 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryNoteListShowsImageAttachmentThumbnail() throws {
+    func libraryNoteListShowsImageAttachmentThumbnail() async throws {
         let suiteName = "mudsnote.library-thumbnail-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
@@ -7519,6 +7552,19 @@ struct MarkdownRichEditorTests {
         }
         #expect(editorHasImagePreview)
         #expect(MarkdownRichTextCodec.serialize(editorContent, theme: controller.theme) == "# Image Attachment\n\n![Preview](Attachments/thumb.png)")
+        var bodyImageCell: AsyncImageAttachmentCell?
+        editorContent.enumerateAttribute(.attachment, in: NSRange(location: 0, length: editorContent.length)) { value, _, _ in
+            bodyImageCell = (value as? NSTextAttachment)?.attachmentCell as? AsyncImageAttachmentCell ?? bodyImageCell
+        }
+        let bodyCell = try #require(bodyImageCell)
+        bodyCell.beginDecodingIfNeeded(in: controller.editorTextView)
+        for _ in 0..<100 where !bodyCell.hasDecodedImage {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(bodyCell.hasDecodedImage)
+        let selectedRange = NSRange(location: 2, length: 3)
+        controller.editorTextView.setSelectedRange(selectedRange)
+        let bodyBeforeRefresh = controller.editorTextView.string
 
         // External deletion must discard the successful cache entry; recreation
         // must also discard a cached decoding failure without rescanning notes.
@@ -7529,6 +7575,9 @@ struct MarkdownRichEditorTests {
         let deletedCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(deletedCell.thumbnailImageView.image == nil)
         #expect(controller.thumbnailImageDecodeCountForLibrary == decodeCountAfterFirstCell + 1)
+        #expect(!bodyCell.hasDecodedImage)
+        #expect(controller.editorTextView.string == bodyBeforeRefresh)
+        #expect(controller.editorTextView.selectedRange() == selectedRange)
 
         try pngData.write(to: imageURL)
         controller.handleLibraryFileSystemChangesForTesting([
@@ -7537,6 +7586,12 @@ struct MarkdownRichEditorTests {
         let restoredCell = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 1) as? LibraryNoteCellView)
         #expect(restoredCell.thumbnailImageView.image != nil)
         #expect(controller.thumbnailImageDecodeCountForLibrary == decodeCountAfterFirstCell + 2)
+        for _ in 0..<100 where !bodyCell.hasDecodedImage {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(bodyCell.hasDecodedImage)
+        #expect(controller.editorTextView.string == bodyBeforeRefresh)
+        #expect(controller.editorTextView.selectedRange() == selectedRange)
     }
 
     @MainActor
