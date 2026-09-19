@@ -1587,7 +1587,7 @@ struct LibraryHomeView: View {
                         NavigationLink {
                             TagNotesListView(tag: tag.name)
                         } label: {
-                            Text("#" + tag.name)
+                            Text(tag.name.hasPrefix("#") ? tag.name : "#" + tag.name)
                                 .font(.subheadline)
                                 .foregroundStyle(MudsnoteColors.text)
                                 .padding(.horizontal, 10)
