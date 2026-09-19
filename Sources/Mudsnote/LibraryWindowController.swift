@@ -1574,6 +1574,7 @@ final class LibraryWindowController: NSWindowController,
         documentTabs.first { $0.id == activeDocumentTabID } ?? documentTabs[0]
     }
     private var sourceOutlineRootItems: [LibrarySourceOutlineItem] = []
+    private var sourceTreeNeedsScopeRebuild = false
     private var sourceOutlineItemsByIdentifier: [String: LibrarySourceOutlineItem] = [:]
     private var sourceOutlineItemsByScopeIdentifier: [String: LibrarySourceOutlineItem] = [:]
     private var isSynchronizingSourceOutlineSelection = false
@@ -2486,6 +2487,9 @@ final class LibraryWindowController: NSWindowController,
         tree.alphaValue = 1
         list.alphaValue = 1
         if showsTree {
+            if sourceTreeNeedsScopeRebuild {
+                rebuildSourceRows(includeTags: sourceTagsLoaded)
+            }
             refreshSourceSelection()
         }
         applySidebarPresentationChrome()
@@ -2742,6 +2746,7 @@ final class LibraryWindowController: NSWindowController,
         case 1: scope = .favorites
         default: scope = .all
         }
+        guard scope != selectedScope else { return }
         _ = activateSourceScope(scope)
     }
 
@@ -3921,6 +3926,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func rebuildSourceRows(includeTags: Bool) {
+        sourceTreeNeedsScopeRebuild = false
         let wasSynchronizingSelection = isSynchronizingSourceOutlineSelection
         let wasRestoringExpansion = isRestoringSourceOutlineExpansion
         isSynchronizingSourceOutlineSelection = true
@@ -4798,6 +4804,8 @@ final class LibraryWindowController: NSWindowController,
         countIndex: LibrarySourceCountIndex
     ) {
         hasLoadedSourceCounts = true
+        // Reading shared pins loads a JSON file. Read once per batch, never once per note.
+        let pinnedPaths = Set(noteStore.libraryPinnedNotePaths)
         for item in sourceOutlineItemsByScopeIdentifier.values {
             guard let scope = item.scope else { continue }
             let count: Int
@@ -4808,7 +4816,7 @@ final class LibraryWindowController: NSWindowController,
                 count = recentCount
             case .favorites:
                 count = sourceCountSnapshot.lazy.filter {
-                    self.noteStore.libraryPinnedNotePaths.contains($0.url.standardizedFileURL.path)
+                    pinnedPaths.contains($0.url.standardizedFileURL.path)
                 }.count
             case .inbox:
                 count = countIndex.inboxCount
@@ -5098,8 +5106,9 @@ final class LibraryWindowController: NSWindowController,
         case .recent:
             return recentNoteResults(limit: min(limit, 80), allNotes: allNotes)
         case .favorites:
+            let pinnedPaths = Set(noteStore.libraryPinnedNotePaths)
             return Array(allNotes.lazy.filter {
-                self.noteStore.libraryPinnedNotePaths.contains($0.url.standardizedFileURL.path)
+                pinnedPaths.contains($0.url.standardizedFileURL.path)
             }.prefix(limit))
         case .inbox:
             let inboxDirectory = inboxDirectoryForCurrentSourceSnapshot()
@@ -5334,6 +5343,15 @@ final class LibraryWindowController: NSWindowController,
         let shouldPin = !urls.allSatisfy { noteStore.isLibraryNotePinned(at: $0) }
         urls.forEach { noteStore.setLibraryNotePinned(shouldPin, at: $0) }
         rebuildNoteListRowsForDisplayOptions()
+        sourceTreeNeedsScopeRebuild = true
+        if isShowingSidebarTree {
+            rebuildSourceRows(includeTags: sourceTagsLoaded)
+        } else {
+            let pinnedPaths = Set(noteStore.libraryPinnedNotePaths)
+            sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: .favorites)]?.count =
+                sourceCountSnapshot.lazy.filter { pinnedPaths.contains($0.url.standardizedFileURL.path) }.count
+            updateListSmartScopeButtons()
+        }
         return shouldPin
     }
 
@@ -5841,7 +5859,11 @@ final class LibraryWindowController: NSWindowController,
             lastTreeScope = scope
             lastListScope = scope
             if scope == .recent || scope == .favorites || scope == .all {
-                rebuildSourceRows(includeTags: sourceTagsLoaded)
+                // List navigation does not need to recreate the hidden folder tree.
+                sourceTreeNeedsScopeRebuild = true
+                if scope == .all, isShowingSidebarTree {
+                    rebuildSourceRows(includeTags: sourceTagsLoaded)
+                }
             }
             reloadNotesForNavigation(loadFirstIfNeeded: true)
             if (scope == .recent || scope == .favorites), sidebarPresentation != .list {

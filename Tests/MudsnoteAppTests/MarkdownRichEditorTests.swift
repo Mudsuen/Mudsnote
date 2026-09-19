@@ -3640,6 +3640,39 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryCategorySwitchUsesBoundedWork() throws {
+        let harness = try makeEditorControllerHarness(draftID: "category-performance", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let root = harness.store.notesDirectory
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for index in 0..<1_200 {
+            let url = root.appendingPathComponent("category-\(index).md")
+            try "# Note \(index)\n\nBody".write(to: url, atomically: true, encoding: .utf8)
+        }
+        harness.store.setLibraryNotePinned(true, at: root.appendingPathComponent("category-0.md"))
+        let controller = LibraryWindowController(noteStore: harness.store,
+            onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close() }
+        let controls = try #require(controller.window?.contentView).allSubviews
+            .compactMap { $0 as? LibraryListSmartScopeControl }
+        #expect(controls.count == 3)
+        for tag in [1, 2, 0, 1, 2, 0] {
+            let control = try #require(controls.first { $0.tag == tag })
+            let elapsed = ContinuousClock().measure {
+                _ = control.accessibilityPerformPress()
+            }
+            print("Category switch \(tag): \(elapsed)")
+            #expect(elapsed < .milliseconds(150))
+            #expect(controller.noteListSearchResultsForLibrary().count == (tag == 1 ? 1 : tag == 2 ? 1_200 : 80))
+        }
+        let treeToggle = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }
+            .first { $0.identifier?.rawValue == "LibrarySidebarPresentationButton" })
+        treeToggle.performClick(nil)
+        #expect(controller.sourceTreeNoteTitlesForLibrary().count == 80)
+    }
+
+    @MainActor
+    @Test
     func positionalTitleFormattingDoesNotFollowTextIntoBody() throws {
         let harness = try makeEditorControllerHarness(draftID: "title-provenance", showsSaveButton: false)
         defer { harness.tearDown() }
@@ -4157,6 +4190,7 @@ struct MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(pinItem.action), to: pinItem.target, from: pinItem))
         let pinnedURL = try #require(controller.selectedMarkdownFileURLForLibrary())
         #expect(store.isLibraryNotePinned(at: pinnedURL))
+        #expect(controller.sourceCountTextForLibrary(titled: "收藏") == "1")
         let pinnedHeader = try #require(controller.tableView(controller.tableView, viewFor: nil, row: 0) as? LibraryGroupHeaderCellView)
         #expect(pinnedHeader.titleLabel.stringValue == "置顶")
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL.path == pinnedURL.standardizedFileURL.path)

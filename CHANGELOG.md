@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-19, this prototype records 298 implementation iterations, including the initial MVP.
+As of 2026-09-19, this prototype records 299 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 299. Responsive library category switching
+
+- Problem: Category switches rebuilt the hidden folder tree and reread shared pin files for every note while counting favorites.
+- Fix: Read pins once per count/filter batch, rebuild the scope-dependent tree when revealed, reuse date boundaries while grouping rows, and skip clicks on the active category.
+- Validation: A 1,200-note isolated navigation benchmark checks counts across repeated Favorites, Home, and Recent switches and bounds synchronous work to 150 ms.
 
 ### 298. Sidebar category hover feedback
 

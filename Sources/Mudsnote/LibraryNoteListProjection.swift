@@ -294,9 +294,10 @@ enum LibraryNoteListProjection {
 
         var groupOrder: [String] = []
         var groupedNotes: [String: [PreparedNote]] = [:]
+        let dateGrouping = DateGrouping(now: now, calendar: calendar)
         for note in notesForGrouping {
             let groupDate = sortOrder == .dateCreated ? note.note.createdAt : note.note.modifiedAt
-            let group = groupTitle(for: groupDate, now: now, calendar: calendar)
+            let group = dateGrouping.title(for: groupDate)
             if groupedNotes[group] == nil {
                 groupOrder.append(group)
             }
@@ -371,6 +372,16 @@ enum LibraryNoteListProjection {
             }
             return .year(calendar.component(.year, from: date))
         }
+
+        func title(for date: Date) -> String {
+            switch group(for: date) {
+            case .today: LibraryCopy.today
+            case .yesterday: LibraryCopy.yesterday
+            case .previousSevenDays: LibraryCopy.previousSevenDays
+            case .previousThirtyDays: LibraryCopy.previousThirtyDays
+            case .year(let year): String(year)
+            }
+        }
     }
 
     private static func sorted(
@@ -406,24 +417,4 @@ enum LibraryNoteListProjection {
         return lhs.standardizedPath < rhs.standardizedPath
     }
 
-    private static func groupTitle(for date: Date, now: Date, calendar: Calendar) -> String {
-        if calendar.isDate(date, inSameDayAs: now) {
-            return LibraryCopy.today
-        }
-        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
-           calendar.isDate(date, inSameDayAs: yesterday) {
-            return LibraryCopy.yesterday
-        }
-
-        let startOfToday = calendar.startOfDay(for: now)
-        let startOfDate = calendar.startOfDay(for: date)
-        let daysAgo = calendar.dateComponents([.day], from: startOfDate, to: startOfToday).day ?? 0
-        if (2...7).contains(daysAgo) {
-            return LibraryCopy.previousSevenDays
-        }
-        if (8...30).contains(daysAgo) {
-            return LibraryCopy.previousThirtyDays
-        }
-        return String(calendar.component(.year, from: date))
-    }
 }
