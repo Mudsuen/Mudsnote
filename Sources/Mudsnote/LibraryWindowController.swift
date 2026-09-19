@@ -74,7 +74,8 @@ private func librarySearchResults(
     query: String,
     limit: Int,
     searchesAllNotes: Bool,
-    includesSubfolderNotes: Bool
+    includesSubfolderNotes: Bool,
+    recentlyEditedPaths: Set<String>
 ) -> [NoteSearchResult] {
     let cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
     if searchesAllNotes {
@@ -93,9 +94,12 @@ private func librarySearchResults(
             cancellationCheck: cancellationCheck
         )
     case .recent:
-        return searchSession.searchRecentNotes(
+        // This category contains the 80 most recently edited library notes,
+        // including imported files that have never entered the open history.
+        return searchSession.searchNotes(
             query: query,
             limit: limit,
+            restrictedTo: recentlyEditedPaths,
             cancellationCheck: cancellationCheck
         )
     case .favorites:
@@ -1479,8 +1483,9 @@ final class LibraryWindowController: NSWindowController,
         didSet { rebuildThumbnailRowIndex() }
     }
     private var gallerySections: [LibraryGallerySection] = [] {
-        didSet { rebuildThumbnailItemIndex() }
+        didSet { rebuildGalleryIndexes() }
     }
+    private var galleryIndexPathsByNotePath: [String: IndexPath] = [:]
     private var visualQASelectedURL: URL?
     private(set) var noteListSortOrder: LibraryNoteSortOrder = .dateEdited
     private(set) var groupsNoteListByDate = true
@@ -1606,7 +1611,7 @@ final class LibraryWindowController: NSWindowController,
     private var sourceTagsLoading = false
     private var sourceTagLoadGeneration = 0
     private var fullLibrarySnapshotReloadScheduled = false
-    private var isFullLibrarySnapshotLoading = false
+    private(set) var isFullLibrarySnapshotLoading = false
     private var fullLibrarySnapshotReloadGeneration = 0
     private var fileSystemMonitor: LibraryFileSystemMonitor?
     private var internallyMutatedPaths: [String: Date] = [:]
@@ -5251,7 +5256,8 @@ final class LibraryWindowController: NSWindowController,
             query: query,
             limit: limit,
             searchesAllNotes: searchesAllNotes,
-            includesSubfolderNotes: noteStore.libraryIncludesSubfolderNotes
+            includesSubfolderNotes: noteStore.libraryIncludesSubfolderNotes,
+            recentlyEditedPaths: Set(recentNoteResults(limit: 80, allNotes: sourceCountSnapshot).map { $0.url.standardizedFileURL.path })
         )
     }
 
@@ -6355,14 +6361,19 @@ final class LibraryWindowController: NSWindowController,
         thumbnailRowsByPath = rowsByPath
     }
 
-    private func rebuildThumbnailItemIndex() {
+    private func rebuildGalleryIndexes() {
         var itemsByPath: [String: Set<IndexPath>] = [:]
+        var noteIndexPaths: [String: IndexPath] = [:]
         for (section, gallerySection) in gallerySections.enumerated() {
             for (item, note) in gallerySection.notes.enumerated() {
+                let indexPath = IndexPath(item: item, section: section)
+                let notePath = note.url.standardizedFileURL.path
+                if noteIndexPaths[notePath] == nil { noteIndexPaths[notePath] = indexPath }
                 guard let path = note.thumbnailURL?.standardizedFileURL.path else { continue }
-                itemsByPath[path, default: []].insert(IndexPath(item: item, section: section))
+                itemsByPath[path, default: []].insert(indexPath)
             }
         }
+        galleryIndexPathsByNotePath = noteIndexPaths
         thumbnailItemsByPath = itemsByPath
     }
 
@@ -6404,7 +6415,13 @@ final class LibraryWindowController: NSWindowController,
         if noteListViewMode == .gallery,
            hasRequestedWindowPresentation,
            !matchingItems.isEmpty {
-            galleryCollectionView.reloadItems(at: matchingItems)
+            // Thumbnail completion changes pixels, not the collection's items.
+            // Reloading a selected item recreates its view without its highlight.
+            for indexPath in matchingItems {
+                guard let item = galleryCollectionView.item(at: indexPath) as? LibraryGalleryItem,
+                      let note = galleryNote(at: indexPath) else { continue }
+                item.updateThumbnail(thumbnailImage(for: note))
+            }
         }
     }
 
@@ -6649,20 +6666,14 @@ final class LibraryWindowController: NSWindowController,
         return gallerySections[indexPath.section].notes[indexPath.item]
     }
 
-    private func galleryIndexPath(for standardizedPath: String) -> IndexPath? {
-        for section in gallerySections.indices {
-            if let item = gallerySections[section].notes.firstIndex(where: {
-                $0.url.standardizedFileURL.path == standardizedPath
-            }) {
-                return IndexPath(item: item, section: section)
-            }
-        }
-        return nil
+    func galleryIndexPath(for standardizedPath: String) -> IndexPath? {
+        galleryIndexPathsByNotePath[standardizedPath]
     }
 
     private func reloadGalleryData() {
+        guard noteListViewMode == .gallery else { return }
         gallerySections = LibraryGalleryProjection.sections(from: listRows)
-        guard noteListViewMode == .gallery, hasRequestedWindowPresentation else { return }
+        guard hasRequestedWindowPresentation else { return }
         galleryCollectionView.reloadData()
     }
 
@@ -7216,12 +7227,13 @@ final class LibraryWindowController: NSWindowController,
         let existingSearchSession = activeSearchSession
         let preferredDirectories = noteStore.preferredDirectories
         let includesSubfolderNotes = noteStore.libraryIncludesSubfolderNotes
+        let recentlyEditedPaths = Set(recentNoteResults(limit: 80, allNotes: sourceCountSnapshot).map { $0.url.standardizedFileURL.path })
         isSearchResultReloading = true
         searchScopeControl.isHidden = false
         updateNoteListHeader(query: query)
         updateNoteListEmptyState(query: query)
 
-        let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, preferredDirectories, scope, query, searchesAllNotes, includesSubfolderNotes, generation, preferredURL] in
+        let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, preferredDirectories, scope, query, searchesAllNotes, includesSubfolderNotes, recentlyEditedPaths, generation, preferredURL] in
             guard !Task.isCancelled else { return }
             let searchSession: NoteSearchSession
             if let existingSearchSession {
@@ -7242,7 +7254,8 @@ final class LibraryWindowController: NSWindowController,
                 query: query,
                 limit: Self.noteListResultLimit,
                 searchesAllNotes: searchesAllNotes,
-                includesSubfolderNotes: includesSubfolderNotes
+                includesSubfolderNotes: includesSubfolderNotes,
+                recentlyEditedPaths: recentlyEditedPaths
             )
             guard !Task.isCancelled else { return }
             await MainActor.run { [weak self] in

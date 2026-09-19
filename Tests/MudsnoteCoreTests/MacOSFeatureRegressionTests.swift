@@ -91,6 +91,31 @@ struct MacOSFeatureRegressionTests {
     }
 
     @Test
+    func pathScopedSearchOnlyRanksRequestedNotesAndHonorsCancellation() throws {
+        let (store, root, defaults, suiteName) = try makeStore()
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        var paths: Set<String> = []
+        for index in 0..<20 {
+            let url = try store.saveNewNote(title: "Note \(index)", body: "shared body")
+            if index < 2 { paths.insert(url.standardizedFileURL.path) }
+        }
+        let session = store.makeSearchSession()
+        var matchCount = 0
+        store.searchIndexEntryWillMatchForTesting = { matchCount += 1 }
+        let results = session.searchNotes(query: " shared \n", limit: 1, restrictedTo: paths, cancellationCheck: { false })
+        #expect(results.count == 1)
+        #expect(results.allSatisfy { paths.contains($0.url.standardizedFileURL.path) })
+        #expect(matchCount == 2)
+        #expect(session.searchNotes(query: "", limit: 10, restrictedTo: paths, cancellationCheck: { false }).count == 2)
+        #expect(session.searchNotes(query: "shared", limit: 0, restrictedTo: paths, cancellationCheck: { false }).isEmpty)
+        #expect(session.searchNotes(query: "shared", limit: 10, restrictedTo: paths, cancellationCheck: { true }).isEmpty)
+        #expect(matchCount == 2)
+    }
+
+    @Test
     func aiMemorySyncImportsOnlyMudsnoteSectionsAndSkipsUnchangedDailyRuns() throws {
         let (store, root, defaults, suiteName) = try makeStore()
         defer {

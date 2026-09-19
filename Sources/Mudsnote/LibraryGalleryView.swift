@@ -186,10 +186,14 @@ final class LibraryGalleryItem: NSCollectionViewItem {
         previewTextLabel.stringValue = preview
         dateLabel.stringValue = date
         metadataLabel.stringValue = metadata
+        updateThumbnail(thumbnail)
+        view.setAccessibilityLabel("\(title), \(date), \(metadata)")
+    }
+
+    func updateThumbnail(_ thumbnail: NSImage?) {
         previewImageView.image = thumbnail
         previewImageView.isHidden = thumbnail == nil
         previewTextLabel.isHidden = thumbnail != nil
-        view.setAccessibilityLabel("\(title), \(date), \(metadata)")
     }
 
     private func updateSelectionAppearance() {

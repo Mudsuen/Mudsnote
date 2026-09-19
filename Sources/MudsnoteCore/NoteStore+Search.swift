@@ -72,6 +72,30 @@ public final class NoteSearchSession: @unchecked Sendable {
         ) ?? []
     }
 
+    public func searchNotes(
+        query: String,
+        limit: Int,
+        restrictedTo notePaths: Set<String>,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> [NoteSearchResult] {
+        var scopedEntries: [NoteSearchIndexEntry] = []
+        for path in notePaths {
+            guard !cancellationCheck() else { return [] }
+            if let entry = entriesByPath[path] { scopedEntries.append(entry) }
+        }
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        guard limit > 0, !cancellationCheck() else { return [] }
+        if trimmedQuery.isEmpty {
+            return scopedEntries.sorted { $0.modifiedAt > $1.modifiedAt }.prefix(limit).map(\.result)
+        }
+        return noteStore.rankedSearchResults(
+            query: trimmedQuery,
+            limit: limit,
+            entries: scopedEntries,
+            cancellationCheck: cancellationCheck
+        ) ?? []
+    }
+
     public func searchRecentNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
         searchRecentNotes(query: query, limit: limit, cancellationCheck: { false })
     }

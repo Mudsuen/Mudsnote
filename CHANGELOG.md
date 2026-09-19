@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-19, this prototype records 301 implementation iterations, including the initial MVP.
+As of 2026-09-19, this prototype records 302 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 302. Keep gallery selection stable and search the visible recent scope
+
+- Problem: Refreshing image previews removed the selected gallery card's highlight. Bulk selection repeatedly scanned the entire gallery, and recent-category search omitted imported notes that were visible but had never been opened.
+- Fix: Update thumbnail pixels in place, index gallery note positions once per projection, and defer hidden gallery projections. Search the same 80 recently edited notes shown by the category, including full-body matches; the all-notes scope remains broader.
+- Lesson: Background presentation updates must preserve selection and keyboard targets, and a search scope must agree with the list it filters.
 
 ### 301. Refresh open image attachments without replacing editor state
 

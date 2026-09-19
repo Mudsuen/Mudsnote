@@ -3673,6 +3673,45 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func libraryGalleryBulkSelectionUsesBoundedWork() throws {
+        let harness = try makeEditorControllerHarness(draftID: "gallery-selection-performance", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let root = harness.store.notesDirectory
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for index in 0..<1_200 {
+            try "# Note \(index)\n\nBody".write(to: root.appendingPathComponent("gallery-\(index).md"), atomically: true, encoding: .utf8)
+        }
+        let controller = LibraryWindowController(noteStore: harness.store,
+            onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close() }
+        let entryElapsed = ContinuousClock().measure {
+            controller.setNoteListViewModeForLibrary(.gallery)
+        }
+        print("Gallery entry including indexing: \(entryElapsed)")
+        #expect(entryElapsed < .milliseconds(250))
+        let paths = controller.noteListSearchResultsForLibrary().map { $0.url.standardizedFileURL.path }
+        #expect(paths.count == 1_200)
+        for pass in 0..<3 {
+            var selectedPaths = Set<IndexPath>()
+            let elapsed = ContinuousClock().measure {
+                selectedPaths = Set(paths.compactMap(controller.galleryIndexPath(for:)))
+            }
+            print("Gallery bulk selection lookup \(pass): \(elapsed)")
+            #expect(selectedPaths.count == 1_200)
+            #expect(elapsed < .milliseconds(250))
+        }
+        controller.setNoteListGroupingForLibrary(false)
+        controller.setNoteListSortOrderForLibrary(.title)
+        let firstPath = try #require(controller.noteListSearchResultsForLibrary().first?.url.standardizedFileURL.path)
+        #expect(controller.galleryIndexPath(for: firstPath) == IndexPath(item: 0, section: 0))
+        let favorite = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? LibraryListSmartScopeControl }.first { $0.tag == 1 })
+        _ = favorite.accessibilityPerformPress()
+        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+        #expect(controller.galleryIndexPath(for: firstPath) == nil)
+    }
+
+    @MainActor
+    @Test
     func libraryCategorySwitchUsesBoundedWork() throws {
         let harness = try makeEditorControllerHarness(draftID: "category-performance", showsSaveButton: false)
         defer { harness.tearDown() }
@@ -4403,6 +4442,41 @@ struct MarkdownRichEditorTests {
         #expect(clipView.constrainBoundsRect(
             NSRect(x: 48, y: 20, width: 340, height: 300)
         ).origin.x == 0)
+    }
+
+    @MainActor
+    @Test
+    func libraryRecentSearchMatchesVisibleEditedNotesWithoutOpenHistory() async throws {
+        let harness = try makeEditorControllerHarness(draftID: "recent-search-scope", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let root = harness.store.notesDirectory
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        for index in 0..<81 {
+            let url = root.appendingPathComponent("imported-\(index).md")
+            try "# 阅读摘录 \(index)\n\nFirst line\n\n深层正文".write(to: url, atomically: true, encoding: .utf8)
+            try FileManager.default.setAttributes([.modificationDate: Date(timeIntervalSince1970: 1_700_000_000 + Double(index))], ofItemAtPath: url.path)
+        }
+        let controller = LibraryWindowController(noteStore: harness.store,
+            onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close() }
+        controller.selectRecentScopeForLibrary()
+        let visiblePaths = Set(controller.noteListSearchResultsForLibrary().map { $0.url.standardizedFileURL.path })
+        #expect(visiblePaths.count == 80)
+        controller.searchForLibrary(query: "阅读", allNotes: false)
+        #expect(Set(controller.noteListSearchResultsForLibrary().map { $0.url.standardizedFileURL.path }) == visiblePaths)
+        controller.searchForLibrary(query: "深层正文", allNotes: false)
+        #expect(Set(controller.noteListSearchResultsForLibrary().map { $0.url.standardizedFileURL.path }) == visiblePaths)
+        controller.searchForLibrary(query: "深层正文", allNotes: true)
+        #expect(controller.noteListSearchResultsForLibrary().count == 81)
+        controller.searchForLibrary(query: "", allNotes: false)
+        controller.searchField.stringValue = "深层正文"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification, object: controller.searchField))
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, controller.noteListCountLabel.stringValue != "80 条结果" {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(controller.noteListCountLabel.stringValue == "80 条结果")
+        #expect(Set(controller.noteListSearchResultsForLibrary().map { $0.url.standardizedFileURL.path }) == visiblePaths)
     }
 
     @MainActor
@@ -7666,6 +7740,70 @@ struct MarkdownRichEditorTests {
         #expect(loadedCell.attachmentImageView.isHidden)
         #expect(controller.thumbnailImageDecodeCountForLibrary == 1)
         #expect(controller.thumbnailReloadBatchCountForLibrary == 1)
+    }
+
+    @MainActor
+    @Test
+    func visibleGalleryThumbnailRefreshPreservesSelectionAndKeyboardTarget() async throws {
+        let harness = try makeEditorControllerHarness(draftID: "gallery-thumbnail-selection", showsSaveButton: false)
+        defer { harness.tearDown() }
+        let root = harness.store.notesDirectory
+        let firstURL = try harness.store.saveNewNote(title: "First Image", body: "![Preview](Attachments/shared.png)", in: root)
+        let secondURL = try harness.store.saveNewNote(title: "Second Image", body: "![Preview](Attachments/shared.png)", in: root)
+        let imageURL = root.appendingPathComponent("Attachments/shared.png")
+        try FileManager.default.createDirectory(at: imageURL.deletingLastPathComponent(), withIntermediateDirectories: true)
+        let png = try #require(Data(base64Encoded: "iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+/p9sAAAAASUVORK5CYII="))
+        try png.write(to: imageURL)
+        let controller = LibraryWindowController(noteStore: harness.store,
+            onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close() }
+        controller.showWindowAndFocus()
+        let launchDeadline = Date().addingTimeInterval(6)
+        while Date() < launchDeadline, controller.isFullLibrarySnapshotLoading {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(!controller.isFullLibrarySnapshotLoading)
+        controller.setNoteListViewModeForLibrary(.gallery)
+        let window = try #require(controller.window)
+        window.contentView?.layoutSubtreeIfNeeded()
+        await controller.waitForThumbnailLoadsForLibrary()
+        let gallery = try #require(window.contentView?.allSubviews.compactMap { $0 as? LibraryGalleryCollectionView }.first)
+        let firstIndex = try #require(controller.galleryIndexPath(for: firstURL.standardizedFileURL.path))
+        let secondIndex = try #require(controller.galleryIndexPath(for: secondURL.standardizedFileURL.path))
+        let selection: Set<IndexPath> = [firstIndex, secondIndex]
+        gallery.selectionIndexPaths = selection
+        controller.collectionView(gallery, didSelectItemsAt: selection)
+        try #require(gallery.selectionIndexPaths == selection)
+        try #require(controller.selectedMarkdownFileURLsForLibrary().count == 2)
+        let firstItem = try #require(gallery.item(at: firstIndex) as? LibraryGalleryItem)
+        let secondItem = try #require(gallery.item(at: secondIndex) as? LibraryGalleryItem)
+        let reloadCount = controller.thumbnailReloadBatchCountForLibrary
+
+        try png.write(to: imageURL)
+        controller.handleLibraryFileSystemChangesForTesting([
+            LibraryFileSystemChange(path: imageURL.path, flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified))
+        ])
+        // The invalidation batch first starts a new decode; the next wait drains it.
+        await controller.waitForThumbnailLoadsForLibrary()
+        await controller.waitForThumbnailLoadsForLibrary()
+        window.contentView?.layoutSubtreeIfNeeded()
+
+        #expect(controller.thumbnailReloadBatchCountForLibrary > reloadCount)
+        #expect(gallery.selectionIndexPaths == selection)
+        #expect(gallery.item(at: firstIndex) === firstItem)
+        #expect(gallery.item(at: secondIndex) === secondItem)
+        for item in [firstItem, secondItem] {
+            #expect(item.isSelected)
+            #expect(item.previewSurface.layer?.borderWidth == 2)
+            #expect(item.previewImageView.image != nil)
+        }
+        #expect(Set(controller.selectedMarkdownFileURLsForLibrary().map(\.standardizedFileURL)) == Set([firstURL, secondURL].map(\.standardizedFileURL)))
+
+        gallery.selectionIndexPaths = [firstIndex]
+        controller.collectionView(gallery, didSelectItemsAt: [firstIndex])
+        gallery.keyDown(with: try keyEvent(keyCode: 36, modifiers: [], characters: "\r", windowNumber: window.windowNumber))
+        #expect(controller.noteListViewMode == .list)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == firstURL.standardizedFileURL)
     }
 
     @MainActor
