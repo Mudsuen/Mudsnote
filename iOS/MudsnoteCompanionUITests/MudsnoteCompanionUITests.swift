@@ -1467,6 +1467,41 @@ final class MudsnoteCompanionUITests: XCTestCase {
         XCTAssertTrue(waitForHittable(note))
     }
 
+    func testReaderDoubleTapInsertsAtTappedTextAndTagLayoutPersists() {
+        let app = launchApp(reset: true, fixtureFolder: true, fileTag: true, halfScreenReader: true)
+        let toggle = app.buttons["directory-tag-layout-toggle"]
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        if !toggle.isHittable { app.scrollViews["directory-drawer"].swipeUp() }
+        let originalLabel = toggle.label
+        toggle.tap()
+        XCTAssertNotEqual(toggle.label, originalLabel)
+        let selectedLabel = toggle.label
+        app.terminate()
+        app.launchArguments.removeAll { $0 == "-ui-testing-reset" }
+        app.launch()
+        XCTAssertTrue(toggle.waitForExistence(timeout: 8))
+        XCTAssertEqual(toggle.label, selectedLabel)
+        app.scrollViews["directory-drawer"].swipeDown()
+        let projects = app.buttons["folder-row-Projects"]
+        XCTAssertTrue(projects.waitForExistence(timeout: 5))
+        projects.tap()
+        app.buttons["markdown-file-row-Projects/UI Lifecycle.md"].tap()
+        let paragraph = app.descendants(matching: .any)["rendered-markdown"].staticTexts["Restore this note end to end."]
+        XCTAssertTrue(paragraph.waitForExistence(timeout: 5))
+        paragraph.coordinate(withNormalizedOffset: CGVector(dx: 0.48, dy: 0.5)).doubleTap()
+        let editor = app.textViews["markdown-editor"]
+        XCTAssertTrue(editor.waitForExistence(timeout: 5))
+        editor.typeText("XYZ")
+        let value = editor.value as? String ?? ""
+        XCTAssertTrue(value.contains("XYZ"))
+        XCTAssertTrue(value.hasPrefix("Restore"), "Insertion must not jump to the start")
+        XCTAssertTrue(value.trimmingCharacters(in: .whitespacesAndNewlines).hasSuffix("end."), "Insertion must not jump to the end")
+        let shot = XCTAttachment(screenshot: app.screenshot())
+        shot.name = "Double-tap insertion at the tapped text"
+        shot.lifetime = .keepAlways
+        add(shot)
+    }
+
     func testHalfScreenReaderDoubleTapExpandsAndStartsEditing() {
         let app = launchApp(
             reset: true,
@@ -1490,8 +1525,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
 
         XCTAssertTrue(app.textViews["markdown-editor"].waitForExistence(timeout: 5))
         XCTAssertTrue(app.textFields["note-title-editor"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["#project"].waitForExistence(timeout: 3))
-        XCTAssertTrue(app.staticTexts["#work"].exists)
+        let tagBar = app.descendants(matching: .any)["note-tag-bar"]
+        XCTAssertTrue(tagBar.waitForExistence(timeout: 3))
+        XCTAssertTrue(tagBar.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "project")).firstMatch.exists)
+        XCTAssertTrue(tagBar.descendants(matching: .any).matching(NSPredicate(format: "label CONTAINS %@", "work")).firstMatch.exists)
         XCTAssertTrue(waitForNonexistence(background))
 
         app.buttons["save-markdown-button"].tap()
@@ -2375,10 +2412,10 @@ final class MudsnoteCompanionUITests: XCTestCase {
         add(openScreenshot)
 
         let closeSwipeStart = appWindow.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.94, dy: 0.45)
+            withNormalizedOffset: CGVector(dx: 0.70, dy: 0.45)
         )
         let cancelledCloseEnd = appWindow.coordinate(
-            withNormalizedOffset: CGVector(dx: 0.90, dy: 0.45)
+            withNormalizedOffset: CGVector(dx: 0.66, dy: 0.45)
         )
         closeSwipeStart.press(
             forDuration: 0.3,

@@ -5,6 +5,46 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testReaderInsertionUsesTheTappedRepeatedParagraphAndUTF16Offset() {
+        let markdown = "同一段\n\n同一段😀后面"
+        XCTAssertEqual(ReaderInsertionPosition.sourceOffset(
+            in: markdown, location: NoteFindLocation(blockIndex: 1, cellIndex: nil),
+            displayedSource: "同一段😀后面", renderedOffset: 5
+        ), 10)
+    }
+
+    func testReaderInsertionSkipsHeadingAndInlineMarkup() {
+        let markdown = "## Hello **world** end"
+        XCTAssertEqual(ReaderInsertionPosition.sourceOffset(
+            in: markdown, location: NoteFindLocation(blockIndex: 0, cellIndex: nil),
+            displayedSource: "Hello **world** end", renderedOffset: 8
+        ), 13)
+    }
+
+    func testReaderInsertionDoesNotMatchChecklistStateOrFenceLanguage() {
+        XCTAssertEqual(ReaderInsertionPosition.sourceOffset(
+            in: "- [x] x", location: NoteFindLocation(blockIndex: 0, cellIndex: nil),
+            displayedSource: "x", renderedOffset: 0
+        ), 6)
+        XCTAssertEqual(ReaderInsertionPosition.sourceOffset(
+            in: "```swift\nswift\n```", location: NoteFindLocation(blockIndex: 0, cellIndex: nil),
+            displayedSource: "swift", renderedOffset: 2, inlineMarkdown: false
+        ), 11)
+    }
+
+    func testReaderInsertionFindsRepeatedTableCellAndCodeLine() {
+        let markdown = "| same | same |\n| --- | --- |\n| same | value |\n\n```swift\nlet x = 1\n```"
+        XCTAssertEqual(ReaderInsertionPosition.sourceOffset(
+            in: markdown, location: NoteFindLocation(blockIndex: 0, cellIndex: 1),
+            displayedSource: "same", renderedOffset: 2
+        ), 11)
+        let code = (markdown as NSString).range(of: "let x = 1").location
+        XCTAssertEqual(ReaderInsertionPosition.sourceOffset(
+            in: markdown, location: NoteFindLocation(blockIndex: 1, cellIndex: nil),
+            displayedSource: "let x = 1", renderedOffset: 4, inlineMarkdown: false
+        ), code + 4)
+    }
+
     func testDirectoryDrawerMotionTracksOneContinuousPresentation() {
         let presentation = DirectoryDrawerMotion.presentation(
             isOpen: false,
@@ -14,10 +54,10 @@ final class MudsnoteCompanionTests: XCTestCase {
 
         XCTAssertEqual(presentation.reveal, 160)
         XCTAssertEqual(presentation.progress, 0.5)
-        XCTAssertEqual(presentation.contentOffset, 160, accuracy: 0.001)
+        XCTAssertEqual(presentation.contentOffset, 0, accuracy: 0.001)
         XCTAssertEqual(presentation.drawerOffset, -160, accuracy: 0.001)
-        XCTAssertEqual(presentation.cornerRadius, 14, accuracy: 0.001)
-        XCTAssertEqual(presentation.scrimOpacity, 0.03, accuracy: 0.001)
+        XCTAssertEqual(presentation.cornerRadius, 0, accuracy: 0.001)
+        XCTAssertEqual(presentation.scrimOpacity, 0.10, accuracy: 0.001)
         XCTAssertEqual(presentation.shadowOpacity, 0.09, accuracy: 0.001)
     }
 

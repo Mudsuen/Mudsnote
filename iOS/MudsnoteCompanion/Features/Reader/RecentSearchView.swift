@@ -277,10 +277,10 @@ struct DirectoryDrawerMotion {
         return Presentation(
             reveal: reveal,
             progress: progress,
-            contentOffset: reveal,
+            contentOffset: 0,
             drawerOffset: reveal - width,
-            cornerRadius: 28 * progress,
-            scrimOpacity: 0.06 * progress,
+            cornerRadius: 0,
+            scrimOpacity: 0.20 * progress,
             shadowOpacity: 0.18 * progress
         )
     }
@@ -447,6 +447,7 @@ struct LibraryHomeView: View {
     @State private var isManagingFolders = false
     @State private var smartFolderEditor: SmartFolderDefinition?
     @State private var smartFolderToDelete: SmartFolderDefinition?
+    @AppStorage("mudsnote.ios.compactDirectoryTags") private var compactDirectoryTags = true
     @State private var isDirectoryPresented = false
     @State private var directoryDragOffset: CGFloat = 0
     @State private var directoryDragAxis = DirectoryDrawerMotion.DragAxis.undecided
@@ -943,17 +944,6 @@ struct LibraryHomeView: View {
         let alignment: Alignment = layoutDirection == .leftToRight ? .leading : .trailing
         let physicalDirection: CGFloat = layoutDirection == .leftToRight ? 1 : -1
         return ZStack(alignment: alignment) {
-            directoryPanel(width: width)
-                .offset(x: presentation.drawerOffset * physicalDirection)
-                .overlay(alignment: layoutDirection == .leftToRight ? .trailing : .leading) {
-                    Color.clear
-                        .frame(width: 32)
-                        .contentShape(Rectangle())
-                        .gesture(directoryDragGesture(width: width))
-                }
-                .allowsHitTesting(presentation.reveal > 0)
-                .accessibilityHidden(presentation.reveal <= 0)
-
             homeContent
                 .background(NotesCloneColors.background)
                 .clipShape(
@@ -981,6 +971,12 @@ struct LibraryHomeView: View {
                 .accessibilityLabel("Close Folders")
                 .accessibilityIdentifier("directory-backdrop")
                 .accessibilityAddTraits(.isButton)
+                .accessibilityHidden(presentation.reveal <= 0)
+
+            directoryPanel(width: width)
+                .offset(x: presentation.drawerOffset * physicalDirection)
+                .simultaneousGesture(directoryDragGesture(width: width))
+                .allowsHitTesting(presentation.reveal > 0)
                 .accessibilityHidden(presentation.reveal <= 0)
 
             if !isDirectoryPresented {
@@ -1555,6 +1551,16 @@ struct LibraryHomeView: View {
 
                 Spacer()
 
+                Button {
+                    compactDirectoryTags.toggle()
+                } label: {
+                    Image(systemName: compactDirectoryTags ? "list.bullet" : "square.grid.2x2")
+                        .frame(width: 44, height: 44)
+                }
+                .buttonStyle(.plain)
+                .accessibilityLabel(compactDirectoryTags ? "显示标签列表" : "显示小标签")
+                .accessibilityIdentifier("directory-tag-layout-toggle")
+
                 NavigationLink {
                     TagsBrowserView()
                 } label: {
@@ -1575,17 +1581,38 @@ struct LibraryHomeView: View {
             }
             .padding(.horizontal, 2)
 
-            notesCard {
-                ForEach(appModel.tagSummaries) { tag in
-                    NavigationLink {
-                        TagNotesListView(tag: tag.name)
-                    } label: {
-                        TagDirectoryRow(tag: tag)
+            if compactDirectoryTags {
+                FlowLayout(spacing: 8, rowSpacing: 8) {
+                    ForEach(appModel.tagSummaries) { tag in
+                        NavigationLink {
+                            TagNotesListView(tag: tag.name)
+                        } label: {
+                            Text("#" + tag.name)
+                                .font(.subheadline)
+                                .foregroundStyle(MudsnoteColors.text)
+                                .padding(.horizontal, 10)
+                                .padding(.vertical, 8)
+                                .background(MudsnoteColors.card, in: Capsule())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(tag.name)
+                        .accessibilityIdentifier("tag-link-\(tag.name)")
                     }
-                    .buttonStyle(.plain)
-                    .accessibilityLabel(tag.name)
-                    .accessibilityValue("\(tag.count)")
-                    .accessibilityIdentifier("tag-link-\(tag.name)")
+                }
+                .accessibilityIdentifier("directory-tag-chips")
+            } else {
+                notesCard {
+                    ForEach(appModel.tagSummaries) { tag in
+                        NavigationLink {
+                            TagNotesListView(tag: tag.name)
+                        } label: {
+                            TagDirectoryRow(tag: tag)
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel(tag.name)
+                        .accessibilityValue("\(tag.count)")
+                        .accessibilityIdentifier("tag-link-\(tag.name)")
+                    }
                 }
             }
         }

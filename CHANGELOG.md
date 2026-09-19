@@ -13,9 +13,15 @@ Known open issue:
 
 ## Iteration Count
 
-As of 2026-09-19, this prototype records 302 implementation iterations, including the initial MVP.
+As of 2026-09-19, this prototype records 303 implementation iterations, including the initial MVP.
 
 ## Iterations
+
+### 303. Place iOS edits at the tapped text and simplify directory navigation
+
+- Problem: Double-tapping the reader discarded the tapped text position; the drawer pushed the whole page aside and tags required one row each.
+- Fix: Map double-tap coordinates back to the Markdown body selection, slide the directory over a stationary page with swipe-to-close, and remember the choice between compact tag chips without counts and the tag list.
+- Lesson: Reader-to-editor transitions must preserve source positions, while drawer gestures and dense tag navigation should remain independent of vertical scrolling.
 
 ### 302. Keep gallery selection stable and search the visible recent scope
 

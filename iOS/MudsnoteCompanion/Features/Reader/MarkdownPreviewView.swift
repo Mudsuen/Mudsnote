@@ -196,6 +196,8 @@ struct MarkdownPreviewView: View {
     @State private var saveState: SaveState = .idle
     @State private var isSaveFailurePresented = false
     @State private var editorFocused = false
+    @State private var readerInsertionOffset: Int?
+    @State private var readerTextWidths: [NoteFindLocation: CGFloat] = [:]
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var linkDraft: MarkdownLinkDraft?
     @State private var tagDraft: MarkdownInlineTagDraft?
@@ -290,6 +292,7 @@ struct MarkdownPreviewView: View {
                             contentTopInset: editorHeaderHeight + 8,
                             scrollOffset: $editorScrollOffset,
                             displaysSource: editorDisplayMode == .source,
+                            initialInsertionOffset: readerInsertionOffset,
                             onCommitTag: commitInlineTag
                         )
                         .accessibilityIdentifier("markdown-editor")
@@ -369,11 +372,7 @@ struct MarkdownPreviewView: View {
                                 )
                                 scrollToActiveFindMatch(using: proxy)
                             }
-                            .simultaneousGesture(
-                                TapGesture(count: 2).onEnded {
-                                    beginEditingFromReader()
-                                }
-                            )
+
                         }
                     }
                 }
@@ -618,11 +617,12 @@ struct MarkdownPreviewView: View {
         }
     }
 
-    private func beginEditingFromReader() {
+    private func beginEditingFromReader(at offset: Int) {
         guard !isEditing else { return }
         if !appModel.isReaderExpanded {
             requestEditing()
         }
+        readerInsertionOffset = offset
         isEditing = true
         focusEditorAfterPresentation()
     }
@@ -2023,6 +2023,26 @@ struct MarkdownPreviewView: View {
         return Text(renderedText)
             .foregroundStyle(MudsnoteColors.text)
             .font(Font(selectionFont))
+            .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { width in
+                readerTextWidths[location] = width
+            }
+            .simultaneousGesture(
+                SpatialTapGesture(count: 2).onEnded { event in
+                    let offset = ReaderInsertionPosition.offset(
+                        at: event.location,
+                        width: readerTextWidths[location] ?? 1,
+                        text: renderedText,
+                        font: selectionFont
+                    )
+                    beginEditingFromReader(at: ReaderInsertionPosition.sourceOffset(
+                        in: renderedMarkdown,
+                        location: location,
+                        displayedSource: line,
+                        renderedOffset: offset,
+                        inlineMarkdown: rendersInlineMarkdown
+                    ))
+                }
+            )
     }
 
     @MainActor
@@ -2481,6 +2501,108 @@ private struct MarkdownDocumentSelectionOverlay: UIViewRepresentable {
         let range = NSRange(location: 0, length: invisibleText.length)
         invisibleText.addAttribute(.foregroundColor, value: UIColor.clear, range: range)
         textView.attributedText = invisibleText
+    }
+}
+
+enum ReaderInsertionPosition {
+    static func offset(at point: CGPoint, width: CGFloat, text: AttributedString, font: UIFont) -> Int {
+        var styled = text
+        // Use the same font and inline traits as the rendered SwiftUI Text.
+        for run in styled.runs {
+            var resolved = font
+            if let intent = run.inlinePresentationIntent {
+                var traits = font.fontDescriptor.symbolicTraits
+                if intent.contains(.stronglyEmphasized) { traits.insert(.traitBold) }
+                if intent.contains(.emphasized) { traits.insert(.traitItalic) }
+                resolved = font.withTraits(traits)
+            }
+            styled[run.range].uiKit.font = resolved
+        }
+        let storage = NSTextStorage(attributedString: NSAttributedString(styled))
+        let manager = NSLayoutManager()
+        let container = NSTextContainer(size: CGSize(width: max(width, 1), height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        manager.addTextContainer(container)
+        storage.addLayoutManager(manager)
+        manager.ensureLayout(for: container)
+        var fraction: CGFloat = 0
+        let index = manager.characterIndex(for: point, in: container, fractionOfDistanceBetweenInsertionPoints: &fraction)
+        guard index < storage.length else { return storage.length }
+        let character = (storage.string as NSString).rangeOfComposedCharacterSequence(at: index)
+        return fraction > 0.5 ? NSMaxRange(character) : character.location
+    }
+
+    private static func sourceRange(_ position: AttributedString.MarkdownSourcePosition, in source: String) -> NSRange? {
+        // Markdown columns are UTF-8 byte positions with an inclusive end.
+        // Convert the complete span explicitly before using UITextView's UTF-16 offsets.
+        let lines = source.components(separatedBy: "\n")
+        guard lines.indices.contains(position.startLine - 1),
+              lines.indices.contains(position.endLine - 1) else { return nil }
+        let start = lines.prefix(position.startLine - 1).reduce(0) { $0 + $1.utf8.count + 1 } + position.startColumn - 1
+        let end = lines.prefix(position.endLine - 1).reduce(0) { $0 + $1.utf8.count + 1 } + position.endColumn
+        guard start >= 0, end >= start, end <= source.utf8.count,
+              let lower = String.Index(source.utf8.index(source.utf8.startIndex, offsetBy: start), within: source),
+              let upper = String.Index(source.utf8.index(source.utf8.startIndex, offsetBy: end), within: source) else { return nil }
+        return NSRange(lower..<upper, in: source)
+    }
+
+    static func sourceOffset(
+        in markdown: String,
+        location: NoteFindLocation,
+        displayedSource: String,
+        renderedOffset: Int,
+        inlineMarkdown: Bool = true
+    ) -> Int {
+        let blocks = MarkdownRenderBlock.parseWithRanges(markdown)
+        guard blocks.indices.contains(location.blockIndex) else { return 0 }
+        let item = blocks[location.blockIndex]
+        let block = (markdown as NSString).substring(with: item.range) as NSString
+        var searchStart = 0
+        var searchOptions: NSString.CompareOptions = []
+        if case .line = item.block {
+            // The visible text follows heading, quote, or checklist markers.
+            searchOptions = .backwards
+        } else if case .code = item.block {
+            let firstNewline = block.range(of: "\n")
+            if firstNewline.location != NSNotFound { searchStart = NSMaxRange(firstNewline) }
+        }
+        if case .table(let headers, let rows) = item.block, let cellIndex = location.cellIndex {
+            let cells = headers + rows.flatMap { $0 }
+            for cell in cells.prefix(cellIndex) {
+                let found = block.range(of: cell, range: NSRange(location: searchStart, length: block.length - searchStart))
+                if found.location != NSNotFound { searchStart = NSMaxRange(found) }
+            }
+        }
+        // Unordered list bullets are presentation only; their source marker may be - or *.
+        let bulletLength = displayedSource.hasPrefix("• ") ? 2 : 0
+        let text = String(displayedSource.dropFirst(bulletLength))
+        let renderedOffset = max(0, renderedOffset - bulletLength)
+        let found = block.range(of: text, options: searchOptions, range: NSRange(location: searchStart, length: block.length - searchStart))
+        let base = item.range.location + (found.location == NSNotFound ? 0 : found.location)
+        guard inlineMarkdown,
+              let parsed = try? AttributedString(markdown: text, options: .init(
+                interpretedSyntax: .inlineOnlyPreservingWhitespace,
+                appliesSourcePositionAttributes: true
+              )) else {
+            return min(markdown.utf16.count, base + min(renderedOffset, text.utf16.count))
+        }
+        var visibleStart = 0
+        for run in parsed.runs {
+            let length = String(parsed[run.range].characters).utf16.count
+            if renderedOffset < visibleStart + length,
+               let position = run.markdownSourcePosition,
+               let range = sourceRange(position, in: text) {
+                return base + range.location + min(renderedOffset - visibleStart, length)
+            }
+            visibleStart += length
+        }
+        // End-of-line taps belong before closing inline markup, when present.
+        if let run = parsed.runs.last,
+           let position = run.markdownSourcePosition,
+           let range = sourceRange(position, in: text) {
+            return base + NSMaxRange(range)
+        }
+        return base + min(renderedOffset, text.utf16.count)
     }
 }
 
@@ -3078,11 +3200,22 @@ enum MarkdownRenderBlock: Equatable {
     case code(language: String?, content: String)
 
     static func parse(_ markdown: String) -> [MarkdownRenderBlock] {
+        parseWithRanges(markdown).map(\.block)
+    }
+
+    static func parseWithRanges(_ markdown: String) -> [(block: MarkdownRenderBlock, range: NSRange)] {
         let lines = markdown.components(separatedBy: .newlines)
-        var blocks: [MarkdownRenderBlock] = []
+        var offsets: [Int] = []
+        var offset = 0
+        for line in lines {
+            offsets.append(offset)
+            offset += line.utf16.count + 1
+        }
+        var blocks: [(block: MarkdownRenderBlock, range: NSRange)] = []
         var index = 0
         while index < lines.count {
             let sourceLine = lines[index]
+            let start = offsets[index]
             let line = sourceLine.trimmingCharacters(in: .whitespacesAndNewlines)
             guard !line.isEmpty else {
                 index += 1
@@ -3102,10 +3235,11 @@ enum MarkdownRenderBlock: Equatable {
                     index += 1
                 }
                 if index < lines.count { index += 1 }
-                blocks.append(.code(
+                let end = index < lines.count ? offsets[index] : markdown.utf16.count
+                blocks.append((.code(
                     language: language.isEmpty ? nil : language,
                     content: codeLines.joined(separator: "\n")
-                ))
+                ), NSRange(location: start, length: end - start)))
                 continue
             }
 
@@ -3118,11 +3252,12 @@ enum MarkdownRenderBlock: Equatable {
                     rows.append(row)
                     index += 1
                 }
-                blocks.append(.table(headers: headers, rows: rows))
+                let end = index < lines.count ? offsets[index] : markdown.utf16.count
+                blocks.append((.table(headers: headers, rows: rows), NSRange(location: start, length: end - start)))
                 continue
             }
 
-            blocks.append(.line(sourceLine))
+            blocks.append((.line(sourceLine), NSRange(location: start, length: sourceLine.utf16.count)))
             index += 1
         }
         return blocks
@@ -4286,6 +4421,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
     var contentTopInset: CGFloat
     @Binding var scrollOffset: CGFloat
     var displaysSource: Bool
+    var initialInsertionOffset: Int?
     var onCommitTag: (String) -> Void
 
     func makeCoordinator() -> Coordinator {
@@ -4312,7 +4448,7 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         view.smartDashesType = .no
         view.smartQuotesType = .no
         view.text = text
-        view.selectedRange = NSRange(location: (text as NSString).length, length: 0)
+        view.selectedRange = NSRange(location: min(max(initialInsertionOffset ?? 0, 0), (text as NSString).length), length: 0)
         let checklistTap = UITapGestureRecognizer(
             target: context.coordinator,
             action: #selector(Coordinator.handleChecklistTap(_:))
@@ -4349,6 +4485,10 @@ private struct MarkdownTextEditor: UIViewRepresentable {
         }
         if isFocused, !view.isFirstResponder {
             view.becomeFirstResponder()
+            if initialInsertionOffset != nil {
+                view.layoutIfNeeded()
+                view.scrollRangeToVisible(view.selectedRange)
+            }
         } else if !isFocused, view.isFirstResponder {
             view.resignFirstResponder()
         }
