@@ -5,6 +5,19 @@ import UIKit
 @testable import MudsnoteCompanion
 
 final class MudsnoteCompanionTests: XCTestCase {
+    func testReaderProjectionCacheInvalidatesBodyAndMetadataTogether() {
+        let cache = MarkdownReaderProjectionCache()
+        let initial = "---\ntags: [work]\n---\n# Title\n\nFirst body"
+        XCTAssertEqual(cache.projections(for: initial).1.title, "Title")
+        XCTAssertEqual(cache.renderBlocks(for: initial), MarkdownRenderBlock.parse("First body"))
+        XCTAssertEqual(cache.renderBlocks(for: initial), MarkdownRenderBlock.parse("First body"))
+        let updated = "# Only title\n"
+        XCTAssertNil(cache.projections(for: updated).0.metadata)
+        XCTAssertEqual(cache.projections(for: updated).1.title, "Only title")
+        XCTAssertEqual(cache.renderBlocks(for: updated), MarkdownRenderBlock.parse(""))
+        XCTAssertEqual(cache.renderBlocks(for: "中文正文"), MarkdownRenderBlock.parse("中文正文"))
+    }
+
     func testReaderInsertionUsesTheTappedRepeatedParagraphAndUTF16Offset() {
         let markdown = "同一段\n\n同一段😀后面"
         XCTAssertEqual(ReaderInsertionPosition.sourceOffset(

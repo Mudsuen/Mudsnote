@@ -80,6 +80,45 @@ struct MarkdownTitleBodyProjection: Equatable {
     }
 }
 
+// A reader reevaluates during sheet, keyboard, and scroll updates. Parse each
+// revision once rather than repeating full-document work for every projection.
+final class MarkdownReaderProjectionCache {
+    private var markdown: String?
+    private var frontMatter = MarkdownFrontMatterProjection("")
+    private var titleBody = MarkdownTitleBodyProjection("")
+    private var blocks: [MarkdownRenderBlock]?
+    private var selectionText: NSAttributedString?
+    private var selectionTypeSize: DynamicTypeSize?
+
+    func projections(for source: String) -> (MarkdownFrontMatterProjection, MarkdownTitleBodyProjection) {
+        if markdown != source {
+            markdown = source
+            frontMatter = MarkdownFrontMatterProjection(source)
+            titleBody = MarkdownTitleBodyProjection(frontMatter.body)
+            blocks = nil
+            selectionText = nil
+        }
+        return (frontMatter, titleBody)
+    }
+
+    func renderBlocks(for source: String) -> [MarkdownRenderBlock] {
+        let (_, projection) = projections(for: source)
+        if let blocks { return blocks }
+        let parsed = MarkdownRenderBlock.parse(projection.body)
+        blocks = parsed
+        return parsed
+    }
+
+    func selectionText(for source: String, typeSize: DynamicTypeSize) -> NSAttributedString {
+        let blocks = renderBlocks(for: source)
+        if selectionTypeSize == typeSize, let selectionText { return selectionText }
+        let projected = MarkdownSelectionProjection.attributedText(from: blocks)
+        selectionText = projected
+        selectionTypeSize = typeSize
+        return projected
+    }
+}
+
 struct MarkdownNoteMentionDraft: Equatable {
     var query: String
     var replacementRange: NSRange
@@ -190,6 +229,8 @@ struct MarkdownPreviewView: View {
     @State private var source: Source
     @State private var draftMarkdown: String
     @State private var originalMarkdown: String
+    @Environment(\.dynamicTypeSize) private var dynamicTypeSize
+    @State private var readerProjectionCache = MarkdownReaderProjectionCache()
     @State private var isEditing = false
     @State private var isSaving = false
     @State private var isSaveProgressVisible = false
@@ -756,15 +797,15 @@ struct MarkdownPreviewView: View {
     }
 
     private var renderBlocks: [MarkdownRenderBlock] {
-        MarkdownRenderBlock.parse(renderedMarkdown)
+        readerProjectionCache.renderBlocks(for: draftMarkdown)
     }
 
     private var frontMatterProjection: MarkdownFrontMatterProjection {
-        MarkdownFrontMatterProjection(draftMarkdown)
+        readerProjectionCache.projections(for: draftMarkdown).0
     }
 
     private var titleBodyProjection: MarkdownTitleBodyProjection {
-        MarkdownTitleBodyProjection(frontMatterProjection.body)
+        readerProjectionCache.projections(for: draftMarkdown).1
     }
 
     private var editableBodyMarkdown: Binding<String> {
@@ -837,6 +878,10 @@ struct MarkdownPreviewView: View {
                         .foregroundStyle(MudsnoteColors.text)
                         .accessibilityAddTraits(.isHeader)
                         .accessibilityIdentifier("note-title")
+                        .contentShape(Rectangle())
+                        .onTapGesture(count: 2) {
+                            beginEditingFromReader(at: 0)
+                        }
                 }
             }
 
@@ -1599,15 +1644,12 @@ struct MarkdownPreviewView: View {
     }
 
     private var previewSelectionText: NSAttributedString {
-        MarkdownSelectionProjection.attributedText(from: renderBlocks)
+        readerProjectionCache.selectionText(for: draftMarkdown, typeSize: dynamicTypeSize)
     }
 
     private var visibleRenderBlockItems: [RenderedBlockItem] {
-        renderBlocks.indices.map { index in
-            RenderedBlockItem(
-                index: index,
-                block: renderBlocks[index]
-            )
+        renderBlocks.enumerated().map { index, block in
+            RenderedBlockItem(index: index, block: block)
         }
     }
 

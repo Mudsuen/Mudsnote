@@ -162,7 +162,12 @@ struct RootView: View {
     }
 
     private var readerDetents: Set<PresentationDetent> {
-        ReaderPresentationPolicy.detents(isEditing: isReaderEditing)
+        // Select the final height before the sheet starts presenting. Waiting
+        // for the editor's onAppear makes UIKit retarget the opening animation.
+        ReaderPresentationPolicy.detents(
+            isEditing: isReaderEditing || appModel.noteOpenMode == .edit
+                || appModel.selectedDocument?.isNew == true
+        )
     }
 
     private func expandReaderForEditing() {

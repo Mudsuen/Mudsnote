@@ -22,6 +22,10 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 - Fix: Share the compact pin/move/reveal/delete menu, route tree commands to its selected note, support Return/Delete, fix reveal-in-list scope, and remove Markdown copy/export entries from contextual menus. Reuse recent relation results while refreshing asynchronously without a fixed delay.
 - Lesson: Navigation surfaces must share action behavior as well as appearance, and cached secondary content should refresh without delaying the current document.
 
+### iOS capture and reader responsiveness
+- Problem: New notes showed a decorative caret beside the input caret and raw Markdown, title-only notes had no double-tap editing target, and reader presentation repeated document parsing.
+- Fix: Remove the capture location picker and decorative caret, render Markdown while typing, enable title double-tap editing, cache reader projections, and choose editing sheet height before presentation. Voice transcription defaults to Mandarin Chinese.
+- Lesson: Keep one native insertion caret, preserve Markdown during input composition, and keep full-document work out of repeated presentation updates.
 
 ### Consistent macOS sidebar modes
 - Problem: The new-note and sidebar icons had different visual sizes, and tree/list switching replaced the entire header abruptly.

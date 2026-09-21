@@ -378,9 +378,6 @@ struct CaptureConsoleView: View {
             .accessibilityLabel("Checklist")
             .accessibilityIdentifier("capture-insert-checklist")
 
-            TargetMenuView()
-                .disabled(appModel.isSendingDraft || appModel.isPreparingAttachment)
-
             Spacer(minLength: 0)
 
             Button {
@@ -523,9 +520,6 @@ struct CaptureConsoleView: View {
 
                 if appModel.draft.body.isEmpty {
                     HStack(spacing: 9) {
-                        Rectangle()
-                            .fill(MudsnoteColors.primary)
-                            .frame(width: 3, height: 28)
                         Text(LocalizedStringKey(
                             appModel.isTranscribingAudio
                                 ? "Transcribing..."
@@ -774,7 +768,7 @@ private struct CaptureTextEditor: UIViewRepresentable {
     }
 
     func makeUIView(context: Context) -> UITextView {
-        let view = UITextView()
+        let view = MarkdownRichTextView()
         view.delegate = context.coordinator
         view.backgroundColor = .clear
         view.textColor = UIColor(MudsnoteColors.text)
@@ -787,6 +781,7 @@ private struct CaptureTextEditor: UIViewRepresentable {
         view.smartDashesType = .no
         view.smartQuotesType = .no
         view.text = text
+        MarkdownEditorPresentation.apply(to: view, displaysSource: false)
         view.accessibilityIdentifier = "capture-body-editor"
         return view
     }
@@ -800,6 +795,7 @@ private struct CaptureTextEditor: UIViewRepresentable {
                 location: min(selection.location, (text as NSString).length),
                 length: 0
             )
+            MarkdownEditorPresentation.apply(to: view, displaysSource: false)
         }
         if isFocused, !view.isFirstResponder {
             view.becomeFirstResponder()
@@ -952,6 +948,7 @@ private struct CaptureTextEditor: UIViewRepresentable {
         }
 
         private func publish(_ textView: UITextView) {
+            MarkdownEditorPresentation.apply(to: textView, displaysSource: false)
             parent.text = textView.text
             updateDrafts(in: textView)
         }
