@@ -17,6 +17,11 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 
 ## Iterations
 
+### Consistent macOS sidebar modes
+- Problem: The new-note and sidebar icons had different visual sizes, and tree/list switching replaced the entire header abruptly.
+- Fix: Fit both toolbar glyphs within the same bounds, share the scope/count header between modes, and reveal switched content with a short fade that respects Reduce Motion.
+- Lesson: Preserve navigation chrome and geometry while changing the content presentation.
+
 ### Reliable macOS file-tree navigation
 - Problem: Opening an uncached note from the file tree could leave the editor loading because the hidden list still selected another note; the header arrow and row motion were confusing.
 - Fix: Validate asynchronous loads against the current document URL, label the all-notes action explicitly, and update folder disclosure without animated row movement.

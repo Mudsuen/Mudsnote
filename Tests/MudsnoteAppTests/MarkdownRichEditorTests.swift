@@ -2759,6 +2759,8 @@ struct MarkdownRichEditorTests {
         })
         window.contentView?.layoutSubtreeIfNeeded()
         let toggleFrameBefore = treePresentationButton.convert(treePresentationButton.bounds, to: nil)
+        let titleFrameBefore = controller.noteListTitleLabel.convert(controller.noteListTitleLabel.bounds, to: nil)
+        #expect(!controller.noteListTitleLabel.isHiddenOrHasHiddenAncestor)
         window.makeFirstResponder(controller.editorTextView)
         let editorResponderBeforePresentationChange = window.firstResponder
         #expect(treePresentationButton.toolTip == "切换到列表")
@@ -2774,6 +2776,8 @@ struct MarkdownRichEditorTests {
         })
         window.contentView?.layoutSubtreeIfNeeded()
         #expect(listPresentationButton === treePresentationButton)
+        #expect(!controller.noteListTitleLabel.isHiddenOrHasHiddenAncestor)
+        #expect(controller.noteListTitleLabel.convert(controller.noteListTitleLabel.bounds, to: nil) == titleFrameBefore)
         #expect(listPresentationButton.convert(listPresentationButton.bounds, to: nil).origin == toggleFrameBefore.origin)
         #expect(window.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibraryListSmartNavigation"
@@ -3148,11 +3152,6 @@ struct MarkdownRichEditorTests {
                 && $0.constant == LibraryNotesLayout.noteListStackTopOffset
         })
         #expect(LibraryNotesLayout.noteListStackTopOffset == -1)
-        let treeHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibrarySidebarTreeHeader"
-        })
-        #expect(treeHeader.title == "文件")
-        #expect(treeHeader.font == controller.noteListTitleLabel.font)
         #expect(window.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibrarySidebarBrandTitle"
         } == false)

@@ -1436,7 +1436,6 @@ final class LibraryWindowController: NSWindowController,
     private var knowledgeForwardStack: [URL] = []
     private var sidebarPresentationButtons: [NSButton] = []
     private var sidebarHeaderView: NSView!
-    private let sidebarTreeHeaderButton = NSButton(title: "文件", target: nil, action: nil)
     private let sidebarListHeaderContent = NSStackView()
     private let sidebarAllNotesButton = NSButton()
     private var searchResultsGeneration = 0
@@ -2406,9 +2405,14 @@ final class LibraryWindowController: NSWindowController,
             && searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
-    private func applySidebarPresentation(animated _: Bool) {
+    private func applySidebarPresentation(animated: Bool) {
         guard let tree = sidebarTreeView, let list = sidebarNoteListView else { return }
         let showsTree = isShowingSidebarTree
+        let incoming = showsTree ? tree : list
+        let changed = incoming.isHidden
+        // Keep the shared header and editor stationary; only reveal the new content.
+        tree.layer?.removeAllAnimations()
+        list.layer?.removeAllAnimations()
         tree.isHidden = !showsTree
         list.isHidden = showsTree
         tree.alphaValue = 1
@@ -2421,6 +2425,15 @@ final class LibraryWindowController: NSWindowController,
         }
         applySidebarPresentationChrome()
         updateSidebarScopeButton()
+        if changed, animated, window?.isVisible == true,
+           !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
+            incoming.alphaValue = 0
+            NSAnimationContext.runAnimationGroup { context in
+                context.duration = 0.14
+                context.timingFunction = CAMediaTimingFunction(name: .easeOut)
+                incoming.animator().alphaValue = 1
+            }
+        }
     }
 
     private func buildSourceList() -> NSView {
@@ -2577,14 +2590,6 @@ final class LibraryWindowController: NSWindowController,
         sidebarPresentationButtons.append(sidebarPresentationButton)
         let listHeaderSpacer = NSView()
         listHeaderSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        sidebarTreeHeaderButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarTreeHeader")
-        sidebarTreeHeaderButton.font = .systemFont(ofSize: LibraryNotesLayout.noteListHeaderTitleFontSize, weight: .medium)
-        sidebarTreeHeaderButton.contentTintColor = .labelColor
-        sidebarTreeHeaderButton.alignment = .left
-        sidebarTreeHeaderButton.isBordered = false
-        sidebarTreeHeaderButton.target = self
-        sidebarTreeHeaderButton.action = #selector(toggleSidebarFolderSectionPressed)
-        sidebarTreeHeaderButton.toolTip = "展开或收起文件夹"
         sidebarListHeaderContent.orientation = .horizontal
         sidebarListHeaderContent.spacing = 6
         [noteListTitleLabel, noteListCountLabel, searchScopeControl].forEach {
@@ -2602,7 +2607,7 @@ final class LibraryWindowController: NSWindowController,
         sidebarAllNotesButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
         sidebarAllNotesButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
         let listHeader = NSStackView(views: [
-            sidebarAllNotesButton, sidebarTreeHeaderButton, sidebarListHeaderContent, listHeaderSpacer, sidebarPresentationButton
+            sidebarAllNotesButton, sidebarListHeaderContent, listHeaderSpacer, sidebarPresentationButton
         ])
         sidebarHeaderView = listHeader
         sidebarPresentationButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
@@ -3611,7 +3616,7 @@ final class LibraryWindowController: NSWindowController,
         // draw exactly the same glyph when the tracking separator moves.
         let configuredImage = symbol.map { symbol in
             let canvasSize = NSSize(width: 24, height: 22)
-            let scale = min(18 / symbol.size.height, canvasSize.width / symbol.size.width)
+            let scale = 18 / max(symbol.size.width, symbol.size.height)
             let glyphSize = NSSize(width: symbol.size.width * scale, height: symbol.size.height * scale)
             let image = NSImage(size: canvasSize)
             image.lockFocus()
@@ -9970,13 +9975,7 @@ final class LibraryWindowController: NSWindowController,
         }
     }
 
-    @objc private func toggleSidebarFolderSectionPressed() {
-        toggleSourceFoldersSectionForLibrary()
-    }
-
     private func applySidebarPresentationChrome() {
-        sidebarTreeHeaderButton.isHidden = !isShowingSidebarTree
-        sidebarListHeaderContent.isHidden = isShowingSidebarTree
         for button in sidebarPresentationButtons {
             configureSidebarPresentationButton(button)
         }
