@@ -17,6 +17,11 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 
 ## Iterations
 
+### Quiet tags and directional references on macOS
+- Problem: Tag pills competed with the document, relation text lacked contrast, and hierarchy grouping hid the direction of references in an always-fixed panel.
+- Fix: Use plain tag controls with explicit removal menus, brighter relation titles, separate outgoing/incoming references and suggestions, prevent repeated acceptance, and let relations scroll after the document unless manually pinned.
+- Lesson: Confirmed link direction and suggested similarity are distinct projections; supporting controls should remain readable without competing with the note.
+
 ### Complete macOS file-tree actions and responsive relations
 - Problem: Tree notes lacked deletion and other lifecycle actions, shared commands could target a hidden list selection, and knowledge relations waited before recomputing on each visit.
 - Fix: Share the compact pin/move/reveal/delete menu, route tree commands to its selected note, support Return/Delete, fix reveal-in-list scope, and remove Markdown copy/export entries from contextual menus. Reuse recent relation results while refreshing asynchronously without a fixed delay.

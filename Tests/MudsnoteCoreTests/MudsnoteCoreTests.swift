@@ -1222,6 +1222,12 @@ struct MudsnoteCoreTests {
 
         #expect(relations.parents.map(\.url) == [planeURL.standardizedFileURL])
         #expect(relations.children.map(\.url) == [pointURL.standardizedFileURL])
+        #expect(relations.outgoing.isEmpty)
+        #expect(Set(relations.incoming.map(\.url)) == Set([pointURL.standardizedFileURL, planeURL.standardizedFileURL]))
+        let pointRelations = store.knowledgeRelations(for: pointURL, roots: [notesDirectory])
+        #expect(pointRelations.outgoing.map(\.url) == [lineURL.standardizedFileURL])
+        #expect(pointRelations.incoming.isEmpty)
+        #expect(!pointRelations.suggested.contains { $0.url == lineURL.standardizedFileURL })
     }
 
     @Test

@@ -73,6 +73,10 @@ They may have platform-specific implementations, but changes to stored Markdown,
 front matter, attachment layout, tags, or filename semantics are explicitly
 `both` changes and require compatibility coverage on both platforms.
 
+### macOS reference projection
+
+`KnowledgeGraph.swift` derives outgoing references and incoming backlinks from the same indexed Markdown links. Link direction is independent of knowledge-layer ranking; the graph retains its hierarchy projection. Suggestions exclude confirmed references and become Markdown only after an explicit accept action. The AppKit relation panel displays these directions separately and flows after the document unless manually pinned.
+
 ## Task Routes
 
 Run `./scripts/agent_context.sh --list` for the executable topic names.

@@ -17,11 +17,15 @@ final class NoteLinksView: NSView {
             toolTip = [item.reason, item.url.path].compactMap { $0 }.joined(separator: "\n")
             setAccessibilityLabel("\(accessibilityPrefix) \(item.title)")
             setAccessibilityHelp("在当前资料库窗口打开")
-            bezelStyle = .inline
+            bezelStyle = .shadowlessSquare
+            isBordered = false
             controlSize = .small
-            font = .systemFont(ofSize: 12, weight: .medium)
+            font = .systemFont(ofSize: 13, weight: .medium)
+            attributedTitle = NSAttributedString(string: item.title, attributes: [
+                .font: font!, .foregroundColor: NSColor.labelColor
+            ])
             lineBreakMode = .byTruncatingTail
-            contentTintColor = .controlAccentColor
+            contentTintColor = .labelColor
             self.target = target
             self.action = action
             setContentHuggingPriority(.defaultHigh, for: .horizontal)
@@ -52,20 +56,23 @@ final class NoteLinksView: NSView {
                 action: openAction
             )
             let acceptButton = NSButton(
-                title: "关联",
+                title: "引用",
                 target: acceptTarget,
                 action: acceptAction
             )
-            acceptButton.bezelStyle = .inline
+            acceptButton.bezelStyle = .shadowlessSquare
+            acceptButton.isBordered = false
+            acceptButton.contentTintColor = .labelColor
             acceptButton.controlSize = .small
             acceptButton.font = .systemFont(ofSize: 11, weight: .semibold)
             acceptButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-            acceptButton.setAccessibilityLabel("接受建议，关联 \(item.title)")
+            acceptButton.setAccessibilityLabel("接受建议，引用 \(item.title)")
             acceptButton.setAccessibilityHelp("在当前笔记末尾插入明确的 Markdown 链接")
             let reasonLabel = NSTextField(labelWithString: item.reason ?? "内容相关")
             reasonLabel.font = .systemFont(ofSize: 11)
             reasonLabel.textColor = .secondaryLabelColor
             reasonLabel.lineBreakMode = .byTruncatingTail
+            reasonLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 140).isActive = true
             reasonLabel.toolTip = item.reason
             reasonLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
             reasonLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
@@ -88,6 +95,28 @@ final class NoteLinksView: NSView {
     }
 
     var onOpen: ((URL) -> Void)?
+    var onPinChanged: ((Bool) -> Void)?
+    var onLayoutChanged: (() -> Void)?
+    private(set) var isPinned = false
+    private lazy var pinButton: NSButton = {
+        let button = NSButton(image: NSImage(systemSymbolName: "pin", accessibilityDescription: "固定知识关系")!, target: self, action: #selector(togglePin))
+        button.isBordered = false
+        button.contentTintColor = .secondaryLabelColor
+        button.identifier = NSUserInterfaceItemIdentifier("LibraryRelationsPin")
+        button.toolTip = "固定在底部"
+        button.setAccessibilityLabel("固定知识关系到底部")
+        return button
+    }()
+
+    @objc private func togglePin() {
+        isPinned.toggle()
+        pinButton.image = NSImage(systemSymbolName: isPinned ? "pin.fill" : "pin", accessibilityDescription: nil)
+        pinButton.toolTip = isPinned ? "取消固定，跟随正文滚动" : "固定在底部"
+        pinButton.setAccessibilityLabel(isPinned ? "取消固定知识关系" : "固定知识关系到底部")
+        pinButton.contentTintColor = isPinned ? .labelColor : .secondaryLabelColor
+        onPinChanged?(isPinned)
+    }
+
     var onAcceptSuggestion: ((KnowledgeRelationItem) -> Void)?
     var onGoBack: (() -> Void)?
     var onGoForward: (() -> Void)?
@@ -100,8 +129,10 @@ final class NoteLinksView: NSView {
     private var isExpanded = true
     private lazy var disclosureButton: NSButton = {
         let button = NSButton(title: "知识关系", target: self, action: #selector(toggleExpanded(_:)))
-        button.bezelStyle = .inline
-        button.font = .systemFont(ofSize: 12, weight: .semibold)
+        button.bezelStyle = .shadowlessSquare
+        button.isBordered = false
+        button.contentTintColor = .labelColor
+        button.font = .systemFont(ofSize: 12, weight: .medium)
         button.imagePosition = .imageLeading
         button.identifier = NSUserInterfaceItemIdentifier("LibraryRelationsDisclosure")
         return button
@@ -148,22 +179,22 @@ final class NoteLinksView: NSView {
     private let relatedContent = NSStackView()
     private let suggestedContent = NSStackView()
     private lazy var parentsRow = relationRow(
-        title: "上层",
-        accessibilityPrefix: "打开上层笔记",
+        title: "引用",
+        accessibilityPrefix: "打开引用笔记",
         content: parentsContent
     )
     private lazy var childrenRow = relationRow(
-        title: "下层",
-        accessibilityPrefix: "打开下层笔记",
+        title: "被引用",
+        accessibilityPrefix: "打开反向引用笔记",
         content: childrenContent
     )
     private lazy var relatedRow = relationRow(
-        title: "明确关联",
+        title: "关联",
         accessibilityPrefix: "打开明确关联笔记",
         content: relatedContent
     )
     private lazy var suggestedRow = relationRow(
-        title: "建议关联",
+        title: "建议",
         accessibilityPrefix: "打开建议关联笔记",
         content: suggestedContent
     )
@@ -177,7 +208,7 @@ final class NoteLinksView: NSView {
         layer?.cornerRadius = 8
 
         layerLabel.font = .systemFont(ofSize: 10, weight: .semibold)
-        layerLabel.textColor = .tertiaryLabelColor
+        layerLabel.textColor = .secondaryLabelColor
 
         [parentsContent, childrenContent, relatedContent, suggestedContent].forEach {
             configureContentStack($0)
@@ -196,6 +227,7 @@ final class NoteLinksView: NSView {
             spacer,
             synthesisButton,
             graphButton,
+            pinButton,
             backButton,
             forwardButton
         ])
@@ -242,10 +274,13 @@ final class NoteLinksView: NSView {
         knowledgeRelations = relations
         layerLabel.stringValue = relations.currentLayer.map {
             "当前：\($0.displayName)"
-        } ?? "未分层"
-        populate(parentsContent, with: relations.parents, accessibilityPrefix: "打开上层笔记")
-        populate(childrenContent, with: relations.children, accessibilityPrefix: "打开下层笔记")
-        populate(relatedContent, with: relations.related, accessibilityPrefix: "打开明确关联笔记")
+        } ?? ""
+        layerLabel.isHidden = relations.currentLayer == nil
+        populate(parentsContent, with: relations.outgoing, accessibilityPrefix: "打开引用笔记")
+        populate(childrenContent, with: relations.incoming, accessibilityPrefix: "打开反向引用笔记")
+        let legacyRelations = relations.outgoing.isEmpty && relations.incoming.isEmpty
+            ? relations.parents + relations.children + relations.related : []
+        populate(relatedContent, with: legacyRelations, accessibilityPrefix: "打开明确关联笔记")
         populateSuggestions(suggestedContent, with: relations.suggested)
 
         updateExpandedPresentation()
@@ -268,9 +303,11 @@ final class NoteLinksView: NSView {
     }
 
     private func updateExpandedPresentation() {
-        parentsRow.isHidden = !isExpanded || knowledgeRelations.parents.isEmpty
-        childrenRow.isHidden = !isExpanded || knowledgeRelations.children.isEmpty
-        relatedRow.isHidden = !isExpanded || knowledgeRelations.related.isEmpty
+        parentsRow.isHidden = !isExpanded || knowledgeRelations.outgoing.isEmpty
+        childrenRow.isHidden = !isExpanded || knowledgeRelations.incoming.isEmpty
+        relatedRow.isHidden = !isExpanded || !knowledgeRelations.outgoing.isEmpty
+            || !knowledgeRelations.incoming.isEmpty
+            || (knowledgeRelations.parents + knowledgeRelations.children + knowledgeRelations.related).isEmpty
         suggestedRow.isHidden = !isExpanded || knowledgeRelations.suggested.isEmpty
         // The graph action remains available even when there are no relations.
         disclosureButton.image = NSImage(
@@ -279,6 +316,7 @@ final class NoteLinksView: NSView {
         )
         disclosureButton.setAccessibilityLabel(isExpanded ? "收起知识关系" : "展开知识关系")
         disclosureButton.toolTip = isExpanded ? "收起知识关系" : "展开知识关系"
+        onLayoutChanged?()
     }
 
     func updateNavigation(canGoBack: Bool, canGoForward: Bool) {
@@ -332,8 +370,8 @@ final class NoteLinksView: NSView {
     }
 
     private func configureContentStack(_ stack: NSStackView) {
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
+        stack.orientation = .vertical
+        stack.alignment = .leading
         stack.spacing = 5
     }
 
@@ -346,7 +384,7 @@ final class NoteLinksView: NSView {
         label.font = .systemFont(ofSize: 11)
         label.textColor = .secondaryLabelColor
         label.alignment = .right
-        label.widthAnchor.constraint(equalToConstant: 76).isActive = true
+        label.widthAnchor.constraint(equalToConstant: 48).isActive = true
 
         let row = NSStackView(views: [label, content])
         row.orientation = .horizontal

@@ -128,19 +128,25 @@ public struct KnowledgeRelations: Equatable, Sendable {
     public let children: [KnowledgeRelationItem]
     public let related: [KnowledgeRelationItem]
     public let suggested: [KnowledgeRelationItem]
+    public let outgoing: [KnowledgeRelationItem]
+    public let incoming: [KnowledgeRelationItem]
 
     public init(
         currentLayer: KnowledgeLayer?,
         parents: [KnowledgeRelationItem],
         children: [KnowledgeRelationItem],
         related: [KnowledgeRelationItem],
-        suggested: [KnowledgeRelationItem]
+        suggested: [KnowledgeRelationItem],
+        outgoing: [KnowledgeRelationItem] = [],
+        incoming: [KnowledgeRelationItem] = []
     ) {
         self.currentLayer = currentLayer
         self.parents = parents
         self.children = children
         self.related = related
         self.suggested = suggested
+        self.outgoing = outgoing
+        self.incoming = incoming
     }
 
     public static let empty = KnowledgeRelations(
@@ -443,7 +449,13 @@ extension NoteStore {
             parents: parentsByPath.values.sorted(by: knowledgeItemSort),
             children: childrenByPath.values.sorted(by: knowledgeItemSort),
             related: relatedByPath.values.sorted(by: knowledgeItemSort),
-            suggested: suggested
+            suggested: suggested,
+            outgoing: outgoingEntries.map {
+                KnowledgeRelationItem(url: $0.url.standardizedFileURL, title: $0.title, layer: $0.knowledgeLayer)
+            }.sorted(by: knowledgeItemSort),
+            incoming: incomingEntriesByPath.values.map {
+                KnowledgeRelationItem(url: $0.url.standardizedFileURL, title: $0.title, layer: $0.knowledgeLayer)
+            }.sorted(by: knowledgeItemSort)
         )
     }
 

@@ -268,20 +268,30 @@ private final class MetadataTagButton: NSButton {
         self.tagName = tag
         self.onRemove = onRemove
         super.init(frame: .zero)
-        title = onRemove == nil ? "#\(tag)" : "#\(tag)  ×"
-        font = .systemFont(ofSize: 11, weight: .semibold)
-        bezelStyle = .rounded
-        isBordered = true
-        contentTintColor = .controlAccentColor
+        title = "#\(tag)"
+        font = .systemFont(ofSize: 11, weight: .regular)
+        bezelStyle = .shadowlessSquare
+        isBordered = false
+        contentTintColor = .secondaryLabelColor
         target = self
-        action = #selector(removeTag)
+        action = #selector(showTagActions)
         isEnabled = onRemove != nil
-        setAccessibilityLabel(onRemove == nil ? "#\(tag)" : "从当前笔记移除标签 #\(tag)")
+        setAccessibilityLabel("标签 #\(tag)")
+        toolTip = "管理标签 #\(tag)"
     }
 
     @available(*, unavailable)
     required init?(coder: NSCoder) {
         fatalError("init(coder:) has not been implemented")
+    }
+
+    @objc private func showTagActions() {
+        guard onRemove != nil else { return }
+        let menu = NSMenu()
+        let remove = NSMenuItem(title: "移除标签 #\(tagName)", action: #selector(removeTag), keyEquivalent: "")
+        remove.target = self
+        menu.addItem(remove)
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: bounds.maxY + 2), in: self)
     }
 
     @objc private func removeTag() {
@@ -511,18 +521,15 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.spacing = 6
-        let label = NSTextField(labelWithString: "标签")
-        label.font = .systemFont(ofSize: 11, weight: .semibold)
-        label.textColor = panelSecondaryTextColor()
-        label.setAccessibilityLabel("标签")
-        stack.addArrangedSubview(label)
         for tag in normalized {
             let button = MetadataTagButton(tag: tag, onRemove: onRemove)
             stack.addArrangedSubview(button)
         }
         if onAddMetadataTag != nil {
             let addButton = NSButton(title: "+", target: self, action: #selector(addMetadataTagPressed))
-            addButton.bezelStyle = .rounded
+            addButton.bezelStyle = .shadowlessSquare
+            addButton.isBordered = false
+            addButton.contentTintColor = .secondaryLabelColor
             addButton.font = .systemFont(ofSize: 12)
             addButton.identifier = NSUserInterfaceItemIdentifier("AddNoteTagButton")
             addButton.toolTip = "添加标签"

@@ -1289,6 +1289,14 @@ final class LibraryNoteClipView: NSClipView {
 
 @MainActor
 final class LibraryEditorScrollView: NSScrollView {
+    override func accessibilityChildren() -> [Any]? {
+        var children = super.accessibilityChildren() ?? []
+        if let relations = documentView?.subviews.first(where: { $0 is NoteLinksView }) {
+            children.append(relations)
+        }
+        return children
+    }
+
     override func acceptsFirstMouse(for event: NSEvent?) -> Bool {
         true
     }
@@ -1562,6 +1570,7 @@ final class LibraryWindowController: NSWindowController,
     private weak var sidebarTreeView: NSView?
     private weak var sidebarNoteListView: NSView?
     private weak var editorStackView: NSStackView?
+    private var pinnedRelationsWidthConstraint: NSLayoutConstraint?
     private weak var galleryScrollView: NSScrollView?
     static let sourceCountSnapshotLimit = Int.max
     nonisolated static let noteListResultLimit = Int.max
@@ -2839,7 +2848,7 @@ final class LibraryWindowController: NSWindowController,
             self?.showKnowledgeGraphForLibrary()
         }
 
-        let stack = NSStackView(views: [bodyContainer, noteLinksView])
+        let stack = NSStackView(views: [bodyContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStack")
         stack.orientation = .vertical
         stack.alignment = .leading
@@ -2892,17 +2901,37 @@ final class LibraryWindowController: NSWindowController,
             galleryEmptyLabel.leadingAnchor.constraint(greaterThanOrEqualTo: editor.leadingAnchor, constant: 24),
             galleryEmptyLabel.trailingAnchor.constraint(lessThanOrEqualTo: editor.trailingAnchor, constant: -24)
         ])
-        let editorContentWidthOffset = -(LibraryNotesLayout.editorHorizontalInset * 2)
         NSLayoutConstraint.activate([
             bodyContainer.widthAnchor.constraint(
                 equalTo: stack.widthAnchor,
                 constant: -LibraryNotesLayout.editorHorizontalInset
-            ),
-            noteLinksView.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: editorContentWidthOffset)
+            )
         ])
         bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
 
         editorStackView = stack
+        pinnedRelationsWidthConstraint = noteLinksView.widthAnchor.constraint(
+            equalTo: stack.widthAnchor, constant: -(LibraryNotesLayout.editorHorizontalInset * 2)
+        )
+        editorTextView.addSubview(noteLinksView)
+        noteLinksView.onPinChanged = { [weak self] pinned in
+            guard let self, let stack = self.editorStackView else { return }
+            self.pinnedRelationsWidthConstraint?.isActive = false
+            if stack.arrangedSubviews.contains(self.noteLinksView) {
+                stack.removeArrangedSubview(self.noteLinksView)
+            }
+            self.noteLinksView.removeFromSuperview()
+            if pinned {
+                self.noteLinksView.translatesAutoresizingMaskIntoConstraints = false
+                stack.addArrangedSubview(self.noteLinksView)
+                self.pinnedRelationsWidthConstraint?.isActive = true
+            } else {
+                self.noteLinksView.translatesAutoresizingMaskIntoConstraints = true
+                self.editorTextView.addSubview(self.noteLinksView)
+            }
+            self.layoutEditorStatusLabel()
+        }
+        noteLinksView.onLayoutChanged = { [weak self] in self?.layoutEditorStatusLabel() }
         self.galleryScrollView = galleryScrollView
         stack.isHidden = noteListViewMode == .gallery
         galleryScrollView.isHidden = noteListViewMode != .gallery
@@ -7808,7 +7837,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func acceptKnowledgeSuggestion(_ item: KnowledgeRelationItem) {
-        guard selectedScope != .trash, let sourceURL = selectedURL else { return }
+        guard selectedScope != .trash, let sourceURL = selectedURL,
+              sourceURL.standardizedFileURL != item.url.standardizedFileURL,
+              !noteLinksView.knowledgeRelations.outgoing.contains(where: {
+                  $0.url.standardizedFileURL == item.url.standardizedFileURL
+              }) else { return }
         let link = noteStore.markdownKnowledgeLink(
             from: sourceURL,
             to: item.url,
@@ -7821,6 +7854,12 @@ final class LibraryWindowController: NSWindowController,
             "\(prefix)- 关联：\(link)",
             renderingBaseURL: sourceURL
         )
+        let previous = noteLinksView.knowledgeRelations
+        let confirmed = KnowledgeRelations(currentLayer: previous.currentLayer,
+            parents: previous.parents, children: previous.children, related: previous.related,
+            suggested: previous.suggested.filter { $0.url.standardizedFileURL != item.url.standardizedFileURL },
+            outgoing: previous.outgoing + [item], incoming: previous.incoming)
+        noteRelationsCache[sourceURL.standardizedFileURL] = (normalizedEditorMarkdownBody(), confirmed)
         refreshNoteLinks(for: sourceURL, body: normalizedEditorMarkdownBody())
         NSAccessibility.post(
             element: noteLinksView,
@@ -8912,15 +8951,23 @@ final class LibraryWindowController: NSWindowController,
         let bottomGap = LibraryNotesLayout.editorStatusBottomGap
         // Pin the label to the bottom of the visible editor area when the
         // content is short; otherwise let the label flow after the content.
-        let pinToBottom = viewportHeight > 0 && contentBottom + topGap + rowHeight + bottomGap < viewportHeight
+        let pinToBottom = noteLinksView.isPinned && viewportHeight > 0 && contentBottom + topGap + rowHeight + bottomGap < viewportHeight
         let statusTop: CGFloat
-        let documentHeight: CGFloat
+        var documentHeight: CGFloat
         if pinToBottom {
             statusTop = viewportHeight - rowHeight - bottomGap
             documentHeight = viewportHeight
         } else {
             statusTop = contentBottom + topGap
             documentHeight = statusTop + rowHeight + bottomGap
+        }
+        if !noteLinksView.isPinned, noteLinksView.superview === editorTextView {
+            noteLinksView.setFrameSize(NSSize(width: max(0, editorTextView.bounds.width - 20), height: noteLinksView.frame.height))
+            noteLinksView.layoutSubtreeIfNeeded()
+            let linksHeight = noteLinksView.fittingSize.height
+            noteLinksView.frame = NSRect(x: 0, y: statusTop + rowHeight + 12,
+                width: max(0, editorTextView.bounds.width - 20), height: linksHeight)
+            documentHeight = max(viewportHeight, noteLinksView.frame.maxY + 16)
         }
         editorTextView.minimumScrollableContentHeight = documentHeight
         editorTextView.minSize = NSSize(width: 0, height: documentHeight)

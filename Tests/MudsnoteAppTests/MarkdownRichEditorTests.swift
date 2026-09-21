@@ -2745,6 +2745,17 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
 
         let window = try #require(controller.window)
+        #expect(controller.noteLinksView.superview === controller.editorTextView)
+        #expect(!controller.noteLinksView.isPinned)
+        let pin = try #require(controller.noteLinksView.allSubviews.compactMap { $0 as? NSButton }.first {
+            $0.identifier?.rawValue == "LibraryRelationsPin"
+        })
+        pin.performClick(nil)
+        #expect(controller.noteLinksView.isPinned)
+        #expect(controller.noteLinksView.superview !== controller.editorTextView)
+        pin.performClick(nil)
+        #expect(!controller.noteLinksView.isPinned)
+        #expect(controller.noteLinksView.superview === controller.editorTextView)
         #expect(window.title == "Mudsnote 笔记")
         #expect(window.titleVisibility == .hidden)
         #expect(window.titlebarAppearsTransparent)
@@ -3629,7 +3640,7 @@ struct MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(committedInput.action), to: committedInput.target, from: committedInput))
         controller.addSelectedMetadataTag("created")
         let badges = controller.editorTextView.allSubviews.compactMap { $0 as? NSButton }
-        #expect(badges.filter { $0.title == "#Created  ×" }.count == 1)
+        #expect(badges.filter { $0.title == "#Created" }.count == 1)
         #expect(controller.editorTextView.string.contains("Body"))
     }
 
