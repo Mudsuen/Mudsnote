@@ -1242,6 +1242,14 @@ final class MudsnoteCompanionUITests: XCTestCase {
             NSPredicate(format: "label CONTAINS %@", "Original inbox note")
         ).firstMatch
         XCTAssertTrue(targetBody.waitForExistence(timeout: 5))
+        let backlink = app.buttons["note-backlink-Projects/UI Lifecycle.md"]
+        XCTAssertTrue(backlink.waitForExistence(timeout: 5))
+        let backlinkScreenshot = XCTAttachment(screenshot: app.screenshot())
+        backlinkScreenshot.name = "Incoming note reference"
+        backlinkScreenshot.lifetime = .keepAlways
+        add(backlinkScreenshot)
+        backlink.tap()
+        XCTAssertTrue(app.links["Inbox"].waitForExistence(timeout: 5))
     }
 
     func testRenderedNoteDetectsEmailAndPhoneActions() {

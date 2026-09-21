@@ -17,6 +17,10 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 
 ## Iterations
 
+### Main-window tag completion and iOS backlinks
+- The macOS library editor now offers live tag suggestions for `#`, including existing tags and inline creation; confirmation removes the token from prose and updates the tag bar, preserving Unicode text before the tag.
+- iOS readers now list notes that link to the current note and open them with the existing back navigation. References refresh with library changes, exclude code examples and self-links, and report a retry action if loading fails.
+
 ### 303. Place iOS edits at the tapped text and simplify directory navigation
 
 - Problem: Double-tapping the reader discarded the tapped text position; the drawer pushed the whole page aside and tags required one row each.

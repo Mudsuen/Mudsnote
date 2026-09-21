@@ -201,6 +201,10 @@ struct MarkdownPreviewView: View {
     @State private var editingCommand: MarkdownEditingCommand?
     @State private var linkDraft: MarkdownLinkDraft?
     @State private var tagDraft: MarkdownInlineTagDraft?
+    @State private var backlinks: [RecentMarkdownFile] = []
+    @State private var backlinksFailed = false
+    @State private var backlinksLoading = false
+    @State private var backlinkRetry = 0
     @State private var noteMentionDraft: MarkdownNoteMentionDraft?
     @State private var editorHeaderHeight: CGFloat = 0
     @State private var editorScrollOffset: CGFloat = 0
@@ -353,6 +357,7 @@ struct MarkdownPreviewView: View {
                                         })
                                         .accessibilityElement(children: .contain)
                                         .accessibilityIdentifier("rendered-markdown")
+                                    backlinkSection
                                 }
                                     .padding(.horizontal, MudsnoteSpacing.safeHorizontal)
                                     .padding(.top, MudsnoteSpacing.safeHorizontal)
@@ -401,6 +406,24 @@ struct MarkdownPreviewView: View {
                 || isAudioTransitioning
                 || pendingAudioRecording != nil
         )
+        .task(id: "\(currentSourceRelativePath)|\(appModel.libraryRevision)|\(isEditing)|\(backlinkRetry)") {
+            backlinks = []
+            backlinksFailed = false
+            guard !isEditing, case .document = source else { return }
+            backlinksLoading = true
+            do {
+                let result = try await appModel.fileStore.backlinks(to: currentSourceRelativePath)
+                try Task.checkCancellation()
+                backlinks = result
+                backlinksLoading = false
+            } catch is CancellationError {
+                return
+            } catch {
+                guard !Task.isCancelled else { return }
+                backlinksFailed = true
+                backlinksLoading = false
+            }
+        }
         .onAppear {
             beginLibraryAccess()
             editingChanged(isEditing)
@@ -847,6 +870,43 @@ struct MarkdownPreviewView: View {
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("note-tag-bar")
             }
+        }
+    }
+
+    @ViewBuilder
+    private var backlinkSection: some View {
+        if backlinksLoading {
+            ProgressView().frame(maxWidth: .infinity)
+        } else if backlinksFailed {
+            Button("Retry backlinks", systemImage: "arrow.clockwise") { backlinkRetry += 1 }
+                .accessibilityIdentifier("retry-note-backlinks")
+        } else if !backlinks.isEmpty {
+            VStack(alignment: .leading, spacing: 10) {
+                Divider()
+                Text("Backlinks")
+                    .font(.subheadline.weight(.semibold))
+                ForEach(backlinks) { note in
+                    Button {
+                        Task { await openLinkedNote(note) }
+                    } label: {
+                        HStack(spacing: 10) {
+                            Image(systemName: "arrow.turn.up.left")
+                            VStack(alignment: .leading, spacing: 2) {
+                                Text(note.title).lineLimit(2)
+                                Text(note.relativePath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                            }
+                            Spacer()
+                            Image(systemName: "chevron.right").font(.caption)
+                        }
+                        .padding(.vertical, 6)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityIdentifier("note-backlink-\(note.relativePath)")
+                }
+            }
+            .accessibilityElement(children: .contain)
+            .accessibilityIdentifier("note-backlinks")
         }
     }
 

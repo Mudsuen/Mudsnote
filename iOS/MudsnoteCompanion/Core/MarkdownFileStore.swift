@@ -612,6 +612,41 @@ actor MarkdownFileStore {
         )
     }
 
+    func backlinks(to targetPath: String) throws -> [RecentMarkdownFile] {
+        guard let root else { throw FolderAccessError.missingFolder }
+        var snapshot = try cachedLibrarySnapshot ?? loadLibrarySnapshot()
+        while snapshot.hasMoreFiles {
+            try Task.checkCancellation()
+            snapshot = try loadNextLibraryPage()
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        var matches: [RecentMarkdownFile] = []
+        for file in snapshot.allFiles where file.relativePath != targetPath {
+            try Task.checkCancellation()
+            guard let url = AuthorizedLibraryPath.resolve(file.relativePath, within: root) else { continue }
+            let values = try url.resourceValues(forKeys: [.contentModificationDateKey, .fileSizeKey, .fileResourceIdentifierKey])
+            let modifiedAt = values.contentModificationDate ?? file.modifiedAt
+            let byteCount = values.fileSize ?? 0
+            let identity = Self.fileIdentity(values.fileResourceIdentifier)
+            let markdown: String
+            if let cached = searchCache[file.relativePath], cached.modifiedAt == modifiedAt,
+               cached.byteCount == byteCount, cached.fileIdentity == identity {
+                markdown = cached.markdown
+            } else {
+                markdown = try String(contentsOf: url, encoding: .utf8)
+                if byteCount <= 256 * 1_024 {
+                    searchCache[file.relativePath] = SearchCacheEntry(modifiedAt: modifiedAt, byteCount: byteCount, fileIdentity: identity, markdown: markdown)
+                    trimSearchCacheIfNeeded()
+                }
+            }
+            if MarkdownNoteLink.destinations(in: markdown, from: file.relativePath).contains(targetPath) {
+                matches.append(file)
+            }
+        }
+        return matches.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
     func search(
         query: String,
         scope: MarkdownSearchScope = .all,

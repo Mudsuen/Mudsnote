@@ -1625,6 +1625,7 @@ final class LibraryWindowController: NSWindowController,
     private var linkEditorSheetController: LinkEditorSheetController?
     private let editorSuggestionController = SuggestionPopoverController()
     private var editorSlashSuggestion: (replacementRange: NSRange, commands: [SlashCommand])?
+    private var editorTagSuggestion: (replacementRange: NSRange, items: [String])?
     private var editorNoteSuggestion: (replacementRange: NSRange, items: [NoteLinkItem])?
     private var editorNoteSuggestionQuery: String?
     private var editorNoteSuggestions: [NoteLinkItem] = []
@@ -4252,8 +4253,8 @@ final class LibraryWindowController: NSWindowController,
         reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
     }
 
-    private func scheduleDeferredSourceTagLoad() {
-        guard !sourceTagsSectionCollapsed,
+    private func scheduleDeferredSourceTagLoad(forEditor: Bool = false) {
+        guard forEditor || !sourceTagsSectionCollapsed,
               !sourceTagsLoaded,
               !sourceTagsLoading else { return }
         sourceTagsLoading = true
@@ -4269,6 +4270,7 @@ final class LibraryWindowController: NSWindowController,
                       generation == self.sourceTagLoadGeneration else { return }
                 self.sourceTagsLoading = false
                 self.applySourceTagsForLibrary(tags)
+                if self.editorTagSuggestion != nil { self.updateEditorSlashSuggestions() }
             }
         }
     }
@@ -4630,6 +4632,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     var editorSlashSuggestionTitlesForLibrary: [String] {
+        if let editorTagSuggestion { return editorTagSuggestion.items.map { "#\($0)" } }
         if let editorNoteSuggestion {
             return editorNoteSuggestion.items.map(\.title)
         }
@@ -13573,19 +13576,16 @@ final class LibraryWindowController: NSWindowController,
         ) else { return false }
         let token = String(prefix[match]).trimmingCharacters(in: .whitespaces)
         let tag = String(token.dropFirst())
-        guard !tag.isEmpty, !tag.contains("/") else { return false }
-        let leadingWhitespace = String(prefix[match]).hasPrefix(" ") ? 1 : 0
-        let range = NSRange(
-            location: paragraph.location
-                + prefix.distance(from: prefix.startIndex, to: match.lowerBound)
-                + leadingWhitespace,
-            length: token.utf16.count
-        )
+        guard !tag.isEmpty else { return false }
+        guard let hash = prefix[match].firstIndex(of: "#") else { return false }
+        let tokenRange = NSRange(hash..<match.upperBound, in: prefix)
+        let range = NSRange(location: paragraph.location + tokenRange.location, length: tokenRange.length)
         editorTextView.textStorage?.replaceCharacters(in: range, with: trailingText)
         editorTextView.setSelectedRange(NSRange(
             location: range.location + trailingText.utf16.count,
             length: 0
         ))
+        dismissEditorSlashSuggestions()
         selectedTags = MarkdownEditorDocument.normalizedTags(selectedTags + [tag])
         editorTextView.setMetadataTags(selectedTags) { [weak self] removed in
             self?.removeSelectedMetadataTag(removed)
@@ -13686,6 +13686,15 @@ final class LibraryWindowController: NSWindowController,
                 editorSuggestionController.moveSelection(delta: -1)
                 return true
             case UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter):
+                if editorTagSuggestion != nil {
+                    if editorSuggestionController.acceptSelection() {
+                        textView.insertNewlineIgnoringFieldEditor(self)
+                        return true
+                    }
+                    if commitSelectedMetadataTagIfNeeded(insertingTrailingText: "\n") { return true }
+                    dismissEditorSlashSuggestions()
+                    return false
+                }
                 editorSuggestionController.acceptSelection()
                 return true
             case UInt16(kVK_Escape):
@@ -13740,6 +13749,50 @@ final class LibraryWindowController: NSWindowController,
         let prefixRange = NSRange(location: prefixStart, length: caret - prefixStart)
         let prefix = string.substring(with: prefixRange)
         editorSlashSuggestionInspectionLengthForLibrary = prefixRange.length
+
+        let tagPattern = startsAtParagraphBoundary ? #"(^|\s)#([^\s#]*)$"# : #"\s#([^\s#]*)$"#
+        if let match = prefix.range(of: tagPattern, options: .regularExpression),
+           let hash = prefix[match].firstIndex(of: "#") {
+            scheduleDeferredSourceTagLoad(forEditor: true)
+            let token = String(prefix[hash..<match.upperBound])
+            let query = String(token.dropFirst())
+            let range = NSRange(hash..<match.upperBound, in: prefix)
+            let replacementRange = NSRange(location: prefixStart + range.location, length: range.length)
+            var tags = sourceTagNames.filter { tag in
+                !selectedTags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+                    && (query.isEmpty || tag.localizedCaseInsensitiveContains(query))
+            }.sorted {
+                let lhsPrefix = $0.lowercased().hasPrefix(query.lowercased())
+                let rhsPrefix = $1.lowercased().hasPrefix(query.lowercased())
+                return lhsPrefix != rhsPrefix ? lhsPrefix : $0.localizedStandardCompare($1) == .orderedAscending
+            }
+            if !query.isEmpty,
+               !tags.contains(where: { $0.localizedCaseInsensitiveCompare(query) == .orderedSame }),
+               !selectedTags.contains(where: { $0.localizedCaseInsensitiveCompare(query) == .orderedSame }) {
+                tags.insert(query, at: 0)
+            }
+            tags = Array(tags.prefix(8))
+            editorTagSuggestion = (replacementRange, tags)
+            editorSlashSuggestion = nil
+            editorNoteSuggestion = nil
+            hostEditorSuggestionView(in: host)
+            editorSuggestionController.updateItems(tags.isEmpty
+                ? [SuggestionItem(title: "输入标签名称", subtitle: nil, symbolName: "number", isSelectable: false)]
+                : tags.map { tag in
+                    SuggestionItem(title: "#\(tag)", subtitle: sourceTagNames.contains(tag) ? "标签" : "新建标签", symbolName: "number")
+                })
+            let size = editorSuggestionController.preferredContentSize
+            let anchor = editorTextView.convert(caretRectInWindow(for: editorTextView, at: replacementRange.location), to: host)
+            let origin = NSPoint(
+                x: min(max(anchor.minX, 4), max(host.bounds.width - size.width - 4, 4)),
+                y: min(max(anchor.minY - size.height - 6, 4), max(host.bounds.height - size.height - 4, 4))
+            )
+            editorSuggestionController.view.frame = NSRect(origin: origin, size: size)
+            editorSuggestionController.view.isHidden = false
+            slashCommandInputSourceSession.end()
+            return
+        }
+        editorTagSuggestion = nil
 
         let mentionPattern = startsAtParagraphBoundary
             ? #"(^|\s)@([^@\n]*)$"#
@@ -13854,6 +13907,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func dismissEditorSlashSuggestions() {
+        editorTagSuggestion = nil
         editorSlashSuggestion = nil
         editorNoteSuggestion = nil
         editorSuggestionController.view.isHidden = true
@@ -13861,6 +13915,14 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func acceptEditorSlashSuggestion(at index: Int) {
+        if let suggestion = editorTagSuggestion, suggestion.items.indices.contains(index) {
+            let tag = suggestion.items[index]
+            editorTextView.textStorage?.replaceCharacters(in: suggestion.replacementRange, with: "")
+            editorTextView.setSelectedRange(NSRange(location: suggestion.replacementRange.location, length: 0))
+            dismissEditorSlashSuggestions()
+            addSelectedMetadataTag(tag)
+            return
+        }
         if let suggestion = editorNoteSuggestion,
            suggestion.items.indices.contains(index) {
             let item = suggestion.items[index]

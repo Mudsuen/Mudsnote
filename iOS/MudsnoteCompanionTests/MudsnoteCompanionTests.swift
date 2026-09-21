@@ -5659,6 +5659,38 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertNil(MarkdownLinkEditing.normalizedDestination("   "))
     }
 
+    func testBacklinksIgnoreExamplesAndResolveEncodedRelativePaths() {
+        let markdown = """
+        ---
+        example: [ignore](../Ignored.md)
+        ---
+        [Target](../目标%20笔记.md#heading) [Again](../目标%20笔记.md)
+        ![Image](../Image.md)
+        `[Code](../Code.md)`
+        ```md
+        [Example](../Example.md)
+        ```
+        [Outside](../../Outside.md) [Remote](https://example.com/a.md)
+        """
+        XCTAssertEqual(MarkdownNoteLink.destinations(in: markdown, from: "Folder/Source.md"), ["目标 笔记.md"])
+    }
+
+    func testBacklinksRefreshAfterReferenceChangesAndExcludeSelf() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        try "[Self](./Target.md)".write(to: root.appendingPathComponent("Target.md"), atomically: true, encoding: .utf8)
+        let referrer = root.appendingPathComponent("Source.md")
+        try "[Target](./Target.md) [Again](./Target.md)".write(to: referrer, atomically: true, encoding: .utf8)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let first = try await store.backlinks(to: "Target.md")
+        XCTAssertEqual(first.map(\.relativePath), ["Source.md"])
+        try "No reference".write(to: referrer, atomically: true, encoding: .utf8)
+        let second = try await store.backlinks(to: "Target.md")
+        XCTAssertTrue(second.isEmpty)
+    }
+
     func testMarkdownNoteLinksArePortableRelativeAndTraversalSafe() throws {
         XCTAssertEqual(
             MarkdownNoteLink.relativeDestination(

@@ -5,6 +5,48 @@ enum MarkdownNoteLink {
         pattern: #"(?<!!)\[[^\]\n]+\]\(([^)\n]+)\)"#
     )
 
+    /// Explicit note links only; examples in code and front matter are not backlinks.
+    static func destinations(in markdown: String, from sourcePath: String) -> Set<String> {
+        var result = Set<String>()
+        var fence: (Character, Int)?
+        var inFrontMatter = false
+        for (index, rawLine) in markdown.components(separatedBy: .newlines).enumerated() {
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            if index == 0 && trimmed == "---" { inFrontMatter = true; continue }
+            if inFrontMatter {
+                if trimmed == "---" || trimmed == "..." { inFrontMatter = false }
+                continue
+            }
+            if let marker = trimmed.first, marker == "`" || marker == "~" {
+                let count = trimmed.prefix(while: { $0 == marker }).count
+                if count >= 3 {
+                    if let active = fence {
+                        if marker == active.0 && count >= active.1 && trimmed.dropFirst(count).trimmingCharacters(in: .whitespaces).isEmpty { fence = nil }
+                    } else { fence = (marker, count) }
+                    continue
+                }
+            }
+            guard fence == nil, !rawLine.hasPrefix("    "), !rawLine.hasPrefix("\t") else { continue }
+            // Remove matched inline code spans while preserving the rest of the line.
+            let line = rawLine.replacingOccurrences(of: #"(`+)(?!`).*?(?<!`)\1(?!`)"#, with: "", options: .regularExpression)
+            let ns = line as NSString
+            for match in linkExpression.matches(in: line, range: NSRange(location: 0, length: ns.length)) {
+                var precedingSlashes = 0
+                var cursor = match.range.location
+                while cursor > 0 && ns.character(at: cursor - 1) == 92 { precedingSlashes += 1; cursor -= 1 }
+                guard precedingSlashes % 2 == 0 else { continue }
+                var destination = ns.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespaces)
+                if destination.hasPrefix("<"), let end = destination.firstIndex(of: ">") {
+                    destination = String(destination[destination.index(after: destination.startIndex)..<end])
+                } else if let title = destination.range(of: #"\s+["']"#, options: .regularExpression) {
+                    destination = String(destination[..<title.lowerBound])
+                }
+                if let path = resolvedRelativePath(for: destination, from: sourcePath) { result.insert(path) }
+            }
+        }
+        return result
+    }
+
     static func relativeDestination(
         from sourceRelativePath: String,
         to targetRelativePath: String

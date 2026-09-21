@@ -1307,6 +1307,21 @@ struct MarkdownRichEditorTests {
             for: String(mentionMarkdown[mentionMarkdown.index(after: openingParen)..<closingParen]),
             relativeTo: createdURL
         ) == seedURL)
+
+        // Main-window tags must use UTF-16 offsets even after emoji and Chinese text.
+        controller.editorTextView.textStorage?.setAttributedString(MarkdownRichTextCodec.render(markdown: "", theme: controller.theme))
+        controller.editorTextView.setSelectedRange(NSRange(location: 0, length: 0))
+        controller.editorTextView.insertText("中文😀 #项目", replacementRange: controller.editorTextView.selectedRange())
+        #expect(!suggestionView.isHidden)
+        let tagIndex = try #require(controller.editorSlashSuggestionTitlesForLibrary.firstIndex(of: "#项目"))
+        controller.acceptEditorSlashSuggestionForLibrary(at: tagIndex)
+        #expect(controller.editorTextView.string == "中文😀 ")
+        #expect(suggestionView.isHidden)
+        controller.editorTextView.insertText("#第二个", replacementRange: controller.editorTextView.selectedRange())
+        controller.editorTextView.insertText(" ", replacementRange: controller.editorTextView.selectedRange())
+        #expect(controller.editorTextView.string == "中文😀  ")
+        #expect(suggestionView.isHidden)
+
     }
 
     @MainActor

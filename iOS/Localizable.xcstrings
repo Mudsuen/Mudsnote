@@ -1,6 +1,12 @@
 {
   "sourceLanguage": "en",
   "strings": {
+    "Backlinks": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "引用此笔记" } } }
+    },
+    "Retry backlinks": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重新加载引用" } } }
+    },
     "Only PDF attachments can be marked up here.": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这里只能标注 PDF 附件。" } } }
     },
