@@ -17,6 +17,10 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 
 ## Iterations
 
+### Compact macOS sidebar navigation
+- Removed Recent, Favorites, and Home from the sidebar. The file tree/list header now sits directly below the toolbar, and list mode starts with all notes while preserving pinned ordering and the selected sort order.
+- Folder and tag scopes keep a compact return-to-all-notes action in the header.
+
 ### Main-window tag completion and iOS backlinks
 - The macOS library editor now offers live tag suggestions for `#`, including existing tags and inline creation; confirmation removes the token from prose and updates the tag bar, preserving Unicode text before the tag.
 - iOS readers now list notes that link to the current note and open them with the existing back navigation. References refresh with library changes, exclude code examples and self-links, and report a retry action if loading fails.

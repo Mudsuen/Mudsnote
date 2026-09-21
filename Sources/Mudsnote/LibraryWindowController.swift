@@ -17,7 +17,7 @@ private enum LibraryScope: Equatable, Sendable {
     var buttonTitle: String {
         switch self {
         case .all:
-            return LibraryCopy.home
+            return LibraryCopy.allNotes
         case .recent:
             return "最近编辑"
         case .favorites:
@@ -671,120 +671,6 @@ final class LibrarySourceScrollView: NSScrollView {
 @MainActor
 final class LibraryPassthroughTintView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}
-
-@MainActor
-final class LibraryListSmartScopeControl: NSControl {
-    let iconView = NSImageView()
-    let titleLabel = NSTextField(labelWithString: "")
-    let countLabel = NSTextField(labelWithString: "")
-    private var hoverTrackingArea: NSTrackingArea?
-    private var isPointerHovered = false
-    private var isScopeSelected = false
-
-    init(title: String, symbolName: String) {
-        super.init(frame: .zero)
-        wantsLayer = true
-        layer?.cornerRadius = LibraryNotesLayout.sourceRowCornerRadius
-        iconView.imageScaling = .scaleProportionallyDown
-        titleLabel.stringValue = title
-        titleLabel.lineBreakMode = .byTruncatingTail
-        countLabel.alignment = .right
-        countLabel.font = .systemFont(ofSize: LibraryNotesLayout.sourceCountFontSize)
-        countLabel.setContentHuggingPriority(.required, for: .horizontal)
-        iconView.setAccessibilityElement(false)
-        titleLabel.setAccessibilityElement(false)
-        countLabel.setAccessibilityElement(false)
-        addSubview(iconView)
-        addSubview(titleLabel)
-        addSubview(countLabel)
-        [iconView, titleLabel, countLabel].forEach { $0.translatesAutoresizingMaskIntoConstraints = false }
-        NSLayoutConstraint.activate([
-            heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceRowHeight),
-            iconView.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
-            iconView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            iconView.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceIconWidth),
-            iconView.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceIconHeight),
-            titleLabel.leadingAnchor.constraint(equalTo: iconView.trailingAnchor, constant: 3),
-            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: countLabel.leadingAnchor, constant: -6),
-            countLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -6),
-            countLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            countLabel.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.sourceCountWidth)
-        ])
-        setAccessibilityElement(true)
-        setAccessibilityRole(.button)
-        setAccessibilityLabel(title)
-    }
-
-    @available(*, unavailable)
-    required init?(coder: NSCoder) { fatalError() }
-
-    override func updateTrackingAreas() {
-        super.updateTrackingAreas()
-        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
-        let area = NSTrackingArea(
-            rect: .zero,
-            options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect],
-            owner: self,
-            userInfo: nil
-        )
-        addTrackingArea(area)
-        hoverTrackingArea = area
-        isPointerHovered = window.map {
-            $0.isKeyWindow && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil))
-        } ?? false
-        updateBackground()
-    }
-
-    override func mouseEntered(with event: NSEvent) {
-        isPointerHovered = true
-        updateBackground()
-    }
-
-    override func mouseExited(with event: NSEvent) {
-        isPointerHovered = false
-        updateBackground()
-    }
-
-    private func updateBackground() {
-        let color = isScopeSelected
-            ? LibrarySourceSelectionPalette.backgroundColor
-            : (isPointerHovered ? LibrarySourceOutlineRowView.hoverColor : .clear)
-        layer?.backgroundColor = color.cgColor
-    }
-
-    override func mouseDown(with event: NSEvent) {
-        sendAction(action, to: target)
-    }
-
-    override func accessibilityPerformPress() -> Bool {
-        sendAction(action, to: target)
-    }
-
-    func update(symbolName: String, selected: Bool, selectedColor: NSColor, count: Int?) {
-        let color = selected
-            ? selectedColor
-            : LibrarySourceSelectionPalette.unselectedForegroundColor
-        let configuration = NSImage.SymbolConfiguration(
-            pointSize: LibraryNotesLayout.sourceSymbolPointSize,
-            weight: LibraryNotesLayout.sourceSymbolWeight
-        ).applying(NSImage.SymbolConfiguration(paletteColors: [color]))
-        iconView.image = NSImage(systemSymbolName: symbolName, accessibilityDescription: titleLabel.stringValue)?
-            .withSymbolConfiguration(configuration)
-        titleLabel.font = .systemFont(
-            ofSize: LibraryNotesLayout.sourceButtonFontSize,
-            weight: .regular
-        )
-        titleLabel.textColor = color
-        countLabel.stringValue = count.map(String.init) ?? ""
-        countLabel.textColor = selected
-            ? LibrarySourceSelectionPalette.selectedCountColor
-            : NSColor.secondaryLabelColor
-        isScopeSelected = selected
-        updateBackground()
-        setAccessibilityValue(selected ? "已选中" : "未选中")
-    }
 }
 
 private enum LibraryNotesPalette {
@@ -1536,7 +1422,7 @@ final class LibraryWindowController: NSWindowController,
     private var sidebarHeaderView: NSView!
     private let sidebarTreeHeaderButton = NSButton(title: "文件", target: nil, action: nil)
     private let sidebarListHeaderContent = NSStackView()
-    private var listSmartScopeControls: [LibraryListSmartScopeControl] = []
+    private let sidebarAllNotesButton = NSButton()
     private var searchResultsGeneration = 0
     private var activeSearchSession: NoteSearchSession?
     private var sourceSnapshotValidationTask: Task<Void, Never>?
@@ -1567,7 +1453,7 @@ final class LibraryWindowController: NSWindowController,
     private var selectedScope: LibraryScope = .all
     private var sidebarPresentation: LibrarySidebarPresentation = .tree
     private var lastTreeScope: LibraryScope = .all
-    private var lastListScope: LibraryScope = .recent
+    private var lastListScope: LibraryScope = .all
     private var selectedTreeNoteURL: URL?
     private var documentTabs = [LibraryDocumentTab()]
     private var activeDocumentTabID: UUID?
@@ -1715,10 +1601,6 @@ final class LibraryWindowController: NSWindowController,
         self.sidebarPresentation = LibrarySidebarPresentation(
             rawValue: noteStore.librarySidebarPresentationRawValue
         ) ?? .tree
-        if self.sidebarPresentation == .list {
-            self.selectedScope = .recent
-            self.lastListScope = .recent
-        }
         self.collapsedFolderPaths = noteStore.libraryCollapsedFolderPaths
         self.expandedFolderPaths = noteStore.libraryExpandedFolderPaths
         self.sourceFoldersSectionCollapsed = noteStore.libraryFoldersSectionCollapsed
@@ -2454,17 +2336,14 @@ final class LibraryWindowController: NSWindowController,
         tint.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSidebarTint")
         tint.wantsLayer = true
         tint.layer?.backgroundColor = LibraryNotesPalette.sidebarMaterialTint.cgColor
-        let smartNavigation = buildListSmartNavigation()
         let modeContainer = NSView()
         modeContainer.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarModeContent")
 
         tint.translatesAutoresizingMaskIntoConstraints = false
-        smartNavigation.translatesAutoresizingMaskIntoConstraints = false
         modeContainer.translatesAutoresizingMaskIntoConstraints = false
         tree.translatesAutoresizingMaskIntoConstraints = false
         list.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(tint)
-        container.addSubview(smartNavigation)
         container.addSubview(sidebarHeaderView)
         sidebarHeaderView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(modeContainer)
@@ -2481,14 +2360,11 @@ final class LibraryWindowController: NSWindowController,
             tint.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
             tint.topAnchor.constraint(equalTo: surface.topAnchor),
             tint.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
-            smartNavigation.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            smartNavigation.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            smartNavigation.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
             modeContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             modeContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             sidebarHeaderView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             sidebarHeaderView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            sidebarHeaderView.topAnchor.constraint(equalTo: smartNavigation.bottomAnchor),
+            sidebarHeaderView.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 6),
             modeContainer.topAnchor.constraint(equalTo: sidebarHeaderView.bottomAnchor),
             modeContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             tree.leadingAnchor.constraint(equalTo: modeContainer.leadingAnchor),
@@ -2529,7 +2405,7 @@ final class LibraryWindowController: NSWindowController,
             refreshSourceSelection()
         }
         applySidebarPresentationChrome()
-        updateListSmartScopeButtons()
+        updateSidebarScopeButton()
     }
 
     private func buildSourceList() -> NSView {
@@ -2699,8 +2575,18 @@ final class LibraryWindowController: NSWindowController,
         [noteListTitleLabel, noteListCountLabel, searchScopeControl].forEach {
             sidebarListHeaderContent.addArrangedSubview($0)
         }
+        sidebarAllNotesButton.image = NSImage(systemSymbolName: "arrow.left", accessibilityDescription: "全部笔记")
+        sidebarAllNotesButton.isBordered = false
+        sidebarAllNotesButton.contentTintColor = .secondaryLabelColor
+        sidebarAllNotesButton.target = self
+        sidebarAllNotesButton.action = #selector(showAllNotesPressed)
+        sidebarAllNotesButton.identifier = NSUserInterfaceItemIdentifier("LibraryReturnToAllNotes")
+        sidebarAllNotesButton.toolTip = "返回全部笔记"
+        sidebarAllNotesButton.setAccessibilityLabel("返回全部笔记")
+        sidebarAllNotesButton.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        sidebarAllNotesButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
         let listHeader = NSStackView(views: [
-            sidebarTreeHeaderButton, sidebarListHeaderContent, listHeaderSpacer, sidebarPresentationButton
+            sidebarAllNotesButton, sidebarTreeHeaderButton, sidebarListHeaderContent, listHeaderSpacer, sidebarPresentationButton
         ])
         sidebarHeaderView = listHeader
         sidebarPresentationButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
@@ -2747,62 +2633,12 @@ final class LibraryWindowController: NSWindowController,
         return sidebar
     }
 
-    private func buildListSmartNavigation() -> NSView {
-        let scopes: [(LibraryScope, Int)] = [(.recent, 0), (.favorites, 1), (.all, 2)]
-        let controls = scopes.map { scope, tag in
-            let control = LibraryListSmartScopeControl(
-                title: sourceTitle(for: scope),
-                symbolName: sourceSymbolName(for: scope)
-            )
-            control.identifier = NSUserInterfaceItemIdentifier("LibraryListSmartScope-\(tag)")
-            control.tag = tag
-            control.target = self
-            control.action = #selector(listSmartScopePressed(_:))
-            return control
-        }
-        listSmartScopeControls = controls
-        let stack = NSStackView(views: controls)
-        stack.identifier = NSUserInterfaceItemIdentifier("LibraryListSmartNavigation")
-        stack.orientation = .vertical
-        stack.alignment = .width
-        stack.spacing = 0
-        stack.edgeInsets = NSEdgeInsets(top: 6, left: 8, bottom: 8, right: 8)
-        let horizontalInsets = stack.edgeInsets.left + stack.edgeInsets.right
-        controls.forEach {
-            $0.widthAnchor.constraint(equalTo: stack.widthAnchor, constant: -horizontalInsets).isActive = true
-        }
-        updateListSmartScopeButtons()
-        return stack
+    @objc private func showAllNotesPressed() {
+        _ = activateSourceScope(.all)
     }
 
-    @objc private func listSmartScopePressed(_ sender: LibraryListSmartScopeControl) {
-        let scope: LibraryScope
-        switch sender.tag {
-        case 0: scope = .recent
-        case 1: scope = .favorites
-        default: scope = .all
-        }
-        guard scope != selectedScope else { return }
-        _ = activateSourceScope(scope)
-    }
-
-    private func updateListSmartScopeButtons() {
-        for control in listSmartScopeControls {
-            let scope: LibraryScope
-            switch control.tag {
-            case 0: scope = .recent
-            case 1: scope = .favorites
-            default: scope = .all
-            }
-            let selected = selectedScope == scope
-            let item = sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: scope)]
-            control.update(
-                symbolName: sourceSymbolName(for: scope),
-                selected: selected,
-                selectedColor: selectedThemeColor.foregroundColor,
-                count: item?.count
-            )
-        }
+    private func updateSidebarScopeButton() {
+        sidebarAllNotesButton.isHidden = selectedScope == .all
     }
 
     private func configureGalleryCollectionView() {
@@ -4575,7 +4411,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func refreshVisibleSourceOutlinePresentation() {
-        updateListSmartScopeButtons()
+        updateSidebarScopeButton()
         let visibleRows = sourceOutlineView.rows(in: sourceOutlineView.visibleRect)
         guard visibleRows.location != NSNotFound else { return }
         for row in visibleRows.location..<(visibleRows.location + visibleRows.length) {
@@ -5041,6 +4877,7 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func updateNoteListHeader(query: String) {
+        updateSidebarScopeButton()
         // Search results must be visible even when the persisted presentation
         // is the file tree. Clearing the query restores that preference.
         if let tree = sidebarTreeView, tree.isHidden == isShowingSidebarTree {
@@ -5389,7 +5226,7 @@ final class LibraryWindowController: NSWindowController,
             let pinnedPaths = Set(noteStore.libraryPinnedNotePaths)
             sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: .favorites)]?.count =
                 sourceCountSnapshot.lazy.filter { pinnedPaths.contains($0.url.standardizedFileURL.path) }.count
-            updateListSmartScopeButtons()
+            updateSidebarScopeButton()
         }
         return shouldPin
     }
