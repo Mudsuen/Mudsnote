@@ -402,6 +402,7 @@ private final class LibrarySourceOutlineItem: NSObject {
 @MainActor
 final class LibrarySourceOutlineView: NSOutlineView {
     var contextMenuProvider: ((Int) -> NSMenu?)?
+    var onNoteKeyCommand: ((LibraryNoteKeyCommand) -> Bool)?
     var onPrimaryMouseSelectionPreviewChanged: (() -> Void)?
     var onPrimaryMouseSelectionCommitted: (() -> Void)?
     private(set) weak var pointerHoveredRow: LibrarySourceOutlineRowView?
@@ -492,6 +493,19 @@ final class LibrarySourceOutlineView: NSOutlineView {
         if shouldCommit {
             onPrimaryMouseSelectionCommitted?()
         }
+    }
+
+    override func keyDown(with event: NSEvent) {
+        if event.modifierFlags.intersection(.deviceIndependentFlagsMask).isEmpty,
+           (item(atRow: selectedRow) as? LibrarySourceOutlineItem)?.note != nil {
+            let command: LibraryNoteKeyCommand? = switch event.keyCode {
+            case 36, 76: .open
+            case 51, 117: .delete
+            default: nil
+            }
+            if let command, onNoteKeyCommand?(command) == true { return }
+        }
+        super.keyDown(with: event)
     }
 
     override func menu(for event: NSEvent) -> NSMenu? {
@@ -1392,7 +1406,9 @@ final class LibraryWindowController: NSWindowController,
     private(set) var noteListSortOrder: LibraryNoteSortOrder = .dateEdited
     private(set) var groupsNoteListByDate = true
     private(set) var noteListViewMode: LibraryNoteViewMode = .list
-    private var sourceCountSnapshot: [NoteSearchResult] = []
+    private var sourceCountSnapshot: [NoteSearchResult] = [] {
+        didSet { noteRelationsCache.removeAll() }
+    }
     private var trashedNotesSnapshot: [NoteSearchResult] = []
     private var externallyOpenedDocumentsByPath: [String: NoteSearchResult] = [:]
     private var selectedURL: URL?
@@ -1430,6 +1446,7 @@ final class LibraryWindowController: NSWindowController,
     private var editorSearchHighlightRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshTask: Task<Void, Never>?
     private var noteLinksRefreshGeneration = 0
+    private var noteRelationsCache: [URL: (body: String, relations: KnowledgeRelations)] = [:]
     private var knowledgeSynthesisTask: Task<Void, Never>?
     private var knowledgeSynthesisGeneration = 0
     private var knowledgeBackStack: [URL] = []
@@ -2465,6 +2482,9 @@ final class LibraryWindowController: NSWindowController,
         sourceOutlineView.registerForDraggedTypes([.fileURL])
         sourceOutlineView.setDraggingSourceOperationMask(.move, forLocal: true)
         sourceOutlineView.setDraggingSourceOperationMask(.copy, forLocal: false)
+        sourceOutlineView.onNoteKeyCommand = { [weak self] command in
+            self?.handleNoteListKeyCommand(command) ?? false
+        }
         sourceOutlineView.contextMenuProvider = { [weak self] row in
             self?.sourceContextMenuForLibrary(row: row)
         }
@@ -4419,7 +4439,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func refreshSourceSelection() {
-        guard let item = sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: selectedScope)] else {
+        let selectedNoteItem = isShowingSidebarTree ? selectedTreeNoteURL.flatMap {
+            sourceOutlineItemsByIdentifier["note:\($0.standardizedFileURL.path)"]
+        } : nil
+        guard let item = selectedNoteItem
+            ?? sourceOutlineItemsByScopeIdentifier[sourceOutlineIdentifier(for: selectedScope)] else {
             return
         }
         let row = sourceOutlineView.row(forItem: item)
@@ -7523,6 +7547,11 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func load(note: NoteSearchResult) {
+        if selectedScope == .trash, !isTrashURL(note.url) {
+            selectedScope = .folder(note.url.deletingLastPathComponent())
+            lastTreeScope = selectedScope
+            lastListScope = selectedScope
+        }
         if prepareDocumentTab(for: note) { return }
         recordNoteNavigation(to: note.url)
         isLoadingInitialNote = false
@@ -7733,13 +7762,17 @@ final class LibraryWindowController: NSWindowController,
 
     private func refreshNoteLinks(for noteURL: URL, body: String) {
         cancelNoteLinksRefresh()
+        let key = noteURL.standardizedFileURL
+        if let cached = noteRelationsCache[key], cached.body == body {
+            noteLinksView.update(cached.relations)
+            updateKnowledgeNavigationControls()
+        } else {
+            noteLinksView.update(.empty)
+        }
         let generation = noteLinksRefreshGeneration
         let noteStore = noteStore
         let roots = noteStore.preferredDirectories + [noteURL.deletingLastPathComponent()]
-        let task = Task.detached(priority: .utility) { [weak self] in
-            // Rapid keyboard navigation only needs relations for the final note.
-            do { try await Task.sleep(for: .milliseconds(120)) }
-            catch { return }
+        let task = Task.detached(priority: .userInitiated) { [weak self] in
             guard !Task.isCancelled else { return }
             let relations = noteStore.knowledgeRelations(
                 for: noteURL,
@@ -7756,6 +7789,8 @@ final class LibraryWindowController: NSWindowController,
                     return
                 }
                 self.noteLinksRefreshTask = nil
+                if self.noteRelationsCache.count >= 16 { self.noteRelationsCache.removeAll() }
+                self.noteRelationsCache[key] = (body, relations)
                 self.noteLinksView.update(relations)
                 self.updateKnowledgeNavigationControls()
             }
@@ -9557,6 +9592,12 @@ final class LibraryWindowController: NSWindowController,
     }
 
     func selectedMarkdownFileURLsForLibrary() -> [URL] {
+        if isShowingSidebarTree,
+           let item = sourceOutlineView.item(atRow: sourceOutlineView.selectedRow) as? LibrarySourceOutlineItem,
+           let note = item.note,
+           note.url.standardizedFileURL == selectedURL?.standardizedFileURL {
+            return [note.url.standardizedFileURL]
+        }
         var urls: [URL] = []
         var seenPaths = Set<String>()
 
@@ -10869,14 +10910,14 @@ final class LibraryWindowController: NSWindowController,
             menu.addItem(listItem)
             menu.addItem(.separator())
 
-            let revealItem = NSMenuItem(
-                title: "在 Finder 中显示",
-                action: #selector(revealTreeNoteMenuItemPressed(_:)),
-                keyEquivalent: ""
-            )
-            revealItem.target = self
-            revealItem.representedObject = note.url
-            menu.addItem(revealItem)
+            if sourceOutlineView.selectedRow != row {
+                sourceOutlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+            }
+            let actions = makeNoteContextMenu()
+            for action in actions.items {
+                actions.removeItem(action)
+                menu.addItem(action)
+            }
             return menu
         }
         if case .group(title: _, section: .folders) = item.kind {
@@ -10962,7 +11003,8 @@ final class LibraryWindowController: NSWindowController,
     @objc
     private func showTreeNoteInListMenuItemPressed(_ sender: NSMenuItem) {
         guard let url = sender.representedObject as? URL else { return }
-        lastListScope = .folder(url.deletingLastPathComponent())
+        selectedScope = .folder(url.deletingLastPathComponent())
+        lastListScope = selectedScope
         setSidebarPresentation(.list, animated: true)
         reloadNotesForNavigation(selecting: url, loadFirstIfNeeded: false)
     }
@@ -11197,10 +11239,6 @@ final class LibraryWindowController: NSWindowController,
             revealItem.isEnabled = canUseSelectedNote
             menu.addItem(revealItem)
 
-            let copyPathItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 路径", multiple: "复制 %d 个 Markdown 路径", count: selectionCount), action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
-            copyPathItem.target = self
-            copyPathItem.isEnabled = canUseSelectedNote
-            menu.addItem(copyPathItem)
 
             return menu
         }
@@ -11219,20 +11257,6 @@ final class LibraryWindowController: NSWindowController,
         revealItem.isEnabled = canUseSelectedNote
         menu.addItem(revealItem)
 
-        let copyPathItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 路径", multiple: "复制 %d 个 Markdown 路径", count: selectionCount), action: #selector(copySelectedMarkdownPathPressed), keyEquivalent: "")
-        copyPathItem.target = self
-        copyPathItem.isEnabled = canUseSelectedNote
-        menu.addItem(copyPathItem)
-
-        let copyContentItem = NSMenuItem(title: noteActionTitle(single: "复制 Markdown 内容", multiple: "复制 %d 条 Markdown 内容", count: selectionCount), action: #selector(copySelectedMarkdownContentPressed), keyEquivalent: "")
-        copyContentItem.target = self
-        copyContentItem.isEnabled = canExportSelectedNote
-        menu.addItem(copyContentItem)
-
-        let exportItem = NSMenuItem(title: noteActionTitle(single: "导出 Markdown...", multiple: "导出 %d 个 Markdown 文件...", count: selectionCount), action: #selector(exportSelectedMarkdownPressed), keyEquivalent: "")
-        exportItem.target = self
-        exportItem.isEnabled = canExportSelectedNote
-        menu.addItem(exportItem)
         menu.addItem(.separator())
 
         let deleteItem = NSMenuItem(title: noteActionTitle(single: "删除", multiple: "删除 %d 条笔记", count: selectionCount), action: #selector(deleteSelectedNotePressed), keyEquivalent: "")

@@ -17,6 +17,12 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 
 ## Iterations
 
+### Complete macOS file-tree actions and responsive relations
+- Problem: Tree notes lacked deletion and other lifecycle actions, shared commands could target a hidden list selection, and knowledge relations waited before recomputing on each visit.
+- Fix: Share the compact pin/move/reveal/delete menu, route tree commands to its selected note, support Return/Delete, fix reveal-in-list scope, and remove Markdown copy/export entries from contextual menus. Reuse recent relation results while refreshing asynchronously without a fixed delay.
+- Lesson: Navigation surfaces must share action behavior as well as appearance, and cached secondary content should refresh without delaying the current document.
+
+
 ### Consistent macOS sidebar modes
 - Problem: The new-note and sidebar icons had different visual sizes, and tree/list switching replaced the entire header abruptly.
 - Fix: Fit both toolbar glyphs within the same bounds, share the scope/count header between modes, and reveal switched content with a short fade that respects Reduce Motion.
