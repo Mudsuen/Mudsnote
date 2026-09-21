@@ -17,6 +17,11 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 
 ## Iterations
 
+### Reliable macOS file-tree navigation
+- Problem: Opening an uncached note from the file tree could leave the editor loading because the hidden list still selected another note; the header arrow and row motion were confusing.
+- Fix: Validate asynchronous loads against the current document URL, label the all-notes action explicitly, and update folder disclosure without animated row movement.
+- Lesson: Document identity must be shared across navigation surfaces, while each surface may retain its own selection.
+
 ### Compact macOS sidebar navigation
 - Removed Recent, Favorites, and Home from the sidebar. The file tree/list header now sits directly below the toolbar, and list mode starts with all notes while preserving pinned ordering and the selected sort order.
 - Folder and tag scopes keep a compact return-to-all-notes action in the header.

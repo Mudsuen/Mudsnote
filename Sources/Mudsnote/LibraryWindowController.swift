@@ -409,6 +409,22 @@ final class LibrarySourceOutlineView: NSOutlineView {
     private(set) var primaryMouseVisualSelectionRow: Int?
     private var selectionBeforePrimaryMouseDown = IndexSet()
 
+    override func expandItem(_ item: Any?, expandChildren: Bool) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            super.expandItem(item, expandChildren: expandChildren)
+        }
+    }
+
+    override func collapseItem(_ item: Any?, collapseChildren: Bool) {
+        NSAnimationContext.runAnimationGroup { context in
+            context.duration = 0
+            context.allowsImplicitAnimation = false
+            super.collapseItem(item, collapseChildren: collapseChildren)
+        }
+    }
+
     func setPointerHoveredRow(_ rowView: LibrarySourceOutlineRowView?) {
         guard pointerHoveredRow !== rowView else {
             rowView?.setPointerHovered(true)
@@ -1803,14 +1819,13 @@ final class LibraryWindowController: NSWindowController,
     }
 
     private func selectedNoteStillMatchesInitialLoad(_ note: NoteSearchResult) -> Bool {
-        if let selectedNote = self.note(at: tableView.selectedRow),
-           selectedNote.url.standardizedFileURL.path != note.url.standardizedFileURL.path {
-            return false
+        // The editor URL is shared by tree, list, tabs, and external-file navigation.
+        // A hidden list can still select the previous note after a tree click.
+        if let selectedURL {
+            return selectedURL.standardizedFileURL == note.url.standardizedFileURL
         }
-
-        if let selectedURL,
-           selectedURL.standardizedFileURL.path != note.url.standardizedFileURL.path {
-            return false
+        if let selectedNote = self.note(at: tableView.selectedRow) {
+            return selectedNote.url.standardizedFileURL == note.url.standardizedFileURL
         }
 
         return true
@@ -2575,15 +2590,16 @@ final class LibraryWindowController: NSWindowController,
         [noteListTitleLabel, noteListCountLabel, searchScopeControl].forEach {
             sidebarListHeaderContent.addArrangedSubview($0)
         }
-        sidebarAllNotesButton.image = NSImage(systemSymbolName: "arrow.left", accessibilityDescription: "全部笔记")
+        sidebarAllNotesButton.title = "全部笔记"
+        sidebarAllNotesButton.font = .systemFont(ofSize: 12, weight: .medium)
         sidebarAllNotesButton.isBordered = false
         sidebarAllNotesButton.contentTintColor = .secondaryLabelColor
         sidebarAllNotesButton.target = self
         sidebarAllNotesButton.action = #selector(showAllNotesPressed)
         sidebarAllNotesButton.identifier = NSUserInterfaceItemIdentifier("LibraryReturnToAllNotes")
-        sidebarAllNotesButton.toolTip = "返回全部笔记"
-        sidebarAllNotesButton.setAccessibilityLabel("返回全部笔记")
-        sidebarAllNotesButton.widthAnchor.constraint(equalToConstant: 24).isActive = true
+        sidebarAllNotesButton.toolTip = "显示全部笔记"
+        sidebarAllNotesButton.setAccessibilityLabel("显示全部笔记")
+        sidebarAllNotesButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
         sidebarAllNotesButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
         let listHeader = NSStackView(views: [
             sidebarAllNotesButton, sidebarTreeHeaderButton, sidebarListHeaderContent, listHeaderSpacer, sidebarPresentationButton

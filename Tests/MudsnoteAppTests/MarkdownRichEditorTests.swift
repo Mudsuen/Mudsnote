@@ -9578,6 +9578,74 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func fileTreeLoadsUncachedNoteDespiteHiddenListSelection() async throws {
+        let suiteName = "mudsnote.library-async-load-tests.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        defaults.removePersistentDomain(forName: suiteName)
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-library-async-load-tests-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+
+        let store = NoteStore(
+            defaults: defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
+        )
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let now = Date()
+        var noteURLs: [URL] = []
+        for index in 0..<8 {
+            let url = try store.saveNewNote(title: "Async Note \(index)", body: "Async body \(index)")
+            try FileManager.default.setAttributes(
+                [.modificationDate: now.addingTimeInterval(Double(index) * -60)],
+                ofItemAtPath: url.path
+            )
+            noteURLs.append(url)
+        }
+        let delayedURL = noteURLs[7].standardizedFileURL
+        let targetURL = noteURLs[4].standardizedFileURL
+
+        let controller = LibraryWindowController(
+            noteStore: store,
+            noteLoader: { url in
+                if url.standardizedFileURL == delayedURL {
+                    Thread.sleep(forTimeInterval: 0.45)
+                }
+                return try store.loadNote(at: url)
+            },
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+        controller.loadSourceFoldersForLibrary()
+        controller.showWindowAndFocus()
+        #expect(controller.setSourceFolderExpandedForLibrary(store.notesDirectory, expanded: true))
+        let outline = controller.sourceOutlineView
+        let previousListRow = controller.tableView.selectedRow
+        func treeRow(titled title: String) throws -> Int {
+            try #require((0..<outline.numberOfRows).first { row in
+                (outline.view(atColumn: 0, row: row, makeIfNecessary: true)
+                    as? NSTableCellView)?.textField?.stringValue == title
+            })
+        }
+        outline.selectRowIndexes(IndexSet(integer: try treeRow(titled: "Async Note 7")), byExtendingSelection: false)
+        #expect(!controller.editorTextView.isEditable)
+        outline.selectRowIndexes(IndexSet(integer: try treeRow(titled: "Async Note 4")), byExtendingSelection: false)
+        #expect(controller.tableView.selectedRow == previousListRow)
+        await controller.waitForActiveNoteLoadForLibrary()
+        try await Task.sleep(nanoseconds: 600_000_000)
+        #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL)
+        #expect(controller.editorTextView.string == "Async Note 4\n\nAsync body 4")
+        #expect(controller.editorTextView.isEditable)
+    }
+
+    @MainActor
+    @Test
     func defaultLaunchOpensLibraryUnlessAnotherSurfaceIsRequested() {
         #expect(AppController.shouldOpenLibraryOnLaunch(arguments: []))
         #expect(AppController.shouldOpenLibraryOnLaunch(arguments: ["--library"]))
