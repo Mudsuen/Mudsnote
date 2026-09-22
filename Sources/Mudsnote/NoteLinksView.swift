@@ -90,6 +90,7 @@ final class NoteLinksView: NSView {
             addArrangedSubview(openButton)
             addArrangedSubview(reasonLabel)
             addArrangedSubview(acceptButton)
+            acceptButton.trailingAnchor.constraint(equalTo: trailingAnchor).isActive = true
             setContentHuggingPriority(.defaultHigh, for: .horizontal)
             setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
@@ -394,8 +395,10 @@ final class NoteLinksView: NSView {
 
         let row = NSStackView(views: [label, content])
         row.orientation = .horizontal
+        row.distribution = .fill
         row.alignment = .top
         row.spacing = 8
+        content.trailingAnchor.constraint(equalTo: row.trailingAnchor).isActive = true
         row.setAccessibilityLabel(title)
         row.setAccessibilityHelp(accessibilityPrefix)
         return row
