@@ -25,6 +25,7 @@ final class NoteLinksView: NSView {
                 .font: font!, .foregroundColor: NSColor.labelColor
             ])
             lineBreakMode = .byTruncatingTail
+            alignment = .left
             contentTintColor = .labelColor
             self.target = target
             self.action = action
@@ -66,19 +67,24 @@ final class NoteLinksView: NSView {
             acceptButton.controlSize = .small
             acceptButton.font = .systemFont(ofSize: 11, weight: .semibold)
             acceptButton.setContentCompressionResistancePriority(.required, for: .horizontal)
+            acceptButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 32).isActive = true
+            acceptButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
             acceptButton.setAccessibilityLabel("接受建议，引用 \(item.title)")
             acceptButton.setAccessibilityHelp("在当前笔记末尾插入明确的 Markdown 链接")
             let reasonLabel = NSTextField(labelWithString: item.reason ?? "内容相关")
             reasonLabel.font = .systemFont(ofSize: 11)
             reasonLabel.textColor = .secondaryLabelColor
             reasonLabel.lineBreakMode = .byTruncatingTail
-            reasonLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 140).isActive = true
             reasonLabel.toolTip = item.reason
             reasonLabel.setContentHuggingPriority(.defaultLow, for: .horizontal)
             reasonLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+            // Spend spare row width on the reason and keep the action at the
+            // trailing edge; preserve the note title first when space is tight.
+            openButton.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
 
             super.init(frame: .zero)
             orientation = .horizontal
+            distribution = .fill
             alignment = .centerY
             spacing = 8
             addArrangedSubview(openButton)

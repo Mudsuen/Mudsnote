@@ -17,6 +17,11 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 
 ## Iterations
 
+### Steady macOS relation actions and easier tab closing
+- Problem: Suggestion actions shifted with title length, reasons truncated despite spare row space, and tab close controls had small hit areas and ambiguous accessibility names.
+- Fix: Let reasons use remaining row width while preserving note titles, align citation actions at the trailing edge with taller hit areas, and enlarge tab close targets with note-specific accessibility labels.
+- Lesson: Stable action placement and clear targets improve compact controls without adding visual weight.
+
 ### Quiet tags and directional references on macOS
 - Problem: Tag pills competed with the document, relation text lacked contrast, and hierarchy grouping hid the direction of references in an always-fixed panel.
 - Fix: Use plain tag controls with explicit removal menus, brighter relation titles, separate outgoing/incoming references and suggestions, prevent repeated acceptance, and let relations scroll after the document unless manually pinned.

@@ -37,6 +37,7 @@ final class LibraryDocumentTabView: NSView {
         )
         closeButton.contentTintColor = selected ? .secondaryLabelColor : .tertiaryLabelColor
         closeButton.toolTip = "关闭 \(tab.title)"
+        closeButton.setAccessibilityLabel("关闭标签页 \(tab.title)")
 
         addSubview(titleButton)
         addSubview(closeButton)
@@ -52,8 +53,8 @@ final class LibraryDocumentTabView: NSView {
             titleButton.trailingAnchor.constraint(equalTo: closeButton.leadingAnchor, constant: -3),
             closeButton.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -4),
             closeButton.centerYAnchor.constraint(equalTo: centerYAnchor),
-            closeButton.widthAnchor.constraint(equalToConstant: 18),
-            closeButton.heightAnchor.constraint(equalToConstant: 20)
+            closeButton.widthAnchor.constraint(equalToConstant: 24),
+            closeButton.heightAnchor.constraint(equalToConstant: 24)
         ])
     }
 
@@ -62,7 +63,7 @@ final class LibraryDocumentTabView: NSView {
         let titleWidth = ceil((displayedTitle as NSString).size(withAttributes: [
             .font: NSFont.systemFont(ofSize: 12, weight: .medium)
         ]).width)
-        return min(maximumWidth, max(minimumWidth, titleWidth + 44))
+        return min(maximumWidth, max(minimumWidth, titleWidth + 50))
     }
 
     @available(*, unavailable)
