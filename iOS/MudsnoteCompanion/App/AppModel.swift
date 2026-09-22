@@ -1613,7 +1613,8 @@ final class AppModel: ObservableObject {
         _ document: MarkdownDocument,
         markdown: String,
         expectedMarkdown: String,
-        announce: Bool = true
+        announce: Bool = true,
+        onConflict: (() -> Void)? = nil
     ) async -> MarkdownDocument? {
         do {
             let updated: MarkdownDocument
@@ -1655,6 +1656,25 @@ final class AppModel: ObservableObject {
             await refreshActiveSearchIfNeeded()
             return updated
         } catch {
+            if error as? MarkdownDocumentError == .changedExternally {
+                onConflict?()
+            }
+            statusToast = .error(error.localizedDescription)
+            return nil
+        }
+    }
+
+    func saveDocumentCopy(relativePath: String, markdown: String) async -> MarkdownDocument? {
+        do {
+            let copy = try await fileStore.saveMarkdownDocumentCopy(
+                relativePath: relativePath,
+                markdown: markdown
+            )
+            await refreshInbox()
+            await refreshActiveSearchIfNeeded()
+            statusToast = .saved(String(localized: "Copy Saved"))
+            return copy
+        } catch {
             statusToast = .error(error.localizedDescription)
             return nil
         }
@@ -1665,7 +1685,8 @@ final class AppModel: ObservableObject {
         body: String,
         expectedBody: String,
         tags: [String]? = nil,
-        announce: Bool = true
+        announce: Bool = true,
+        onConflict: (() -> Void)? = nil
     ) async -> MemoBlock? {
         do {
             if let tags {
@@ -1691,6 +1712,9 @@ final class AppModel: ObservableObject {
             await refreshActiveSearchIfNeeded()
             return updated
         } catch {
+            if error as? InboxMutationError == .memoChanged {
+                onConflict?()
+            }
             statusToast = .error(error.localizedDescription)
             return nil
         }

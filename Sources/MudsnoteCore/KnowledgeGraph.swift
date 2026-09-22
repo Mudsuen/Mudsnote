@@ -672,51 +672,12 @@ extension NoteStore {
         in markdown: String,
         cancellationCheck: @Sendable () -> Bool = { false }
     ) -> [KnowledgeLinkTarget] {
-        guard !cancellationCheck() else { return [] }
-        var targets: [KnowledgeLinkTarget] = []
-        if let expression = try? NSRegularExpression(
-            pattern: #"(?<!!)\[[^\]]*\]\(([^)]+)\)"#
-        ) {
-            let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
-            targets += expression.matches(in: markdown, range: range).compactMap { match in
-                guard match.numberOfRanges > 1,
-                      let targetRange = Range(match.range(at: 1), in: markdown) else {
-                    return nil
-                }
-                var value = String(markdown[targetRange])
-                    .trimmingCharacters(in: .whitespacesAndNewlines)
-                if value.hasPrefix("<"), let closing = value.firstIndex(of: ">") {
-                    value = String(value[value.index(after: value.startIndex)..<closing])
-                } else if let titleRange = value.range(
-                    of: #"\s+["'][^"']*["']\s*$"#,
-                    options: .regularExpression
-                ) {
-                    value.removeSubrange(titleRange)
-                }
-                return KnowledgeLinkTarget(
-                    value: value.trimmingCharacters(in: .whitespacesAndNewlines),
-                    isWikiLink: false
-                )
-            }
+        MarkdownNoteReferenceParser.references(
+            in: markdown,
+            cancellationCheck: cancellationCheck
+        ).map {
+            KnowledgeLinkTarget(value: $0.destination, isWikiLink: $0.kind == .wiki)
         }
-
-        guard !cancellationCheck() else { return [] }
-        if let expression = try? NSRegularExpression(pattern: #"(?<!!)\[\[([^\]\n]+)\]\]"#) {
-            let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
-            targets += expression.matches(in: markdown, range: range).compactMap { match in
-                guard match.numberOfRanges > 1,
-                      let targetRange = Range(match.range(at: 1), in: markdown) else {
-                    return nil
-                }
-                let value = String(markdown[targetRange])
-                    .split(separator: "|", maxSplits: 1, omittingEmptySubsequences: false)
-                    .first
-                    .map(String.init)?
-                    .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
-                return value.isEmpty ? nil : KnowledgeLinkTarget(value: value, isWikiLink: true)
-            }
-        }
-        return cancellationCheck() ? [] : targets
     }
 
     private func suggestedKnowledgeRelations(

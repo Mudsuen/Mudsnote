@@ -236,6 +236,7 @@ struct MarkdownPreviewView: View {
     @State private var isSaveProgressVisible = false
     @State private var saveState: SaveState = .idle
     @State private var isSaveFailurePresented = false
+    @State private var hasSaveConflict = false
     @State private var editorFocused = false
     @State private var readerInsertionOffset: Int?
     @State private var readerTextWidths: [NoteFindLocation: CGFloat] = [:]
@@ -493,9 +494,9 @@ struct MarkdownPreviewView: View {
             matching: .any(of: [.images, .videos])
         )
         .task(id: AutosaveID(markdown: draftMarkdown, isEditing: isEditing)) {
-            guard isEditing, draftMarkdown != originalMarkdown else { return }
+            guard isEditing, !hasSaveConflict, draftMarkdown != originalMarkdown else { return }
             try? await Task.sleep(for: .milliseconds(700))
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !hasSaveConflict else { return }
             await persistDraft(finishEditing: false, announce: false)
         }
         .task(id: FindAttachmentLoadID(
@@ -507,14 +508,23 @@ struct MarkdownPreviewView: View {
             await loadFindAttachmentDocumentsIfNeeded()
         }
         .alert("Couldn’t Save Note", isPresented: $isSaveFailurePresented) {
+            if hasSaveConflict {
+                Button("Save a Copy") {
+                    Task { await saveConflictedDraftAsCopy() }
+                }
+            }
             Button("Keep Editing", role: .cancel) {
-                Task { await keepDraftAndRebase() }
+                editorFocused = true
             }
             Button("Reopen Saved Version", role: .destructive) {
                 Task { await reloadSavedVersion() }
             }
         } message: {
-            Text("The note may have changed elsewhere. Reopen the saved version or keep your current draft and try again.")
+            if hasSaveConflict {
+                Text("This note changed elsewhere. Save a copy to keep both versions.")
+            } else {
+                Text("Your edits are still here. Try saving again.")
+            }
         }
         .alert("Couldn’t Attach Audio", isPresented: $isAudioAttachmentFailurePresented) {
             Button("Keep Editing", role: .cancel) {
@@ -1587,6 +1597,7 @@ struct MarkdownPreviewView: View {
             noteName = document.title
         }
         saveState = .idle
+        hasSaveConflict = false
     }
 
     private func focusEditorAfterPresentation() {
@@ -2230,6 +2241,7 @@ struct MarkdownPreviewView: View {
     }
 
     private func save(_ markdown: String, announce: Bool) async -> Bool {
+        hasSaveConflict = false
         switch source {
         case .memo(let memo):
             guard let updated = await appModel.saveMemo(
@@ -2237,7 +2249,8 @@ struct MarkdownPreviewView: View {
                 body: markdown,
                 expectedBody: originalMarkdown,
                 tags: memo.tags,
-                announce: announce
+                announce: announce,
+                onConflict: { hasSaveConflict = true }
             ) else { return false }
             source = .memo(updated)
             return true
@@ -2246,7 +2259,8 @@ struct MarkdownPreviewView: View {
                 document,
                 markdown: markdown,
                 expectedMarkdown: originalMarkdown,
-                announce: announce
+                announce: announce,
+                onConflict: { hasSaveConflict = true }
             ) else { return false }
             source = .document(updated)
             return true
@@ -2270,6 +2284,7 @@ struct MarkdownPreviewView: View {
             draftMarkdown = markdown
             originalMarkdown = markdown
             saveState = .saved
+            hasSaveConflict = false
             editorFocused = true
         } else {
             saveState = .failed
@@ -2277,21 +2292,44 @@ struct MarkdownPreviewView: View {
     }
 
     @MainActor
-    private func keepDraftAndRebase() async {
-        switch source {
-        case .memo(let memo):
-            if let reloaded = await appModel.reloadMemo(memo) {
-                source = .memo(reloaded)
-                originalMarkdown = reloaded.body
-            }
-        case .document(let document):
-            if let reloaded = await appModel.reloadDocument(document) {
-                source = .document(reloaded)
-                originalMarkdown = reloaded.markdown
-            }
+    private func saveConflictedDraftAsCopy() async {
+        guard hasSaveConflict, !isSaving else { return }
+        let snapshot = draftMarkdown
+        let memoTags: [String]
+        if case .memo(let memo) = source {
+            memoTags = memo.tags
+        } else {
+            memoTags = []
         }
-        saveState = .idle
+        func includingMemoTags(_ markdown: String) -> String {
+            memoTags.reduce(markdown) { MarkdownTagSyntax.adding($1, to: $0) ?? $0 }
+        }
+        isSaving = true
+        isSaveProgressVisible = true
+        saveState = .saving
+        let copy = await appModel.saveDocumentCopy(
+            relativePath: currentSourceRelativePath,
+            markdown: includingMemoTags(snapshot)
+        )
+        isSaving = false
+        isSaveProgressVisible = false
+        guard let copy else {
+            saveState = .failed
+            isSaveFailurePresented = true
+            editorFocused = true
+            return
+        }
+        source = .document(copy)
+        originalMarkdown = copy.markdown
+        draftMarkdown = includingMemoTags(draftMarkdown)
+        noteName = copy.title
+        saveState = .saved
+        hasSaveConflict = false
         editorFocused = true
+        // Edits entered while the copy was writing now belong to the copy as well.
+        if draftMarkdown != originalMarkdown {
+            await persistDraft(finishEditing: false, announce: false)
+        }
     }
 
     private func attachPhoto(_ item: PhotosPickerItem?) async {

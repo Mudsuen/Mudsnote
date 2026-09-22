@@ -17,6 +17,11 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 
 ## Iterations
 
+### Preserve references and keep both versions after conflicts
+- Problem: Moving or renaming notes broke relative references, code examples created false knowledge relations, and continuing after an iOS save conflict could silently overwrite the other version.
+- Fix: Maintain note references during macOS note/folder moves and renames, restore originals when a move fails, share code-aware link parsing and refresh cached relations. On iOS, keep conflict protection while editing and offer Save a Copy without changing the original.
+- Lesson: Normal organizing actions should preserve meaning automatically; conflict recovery should make keeping both versions the simple choice.
+
 ### Steady macOS relation actions and easier tab closing
 - Problem: Suggestion actions shifted with title length, reasons truncated despite spare row space, and tab close controls had small hit areas and ambiguous accessibility names.
 - Fix: Let reasons use remaining row width while preserving note titles, align citation actions at the trailing edge with taller hit areas, and enlarge tab close targets with note-specific accessibility labels.

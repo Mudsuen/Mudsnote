@@ -4748,6 +4748,124 @@ final class MudsnoteCompanionTests: XCTestCase {
         XCTAssertEqual(try String(contentsOf: documentURL, encoding: .utf8), "# External change\n")
     }
 
+    @MainActor
+    func testConflictRecoveryKeepsOriginalAndContinuesSavingToCopy() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let directory = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        let originalURL = directory.appendingPathComponent("Plan.md")
+        let existingCopyURL = directory.appendingPathComponent("Plan Copy.md")
+        try "# Original\n".write(to: originalURL, atomically: true, encoding: .utf8)
+        try "# Earlier copy\n".write(to: existingCopyURL, atomically: true, encoding: .utf8)
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let original = try await store.loadMarkdownDocument(relativePath: "Projects/Plan.md")
+        let suiteName = "MudsnoteCompanionTests.conflict-copy.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            fileStore: store,
+            restoreDraftImmediately: false,
+            defaults: defaults
+        )
+        model.selectedDocument = original
+        let external = "# External version\n\nKeep this change.\n"
+        try external.write(to: originalURL, atomically: true, encoding: .utf8)
+        let draft = "# My edits\n\n![Image](../Attachments/image.png)\n"
+        var conflicts = 0
+        let failed = await model.saveDocument(
+            original,
+            markdown: draft,
+            expectedMarkdown: original.markdown,
+            onConflict: { conflicts += 1 }
+        )
+        XCTAssertNil(failed)
+        // Continuing to edit must retain the original baseline and reject another overwrite.
+        let continuedDraft = draft + "\nOne more thought.\n"
+        let retried = await model.saveDocument(
+            original,
+            markdown: continuedDraft,
+            expectedMarkdown: original.markdown,
+            onConflict: { conflicts += 1 }
+        )
+        XCTAssertNil(retried)
+        XCTAssertEqual(conflicts, 2)
+        XCTAssertEqual(model.selectedDocument, original)
+
+        let savedCopy = await model.saveDocumentCopy(
+            relativePath: original.relativePath,
+            markdown: continuedDraft
+        )
+        let copy = try XCTUnwrap(savedCopy)
+        XCTAssertEqual(copy.relativePath, "Projects/Plan Copy 2.md")
+        XCTAssertEqual(copy.markdown, continuedDraft)
+        XCTAssertFalse(copy.isNew)
+        XCTAssertEqual(
+            root.appendingPathComponent(copy.relativePath).deletingLastPathComponent(),
+            originalURL.deletingLastPathComponent()
+        )
+        let revisedCopy = continuedDraft + "\nWritten after recovery.\n"
+        let savedAgain = await model.saveDocument(
+            copy,
+            markdown: revisedCopy,
+            expectedMarkdown: copy.markdown
+        )
+        XCTAssertEqual(savedAgain?.relativePath, copy.relativePath)
+        XCTAssertEqual(try String(contentsOf: originalURL, encoding: .utf8), external)
+        XCTAssertEqual(try String(contentsOf: existingCopyURL, encoding: .utf8), "# Earlier copy\n")
+        XCTAssertEqual(
+            try String(contentsOf: root.appendingPathComponent(copy.relativePath), encoding: .utf8),
+            revisedCopy
+        )
+    }
+
+    @MainActor
+    func testMissingFileSaveIsNotAConflictAndFailedCopyKeepsCurrentDocument() async throws {
+        let root = try temporaryRoot()
+        defer { try? FileManager.default.removeItem(at: root) }
+        try FolderInitializer.initialize(root)
+        let directory = root.appendingPathComponent("Projects", isDirectory: true)
+        try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+        try "# Original\n".write(
+            to: directory.appendingPathComponent("Plan.md"), atomically: true, encoding: .utf8
+        )
+        let store = MarkdownFileStore()
+        await store.configure(root: root)
+        let original = try await store.loadMarkdownDocument(relativePath: "Projects/Plan.md")
+        let suiteName = "MudsnoteCompanionTests.copy-failure.\(UUID().uuidString)"
+        let defaults = try XCTUnwrap(UserDefaults(suiteName: suiteName))
+        defer { defaults.removePersistentDomain(forName: suiteName) }
+        let model = AppModel(
+            bootstrapImmediately: false,
+            folderAccess: FolderAccessService(defaults: defaults),
+            fileStore: store,
+            restoreDraftImmediately: false,
+            defaults: defaults
+        )
+        model.selectedDocument = original
+        try FileManager.default.removeItem(at: directory)
+        var isConflict = false
+        let result = await model.saveDocument(
+            original,
+            markdown: "# Unsaved edits\n",
+            expectedMarkdown: original.markdown,
+            onConflict: { isConflict = true }
+        )
+        XCTAssertNil(result)
+        XCTAssertFalse(isConflict)
+        let copy = await model.saveDocumentCopy(
+            relativePath: original.relativePath,
+            markdown: "# Unsaved edits\n"
+        )
+        XCTAssertNil(copy)
+        XCTAssertEqual(model.selectedDocument, original)
+        XCTAssertFalse(FileManager.default.fileExists(atPath: directory.path))
+    }
+
     func testMarkdownDocumentAttachmentInsertRemoveCollisionAndConflictRollback() async throws {
         let root = try temporaryRoot()
         defer { try? FileManager.default.removeItem(at: root) }

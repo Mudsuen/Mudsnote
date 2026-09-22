@@ -14,6 +14,8 @@ public final class NoteStore: @unchecked Sendable {
 
     let defaults: UserDefaults
     let fileManager: FileManager
+    // Relocations update multiple notes; serialize mutations before acquiring file coordinators.
+    let noteMutationLock = NSRecursiveLock()
     let appSupportDirectory: URL
     let searchIndexLock = NSLock()
     let searchIndexBuildLock = NSLock()
@@ -83,6 +85,7 @@ public final class NoteStore: @unchecked Sendable {
 enum NoteUpdateCommitCheckpoint {
     case afterStaging
     case afterDestinationCommit
+    case afterReferenceWrite
 }
 
 struct NoteSearchIndexSnapshot: Codable {
@@ -128,7 +131,7 @@ struct NoteSearchIndexEntry: Codable {
 }
 
 struct NoteSearchIndexDiskCache: Codable {
-    static let currentSchemaVersion = 8
+    static let currentSchemaVersion = 9
 
     let schemaVersion: Int
     let snapshot: NoteSearchIndexSnapshot

@@ -193,26 +193,9 @@ extension NoteStore {
     }
 
     private func markdownLinkTargets(in markdown: String) -> [String] {
-        let pattern = #"(?<!!)\[[^\]]*\]\(([^)]+)\)"#
-        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
-        let range = NSRange(markdown.startIndex..<markdown.endIndex, in: markdown)
-        return expression.matches(in: markdown, range: range).compactMap { match in
-            guard match.numberOfRanges > 1,
-                  let targetRange = Range(match.range(at: 1), in: markdown) else {
-                return nil
-            }
-            var target = String(markdown[targetRange])
-                .trimmingCharacters(in: .whitespacesAndNewlines)
-            if target.hasPrefix("<"), let closing = target.firstIndex(of: ">") {
-                target = String(target[target.index(after: target.startIndex)..<closing])
-            } else if let titleRange = target.range(
-                of: #"\s+["'][^"']*["']\s*$"#,
-                options: .regularExpression
-            ) {
-                target.removeSubrange(titleRange)
-            }
-            return target.trimmingCharacters(in: .whitespacesAndNewlines)
-        }
+        MarkdownNoteReferenceParser.references(in: markdown)
+            .filter { $0.kind == .markdown }
+            .map(\.destination)
     }
 
     private func noteLinkItemSort(_ lhs: NoteLinkItem, _ rhs: NoteLinkItem) -> Bool {

@@ -144,6 +144,12 @@ extension NoteStore {
     }
 
     public func updateNote(at url: URL, title: String, body: String, tags: [String] = [], in directory: URL? = nil) throws -> URL {
+        noteMutationLock.lock()
+        defer { noteMutationLock.unlock() }
+        return try updateManagedNote(at: url, title: title, body: body, tags: tags, in: directory, sourceIsCoordinated: false)
+    }
+
+    private func updateManagedNote(at url: URL, title: String, body: String, tags: [String], in directory: URL?, sourceIsCoordinated: Bool) throws -> URL {
         let sourceURL = url.standardizedFileURL
         let currentDirectory = sourceURL.deletingLastPathComponent()
         let targetDirectory = directory ?? currentDirectory
@@ -171,16 +177,20 @@ extension NoteStore {
                 preservingFrontMatterFrom: existingText
             )
         } else {
-            try commitUpdatedNote(
-                from: sourceURL,
-                to: desiredURL,
-                content: storedNoteContent(
+            let content = storedNoteContent(
                     title: title,
                     body: relocation.markdown,
                     tags: tags,
                     preservingFrontMatterFrom: existingText
-                )
             )
+            try withRelocatedNoteLinks(
+                from: sourceURL, to: desiredURL,
+                sourceContents: content, expectedSourceContents: existingText,
+                copiedAttachmentURLs: relocation.copiedURLs
+            ) { rewritten in
+                try commitUpdatedNote(from: sourceURL, to: desiredURL, content: rewritten ?? content,
+                                      expectedContents: existingText, sourceIsCoordinated: sourceIsCoordinated)
+            }
         }
         didCommitRelocation = true
 
@@ -193,6 +203,8 @@ extension NoteStore {
     }
 
     public func updateNoteInPlace(at url: URL, title: String, body: String, tags: [String] = []) throws -> URL {
+        noteMutationLock.lock()
+        defer { noteMutationLock.unlock() }
         let standardizedURL = url.standardizedFileURL
         let existingText = try String(contentsOf: standardizedURL, encoding: .utf8)
         try writeNote(
@@ -216,6 +228,8 @@ extension NoteStore {
         updatesInPlace: Bool,
         in directory: URL? = nil
     ) throws -> NoteUpdateResult {
+        noteMutationLock.lock()
+        defer { noteMutationLock.unlock() }
         let standardizedURL = url.standardizedFileURL
         let coordinator = NSFileCoordinator()
         var coordinationError: NSError?
@@ -247,12 +261,13 @@ extension NoteStore {
                         tags: tags
                     )
                 } else {
-                    savedURL = try updateNote(
+                    savedURL = try updateManagedNote(
                         at: coordinatedURL,
                         title: title,
                         body: body,
                         tags: tags,
-                        in: directory
+                        in: directory,
+                        sourceIsCoordinated: true
                     )
                 }
                 return NoteUpdateResult(
@@ -280,6 +295,8 @@ extension NoteStore {
     }
 
     public func renamePreferredDirectory(_ directory: URL, to name: String) throws -> URL {
+        noteMutationLock.lock()
+        defer { noteMutationLock.unlock() }
         let oldDirectory = directory.standardizedFileURL
         let folderName = sanitizedFolderName(from: name)
         let newDirectory = uniqueFolderURL(
@@ -288,7 +305,9 @@ extension NoteStore {
             excluding: oldDirectory
         )
         if oldDirectory != newDirectory {
-            try fileManager.moveItem(at: oldDirectory, to: newDirectory)
+            try withRelocatedNoteLinks(from: oldDirectory, to: newDirectory, isDirectory: true) { _ in
+                try fileManager.moveItem(at: oldDirectory, to: newDirectory)
+            }
             replaceRecentPathPrefix(oldDirectory, with: newDirectory)
             replaceLibraryPinnedNotePathPrefix(oldDirectory, with: newDirectory)
             replaceLibraryFolderDisclosurePathPrefix(oldDirectory, with: newDirectory)
@@ -299,6 +318,8 @@ extension NoteStore {
     }
 
     public func moveNote(at url: URL, to directory: URL) throws -> URL {
+        noteMutationLock.lock()
+        defer { noteMutationLock.unlock() }
         let sourceURL = url.standardizedFileURL
         let targetDirectory = directory.standardizedFileURL
         try fileManager.createDirectory(at: targetDirectory, withIntermediateDirectories: true)
@@ -323,7 +344,13 @@ extension NoteStore {
                 removeRelocatedAttachments(relocation.copiedURLs, inside: targetDirectory)
             }
         }
-        try commitUpdatedNote(from: sourceURL, to: movedURL, content: relocation.markdown)
+        try withRelocatedNoteLinks(
+            from: sourceURL, to: movedURL,
+            sourceContents: relocation.markdown, expectedSourceContents: existingText,
+            copiedAttachmentURLs: relocation.copiedURLs
+        ) { rewritten in
+            try commitUpdatedNote(from: sourceURL, to: movedURL, content: rewritten ?? relocation.markdown, expectedContents: existingText)
+        }
         didCommitRelocation = true
         rememberRecentFile(movedURL, replacing: sourceURL)
         replaceLibraryPinnedNotePath(sourceURL, with: movedURL)
@@ -332,6 +359,8 @@ extension NoteStore {
     }
 
     public func moveFolder(at url: URL, to parentDirectory: URL) throws -> URL {
+        noteMutationLock.lock()
+        defer { noteMutationLock.unlock() }
         let sourceURL = url.standardizedFileURL
         let targetParent = parentDirectory.standardizedFileURL
         guard sourceURL != notesDirectory.standardizedFileURL,
@@ -345,7 +374,9 @@ extension NoteStore {
             folderName: sourceURL.lastPathComponent,
             excluding: sourceURL
         )
-        try fileManager.moveItem(at: sourceURL, to: destinationURL)
+        try withRelocatedNoteLinks(from: sourceURL, to: destinationURL, isDirectory: true) { _ in
+            try fileManager.moveItem(at: sourceURL, to: destinationURL)
+        }
         replaceRecentPathPrefix(sourceURL, with: destinationURL)
         replaceLibraryPinnedNotePathPrefix(sourceURL, with: destinationURL)
         replaceLibraryFolderDisclosurePathPrefix(sourceURL, with: destinationURL)
@@ -743,7 +774,33 @@ extension NoteStore {
         return key.lowercased()
     }
 
-    private func commitUpdatedNote(from sourceURL: URL, to destinationURL: URL, content: String) throws {
+    private func commitUpdatedNote(from sourceURL: URL, to destinationURL: URL, content: String, expectedContents: String, sourceIsCoordinated: Bool = false) throws {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var result: Result<Void, Error>?
+        if sourceIsCoordinated {
+            // The expected-content save already owns the source. Acquiring it again deadlocks.
+            coordinator.coordinate(writingItemAt: destinationURL, options: [], error: &coordinationError) { destinationURL in
+                result = Result {
+                    try commitCoordinatedNote(from: sourceURL, to: destinationURL, content: content, expectedContents: expectedContents)
+                }
+            }
+        } else {
+            coordinator.coordinate(
+                writingItemAt: sourceURL, options: .forMoving,
+                writingItemAt: destinationURL, options: [], error: &coordinationError
+            ) { sourceURL, destinationURL in
+                result = Result {
+                    try commitCoordinatedNote(from: sourceURL, to: destinationURL, content: content, expectedContents: expectedContents)
+                }
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let result else { throw CocoaError(.fileWriteUnknown) }
+        try result.get()
+    }
+
+    private func commitCoordinatedNote(from sourceURL: URL, to destinationURL: URL, content: String, expectedContents: String) throws {
         let stagingURL = destinationURL.deletingLastPathComponent()
             .appendingPathComponent(".mudsnote-update-\(UUID().uuidString).tmp")
         defer {
@@ -754,12 +811,22 @@ extension NoteStore {
 
         try content.write(to: stagingURL, atomically: true, encoding: .utf8)
         try updateNoteCommitHook?(.afterStaging)
+        guard try String(contentsOf: sourceURL, encoding: .utf8) == expectedContents else {
+            throw NoteLinkRelocationError.changed(sourceURL)
+        }
         try fileManager.moveItem(at: stagingURL, to: destinationURL)
         do {
             try updateNoteCommitHook?(.afterDestinationCommit)
+            guard try String(contentsOf: sourceURL, encoding: .utf8) == expectedContents else {
+                throw NoteLinkRelocationError.changed(sourceURL)
+            }
             try fileManager.removeItem(at: sourceURL)
         } catch {
-            try? fileManager.removeItem(at: destinationURL)
+            if (try? String(contentsOf: destinationURL, encoding: .utf8)) == content {
+                try? fileManager.removeItem(at: destinationURL)
+            } else if fileManager.fileExists(atPath: destinationURL.path) {
+                throw NoteLinkRelocationError.changedDestination(destinationURL)
+            }
             throw error
         }
     }

@@ -1209,6 +1209,48 @@ actor MarkdownFileStore {
         )
     }
 
+    func saveMarkdownDocumentCopy(
+        relativePath: String,
+        markdown: String
+    ) throws -> MarkdownDocument {
+        guard let root else { throw FolderAccessError.missingFolder }
+        guard let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
+              source.pathExtension.lowercased() == "md" else {
+            throw MarkdownDocumentError.invalidPath
+        }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
+        let stem = relativePath == "Inbox.md"
+            ? Self.portableNoteFilenameStem(from: markdown)
+            : source.deletingPathExtension().lastPathComponent
+        // Keep the directory so relative note and attachment links retain their meaning.
+        let destination = uniqueMarkdownURL(
+            for: source.deletingLastPathComponent().appendingPathComponent("\(stem) Copy.md")
+        )
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var saveError: Error?
+        coordinator.coordinate(writingItemAt: destination, options: [], error: &coordinationError) { coordinatedURL in
+            do {
+                // Another process can create the candidate after the name was selected.
+                try Data(markdown.utf8).write(to: coordinatedURL, options: .withoutOverwriting)
+            } catch {
+                saveError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let saveError { throw saveError }
+        let copiedPath = Self.relativePath(for: destination, root: root)
+        invalidateAfterMutation(relativePaths: [copiedPath])
+        return MarkdownDocument(
+            id: copiedPath,
+            title: destination.deletingPathExtension().lastPathComponent,
+            relativePath: copiedPath,
+            markdown: markdown,
+            modifiedAt: modificationDate(for: destination) ?? Date()
+        )
+    }
+
     func attachToMarkdownDocument(
         relativePath: String,
         markdown: String,

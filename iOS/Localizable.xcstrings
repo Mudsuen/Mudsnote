@@ -2473,11 +2473,20 @@
     "Keep Editing": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "继续编辑" } } }
     },
+    "Save a Copy": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "保存副本" } } }
+    },
+    "Copy Saved": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "副本已保存" } } }
+    },
     "Reopen Saved Version": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "重新打开已存储版本" } } }
     },
-    "The note may have changed elsewhere. Reopen the saved version or keep your current draft and try again.": {
-      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "这篇笔记可能已在其他位置更改。请重新打开已存储版本，或保留当前草稿后重试。" } } }
+    "This note changed elsewhere. Save a copy to keep both versions.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "笔记已在其他位置更改。保存副本可保留两个版本。" } } }
+    },
+    "Your edits are still here. Try saving again.": {
+      "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "当前编辑已保留，请重试保存。" } } }
     },
     "Remove from Note": {
       "localizations": { "zh-Hans": { "stringUnit": { "state": "translated", "value": "从笔记中移除" } } }
