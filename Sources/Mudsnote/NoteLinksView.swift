@@ -67,7 +67,7 @@ final class NoteLinksView: NSView {
             acceptButton.controlSize = .small
             acceptButton.font = .systemFont(ofSize: 11, weight: .semibold)
             acceptButton.setContentCompressionResistancePriority(.required, for: .horizontal)
-            acceptButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 32).isActive = true
+            acceptButton.widthAnchor.constraint(equalToConstant: 32).isActive = true
             acceptButton.heightAnchor.constraint(greaterThanOrEqualToConstant: 24).isActive = true
             acceptButton.setAccessibilityLabel("接受建议，引用 \(item.title)")
             acceptButton.setAccessibilityHelp("在当前笔记末尾插入明确的 Markdown 链接")
