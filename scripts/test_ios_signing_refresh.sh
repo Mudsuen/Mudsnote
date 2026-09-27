@@ -61,6 +61,8 @@ MUDSNOTE_IOS_SIGNING_LAUNCHCTL=launchctl \
 
 plist="$test_root/home/Library/LaunchAgents/com.mudsnote.ios-signing-refresh.plist"
 [[ -f "$plist" ]] || fail "install-agent must create a user LaunchAgent plist"
+[[ "$(plutil -extract ProgramArguments.0 raw -o - "$plist")" == "$ROOT_DIR/scripts/ios_apps_signing_refresh.sh" ]] \
+  || fail "LaunchAgent must retain the unified multi-app entry point"
 [[ "$(plutil -extract StartInterval raw -o - "$plist")" == "21600" ]] \
   || fail "LaunchAgent must check at the configured six-hour interval"
 [[ "$(plutil -extract RunAtLoad raw -o - "$plist")" == "true" ]] \

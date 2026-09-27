@@ -452,7 +452,11 @@ write_agent_plist() {
   plutil -create xml1 "$temp_plist"
   plutil -insert Label -string "$LABEL" "$temp_plist"
   plutil -insert ProgramArguments -xml '<array/>' "$temp_plist"
-  plutil -insert ProgramArguments.0 -string "$ROOT_DIR/scripts/ios_signing_refresh.sh" "$temp_plist"
+  local entrypoint="$ROOT_DIR/scripts/ios_signing_refresh.sh"
+  if [[ -x "$ROOT_DIR/scripts/ios_apps_signing_refresh.sh" ]]; then
+    entrypoint="$ROOT_DIR/scripts/ios_apps_signing_refresh.sh"
+  fi
+  plutil -insert ProgramArguments.0 -string "$entrypoint" "$temp_plist"
   plutil -insert ProgramArguments.1 -string '--run' "$temp_plist"
   plutil -insert ProgramArguments.2 -string '--auto-install' "$temp_plist"
   plutil -insert ProgramArguments.3 -string '--auto-launch' "$temp_plist"
