@@ -2,8 +2,10 @@
 
 ## Routing
 
-- Start with `./scripts/agent_context.sh --list`, then run
-  `./scripts/agent_context.sh <topic> [regex]` and expand only after a miss.
+- When source ownership or a project procedure is unclear, use
+  `./scripts/agent_context.sh --list`, then
+  `./scripts/agent_context.sh <topic> [regex]`; expand only after a miss.
+  Reuse already established paths and context for a scoped follow-up.
 - Load the owning document only when routed context and code are insufficient,
   a gate fails, rules conflict, or the task changes that process. Read
   `docs/ARCHITECTURE.md` only for boundary changes and
