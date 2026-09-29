@@ -470,6 +470,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     var minimumScrollableContentHeight: CGFloat = 0
     var onAddMetadataTag: (() -> Void)?
     @objc private func addMetadataTagPressed() { onAddMetadataTag?() }
+    private var isAddingMetadataTag = false
     private var metadataTags: [String] = []
     private var metadataTagScrollView: NSScrollView?
     private weak var metadataTagStack: NSStackView?
@@ -479,6 +480,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     func replaceAllContent(with attributedString: NSAttributedString) {
         textStorage?.setAttributedString(attributedString)
         metadataTags = []
+        isAddingMetadataTag = false
         metadataTagScrollView?.removeFromSuperview()
         metadataTagScrollView = nil
         metadataTagStack = nil
@@ -503,8 +505,8 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     func setMetadataTags(_ tags: [String], onRemove: ((String) -> Void)? = nil) {
         let normalized = MarkdownEditorDocument.normalizedTags(tags)
-        guard normalized != metadataTags || metadataTagScrollView == nil else {
-            updateMetadataTagSpacing(hasTags: !normalized.isEmpty || onAddMetadataTag != nil)
+        guard normalized != metadataTags || metadataTagScrollView == nil || (normalized.isEmpty && !isAddingMetadataTag) else {
+            updateMetadataTagSpacing(hasTags: !normalized.isEmpty || isAddingMetadataTag)
             layoutMetadataTagBar()
             return
         }
@@ -514,8 +516,8 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         metadataTagStack = nil
         metadataTagAddButton = nil
         metadataTagInput = nil
-        updateMetadataTagSpacing(hasTags: !normalized.isEmpty || onAddMetadataTag != nil)
-        guard !normalized.isEmpty || onAddMetadataTag != nil else { return }
+        updateMetadataTagSpacing(hasTags: !normalized.isEmpty || isAddingMetadataTag)
+        guard !normalized.isEmpty || isAddingMetadataTag else { return }
 
         let stack = NSStackView()
         stack.orientation = .horizontal
@@ -561,6 +563,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             window?.makeFirstResponder(input)
             return
         }
+        if metadataTagStack == nil {
+            isAddingMetadataTag = true
+            setMetadataTags(metadataTags)
+        }
         guard let stack = metadataTagStack, let addButton = metadataTagAddButton else { return }
 
         stack.removeArrangedSubview(addButton)
@@ -602,6 +608,8 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             stack.addArrangedSubview(addButton)
         }
         resizeMetadataTagStack()
+        isAddingMetadataTag = false
+        if metadataTags.isEmpty { setMetadataTags([]) }
         window?.makeFirstResponder(self)
     }
 
@@ -824,7 +832,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     override func didChangeText() {
         super.didChangeText()
-        updateMetadataTagSpacing(hasTags: !metadataTags.isEmpty || onAddMetadataTag != nil)
+        updateMetadataTagSpacing(hasTags: !metadataTags.isEmpty || isAddingMetadataTag)
         layoutMetadataTagBar()
         window?.invalidateCursorRects(for: self)
     }

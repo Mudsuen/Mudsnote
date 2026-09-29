@@ -2765,7 +2765,7 @@ struct MarkdownRichEditorTests {
         #expect(splitController.splitViewItems.count == 2)
         #expect(controller.sourceOutlineView.numberOfRows >= 3)
         #expect(controller.sourceTreeNoteTitlesForLibrary().contains("Library Seed"))
-        let treePresentationButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
+        let treePresentationButton = try #require(window.toolbar?.items.compactMap { $0.view }.compactMap { $0 as? NSButton }.first {
             $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
         })
         window.contentView?.layoutSubtreeIfNeeded()
@@ -2779,10 +2779,7 @@ struct MarkdownRichEditorTests {
         #expect(store.librarySidebarPresentationRawValue == 1)
         #expect(controller.selectedSourceTitleForLibrary == "全部笔记")
         #expect(window.firstResponder === editorResponderBeforePresentationChange)
-        let listFilesHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
-            $0.identifier?.rawValue == "LibrarySidebarListHeader"
-        })
-        let listPresentationButton = try #require(listFilesHeader.allSubviews.compactMap { $0 as? NSButton }.first {
+        let listPresentationButton = try #require(window.toolbar?.items.compactMap { $0.view as? NSButton }.first {
             $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
         })
         window.contentView?.layoutSubtreeIfNeeded()
@@ -2848,7 +2845,7 @@ struct MarkdownRichEditorTests {
         ) == clampedSize)
         #expect(window.toolbar?.displayMode == .iconOnly)
         let toolbarItemIDs = Set((window.toolbar?.items ?? []).map(\.itemIdentifier.rawValue))
-        #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.sidebar-presentation"))
+        #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.sidebar-presentation"))
         #expect(!toolbarItemIDs.contains("mudsnote.library.toolbar.add-folder"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.toggle-sidebar"))
         #expect(toolbarItemIDs.contains("mudsnote.library.toolbar.source-separator"))
@@ -3373,19 +3370,19 @@ struct MarkdownRichEditorTests {
         #expect(controller.titleField.stringValue == "Library Seed")
         #expect(controller.statusLabel.identifier?.rawValue == "LibraryEditorStatusLabel")
         #expect(controller.statusLabel.accessibilityLabel() == "编辑时间或保存状态")
-        #expect(controller.statusLabel.alignment == .center)
+        #expect(controller.statusLabel.alignment == .right)
         #expect(controller.statusLabel.stringValue == "编辑于 \(noteDateFormatter.string(from: noteModifiedAt))")
         #expect(!controller.statusLabel.stringValue.contains("·"))
-        #expect(controller.statusLabel.font?.pointSize == LibraryNotesLayout.editorStatusFontSize)
+        #expect(controller.statusLabel.font?.pointSize == 11)
         #expect(controller.titleField.font?.pointSize == LibraryNotesLayout.editorTitleFontSize)
         #expect(LibraryNotesLayout.editorTitleFontSize == 24)
         #expect(controller.titleField.placeholderString == "")
         #expect(controller.titleField.accessibilityLabel() == "笔记标题")
         #expect(controller.editorTextView.accessibilityLabel() == "笔记内容")
         #expect(controller.statusLabel.accessibilityLabel() == "编辑时间或保存状态")
-        #expect(controller.statusLabel.superview === controller.editorTextView)
+        #expect(controller.statusLabel.superview !== controller.editorTextView)
         #expect(controller.createdDateLabel.accessibilityLabel() == "创建时间")
-        #expect(controller.createdDateLabel.superview === controller.editorTextView)
+        #expect(controller.createdDateLabel.superview === controller.statusLabel.superview)
         #expect(controller.createdDateLabel.stringValue.hasPrefix("创建于 "))
         #expect(controller.titleField.alignment == .left)
         #expect(controller.titleField.lineBreakMode == .byTruncatingTail)
@@ -3403,9 +3400,7 @@ struct MarkdownRichEditorTests {
         #expect(controller.editorTextView.textContainerInset.width == LibraryNotesLayout.editorTextContainerHorizontalInset)
         #expect(
             controller.editorTextView.textContainerInset.height
-                == LibraryNotesLayout.editorDateRowHeight
-                    + LibraryNotesLayout.editorDateToTitleSpacing
-                    + 4
+                == 14
         )
         let editorScrollView = try #require(controller.editorTextView.enclosingScrollView)
         #expect(editorScrollView.hasHorizontalScroller == false)
@@ -3430,30 +3425,14 @@ struct MarkdownRichEditorTests {
         #expect(editorStack.alignment == .leading)
         #expect(editorStack.distribution == .fill)
         #expect(LibraryNotesLayout.editorStatusHorizontalOffset == -8.5)
-        let editorLayoutManager = try #require(controller.editorTextView.layoutManager)
-        let editorTextContainer = try #require(controller.editorTextView.textContainer)
-        let editorUsedRect = editorLayoutManager.usedRect(for: editorTextContainer)
-        #expect(
-            controller.statusLabel.frame.minY
-                >= controller.editorTextView.textContainerInset.height
-                    + editorUsedRect.maxY
-                    + LibraryNotesLayout.editorBottomInset
-        )
-        editorScrollView.contentView.scroll(to: .zero)
+        let footerFrame = controller.statusLabel.convert(controller.statusLabel.bounds, to: editorBodyContainer)
+        #expect(abs(footerFrame.maxX - (editorBodyContainer.bounds.maxX - 20)) <= 2)
+        editorScrollView.contentView.scroll(to: NSPoint(x: 0, y: 100))
         editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
-        // Short notes pin the edit time label to the viewport bottom so it stays
-        // visible without scrolling; tall notes still flow after the content.
-        let statusLabelVisibleAtTop = editorScrollView.contentView.bounds.intersects(controller.statusLabel.frame)
-        let bottomOriginY = max(
-            0,
-            controller.editorTextView.frame.height - editorScrollView.contentView.bounds.height
-        )
-        editorScrollView.contentView.scroll(to: NSPoint(x: 0, y: bottomOriginY))
-        editorScrollView.reflectScrolledClipView(editorScrollView.contentView)
-        #expect(statusLabelVisibleAtTop == editorScrollView.contentView.bounds.intersects(controller.statusLabel.frame))
+        #expect(controller.statusLabel.convert(controller.statusLabel.bounds, to: editorBodyContainer) == footerFrame)
         #expect(!editorStack.arrangedSubviews.contains(controller.statusLabel))
         #expect(!editorStack.arrangedSubviews.contains(controller.titleField))
-        // The date label lives inside the text view, while document tabs occupy
+        // Dates stay in the footer, while document tabs occupy
         // the editor side of the native toolbar.
         #expect(editorStack.edgeInsets.top == 0)
         #expect(LibraryNotesLayout.editorTopInset == 6.25)
@@ -3622,18 +3601,16 @@ struct MarkdownRichEditorTests {
         let controller = LibraryWindowController(noteStore: harness.store,
             onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
         defer { controller.close() }
-        let addButton = try #require(controller.editorTextView.allSubviews.compactMap { $0 as? NSButton }
-            .first { $0.identifier?.rawValue == "AddNoteTagButton" })
-        addButton.performClick(nil)
+        #expect(!controller.editorTextView.allSubviews.contains { $0.identifier?.rawValue == "AddNoteTagButton" })
+        controller.editorTextView.onAddMetadataTag?()
         let input = try #require(controller.editorTextView.allSubviews.compactMap { $0 as? NSComboBox }
             .first { $0.identifier?.rawValue == "InlineNoteTagInput" })
         #expect(NSApp.modalWindow == nil)
         #expect(controller.window?.firstResponder === input.currentEditor())
         input.cancelOperation(nil)
-        let restoredAddButton = try #require(controller.editorTextView.allSubviews.compactMap { $0 as? NSButton }
-            .first { $0.identifier?.rawValue == "AddNoteTagButton" })
+        #expect(!controller.editorTextView.allSubviews.contains { $0.identifier?.rawValue == "AddNoteTagButton" })
         #expect(!controller.editorTextView.allSubviews.contains { $0.identifier?.rawValue == "InlineNoteTagInput" })
-        restoredAddButton.performClick(nil)
+        controller.editorTextView.onAddMetadataTag?()
         let committedInput = try #require(controller.editorTextView.allSubviews.compactMap { $0 as? NSComboBox }
             .first { $0.identifier?.rawValue == "InlineNoteTagInput" })
         committedInput.stringValue = "#Created"

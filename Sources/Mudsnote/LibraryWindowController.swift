@@ -1380,6 +1380,7 @@ final class LibraryWindowController: NSWindowController,
     private static let formatToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.format")
     private static let checklistToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.checklist")
     private static let linkToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.link")
+    private static let sidebarPresentationToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.sidebar-presentation")
     private static let sourceModeToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-mode")
     private static let revealToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.reveal")
     private static let exportToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.export")
@@ -2511,6 +2512,8 @@ final class LibraryWindowController: NSWindowController,
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.verticalScroller?.controlSize = .small
         scrollView.autohidesScrollers = true
         scrollView.documentView = sourceOutlineView
         scrollView.contentInsets = NSEdgeInsets(
@@ -2573,6 +2576,8 @@ final class LibraryWindowController: NSWindowController,
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.verticalScroller?.controlSize = .small
         scrollView.hasHorizontalScroller = false
         scrollView.horizontalScrollElasticity = .none
         scrollView.usesPredominantAxisScrolling = true
@@ -2613,10 +2618,6 @@ final class LibraryWindowController: NSWindowController,
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        let sidebarPresentationButton = NSButton()
-        sidebarPresentationButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarPresentationButton")
-        configureSidebarPresentationButton(sidebarPresentationButton)
-        sidebarPresentationButtons.append(sidebarPresentationButton)
         let listHeaderSpacer = NSView()
         listHeaderSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
         sidebarListHeaderContent.orientation = .horizontal
@@ -2636,11 +2637,9 @@ final class LibraryWindowController: NSWindowController,
         sidebarAllNotesButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
         sidebarAllNotesButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
         let listHeader = NSStackView(views: [
-            sidebarAllNotesButton, sidebarListHeaderContent, listHeaderSpacer, sidebarPresentationButton
+            sidebarAllNotesButton, sidebarListHeaderContent, listHeaderSpacer
         ])
         sidebarHeaderView = listHeader
-        sidebarPresentationButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        sidebarPresentationButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
         listHeader.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarListHeader")
         listHeader.orientation = .horizontal
         listHeader.alignment = .centerY
@@ -2756,9 +2755,9 @@ final class LibraryWindowController: NSWindowController,
 
         statusLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorStatusLabel")
         statusLabel.setAccessibilityLabel("编辑时间或保存状态")
-        statusLabel.font = .systemFont(ofSize: LibraryNotesLayout.editorStatusFontSize, weight: .semibold)
+        statusLabel.font = .systemFont(ofSize: 11, weight: .regular)
         statusLabel.textColor = panelTertiaryTextColor()
-        statusLabel.alignment = .center
+        statusLabel.alignment = .right
         statusLabel.lineBreakMode = .byTruncatingTail
         wordCountLabel.setAccessibilityLabel("字数")
         wordCountLabel.font = .monospacedDigitSystemFont(
@@ -2773,35 +2772,15 @@ final class LibraryWindowController: NSWindowController,
         createdDateLabel.setAccessibilityLabel("创建时间")
         createdDateLabel.font = .systemFont(ofSize: 11, weight: .regular)
         createdDateLabel.textColor = panelTertiaryTextColor()
-        createdDateLabel.alignment = .center
+        createdDateLabel.alignment = .right
         createdDateLabel.lineBreakMode = .byTruncatingTail
-        createdDateLabel.translatesAutoresizingMaskIntoConstraints = false
-        editorTextView.addSubview(createdDateLabel)
-        NSLayoutConstraint.activate([
-            createdDateLabel.topAnchor.constraint(equalTo: editorTextView.topAnchor, constant: 4),
-            createdDateLabel.centerXAnchor.constraint(
-                equalTo: editorTextView.centerXAnchor,
-                constant: LibraryNotesLayout.editorStatusHorizontalOffset
-            ),
-            createdDateLabel.leadingAnchor.constraint(
-                greaterThanOrEqualTo: editorTextView.leadingAnchor,
-                constant: 20
-            ),
-            createdDateLabel.trailingAnchor.constraint(
-                lessThanOrEqualTo: editorTextView.trailingAnchor,
-                constant: -20
-            ),
-            createdDateLabel.heightAnchor.constraint(
-                equalToConstant: LibraryNotesLayout.editorDateRowHeight
-            )
-        ])
-        editorTextView.addSubview(statusLabel)
-        editorTextView.addSubview(wordCountLabel)
         let scrollView = LibraryEditorScrollView()
         let clipView = EditorClipView()
         scrollView.drawsBackground = false
         scrollView.borderType = .noBorder
         scrollView.hasVerticalScroller = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.verticalScroller?.controlSize = .small
         scrollView.hasHorizontalScroller = false
         scrollView.horizontalScrollElasticity = .none
         scrollView.autohidesScrollers = true
@@ -2826,7 +2805,23 @@ final class LibraryWindowController: NSWindowController,
             scrollView.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: bodyContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor)
+            scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -44)
+        ])
+
+        let dates = NSStackView(views: [createdDateLabel, statusLabel])
+        dates.orientation = .vertical
+        dates.alignment = .trailing
+        dates.spacing = 2
+        bodyContainer.addSubview(dates)
+        bodyContainer.addSubview(wordCountLabel)
+        dates.translatesAutoresizingMaskIntoConstraints = false
+        wordCountLabel.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            dates.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor, constant: -20),
+            dates.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -8),
+            dates.leadingAnchor.constraint(greaterThanOrEqualTo: wordCountLabel.trailingAnchor, constant: 12),
+            wordCountLabel.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor, constant: 20),
+            wordCountLabel.bottomAnchor.constraint(equalTo: dates.bottomAnchor)
         ])
 
         noteLinksView.onOpen = { [weak self] url in
@@ -2942,7 +2937,7 @@ final class LibraryWindowController: NSWindowController,
     private func buildDocumentTabHeader() -> NSView {
         documentTabsStack.orientation = .horizontal
         documentTabsStack.alignment = .centerY
-        documentTabsStack.spacing = 3
+        documentTabsStack.spacing = 1
 
         let scrollView = NSScrollView()
         scrollView.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabs")
@@ -2984,7 +2979,7 @@ final class LibraryWindowController: NSWindowController,
         header.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabHeader")
         header.orientation = .horizontal
         header.alignment = .centerY
-        header.spacing = 6
+        header.spacing = 2
         NSLayoutConstraint.activate([
             header.heightAnchor.constraint(equalToConstant: 30)
         ])
@@ -3183,6 +3178,7 @@ final class LibraryWindowController: NSWindowController,
             Self.newNoteToolbarItemIdentifier,
             Self.toggleSidebarToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
+            Self.sidebarPresentationToolbarItemIdentifier,
             Self.documentTabsToolbarItemIdentifier,
             .flexibleSpace,
             Self.searchToolbarItemIdentifier
@@ -3221,6 +3217,19 @@ final class LibraryWindowController: NSWindowController,
             return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 1)
         case Self.noteListTitleToolbarItemIdentifier:
             return toolbarNoteListTitleItem(identifier: itemIdentifier)
+        case Self.sidebarPresentationToolbarItemIdentifier:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.label = "文件树 / 列表"
+            item.visibilityPriority = .high
+            item.isBordered = false
+            let button = NSButton()
+            button.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarPresentationButton")
+            configureSidebarPresentationButton(button)
+            sidebarPresentationButtons.append(button)
+            button.widthAnchor.constraint(equalToConstant: 28).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+            item.view = button
+            return item
         case Self.documentTabsToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
             item.label = "标签页"
@@ -3844,9 +3853,7 @@ final class LibraryWindowController: NSWindowController,
         editorTextView.isHorizontallyResizable = false
         editorTextView.textContainerInset = NSSize(
             width: LibraryNotesLayout.editorTextContainerHorizontalInset,
-            height: LibraryNotesLayout.editorDateRowHeight
-                + LibraryNotesLayout.editorDateToTitleSpacing
-                + 4
+            height: 14
         )
         editorTextView.textContainer?.lineFragmentPadding = 0
         editorTextView.typingAttributes = theme.baseAttributes(for: .paragraph)
@@ -4960,6 +4967,7 @@ final class LibraryWindowController: NSWindowController,
         let title = query.isEmpty
             ? noteListTitle(for: selectedScope)
             : (searchScopeControl.selectedSegment == 1 ? noteListTitle(for: .all) : noteListTitle(for: selectedScope))
+        noteListCountLabel.isHidden = query.isEmpty && selectedScope == .all
         noteListTitleLabel.stringValue = title
         noteListTitleLabel.isHidden = !query.isEmpty
         if query.isEmpty {
@@ -8155,6 +8163,8 @@ final class LibraryWindowController: NSWindowController,
         textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
         scrollView.documentView = textView
         scrollView.hasVerticalScroller = true
+        scrollView.scrollerStyle = .overlay
+        scrollView.verticalScroller?.controlSize = .small
         alert.accessoryView = scrollView
         alert.addButton(withTitle: "创建草案")
         alert.addButton(withTitle: "取消")
@@ -8943,29 +8953,15 @@ final class LibraryWindowController: NSWindowController,
               let textContainer = editorTextView.textContainer else { return }
         layoutManager.ensureLayout(for: textContainer)
         let usedRect = layoutManager.usedRect(for: textContainer)
-        let horizontalInset: CGFloat = 20
         let contentBottom = editorTextView.textContainerInset.height + usedRect.maxY
         let viewportHeight = editorTextView.enclosingScrollView?.contentView.bounds.height ?? 0
-        let rowHeight = LibraryNotesLayout.editorDateRowHeight
-        let topGap = LibraryNotesLayout.editorBottomInset
-        let bottomGap = LibraryNotesLayout.editorStatusBottomGap
-        // Pin the label to the bottom of the visible editor area when the
-        // content is short; otherwise let the label flow after the content.
-        let pinToBottom = noteLinksView.isPinned && viewportHeight > 0 && contentBottom + topGap + rowHeight + bottomGap < viewportHeight
-        let statusTop: CGFloat
-        var documentHeight: CGFloat
-        if pinToBottom {
-            statusTop = viewportHeight - rowHeight - bottomGap
-            documentHeight = viewportHeight
-        } else {
-            statusTop = contentBottom + topGap
-            documentHeight = statusTop + rowHeight + bottomGap
-        }
+        let relationsTop = contentBottom + LibraryNotesLayout.editorBottomInset
+        var documentHeight = max(viewportHeight, relationsTop)
         if !noteLinksView.isPinned, noteLinksView.superview === editorTextView {
             noteLinksView.setFrameSize(NSSize(width: max(0, editorTextView.bounds.width - 20), height: noteLinksView.frame.height))
             noteLinksView.layoutSubtreeIfNeeded()
             let linksHeight = noteLinksView.fittingSize.height
-            noteLinksView.frame = NSRect(x: 0, y: statusTop + rowHeight + 12,
+            noteLinksView.frame = NSRect(x: 0, y: relationsTop,
                 width: max(0, editorTextView.bounds.width - 20), height: linksHeight)
             documentHeight = max(viewportHeight, noteLinksView.frame.maxY + 16)
         }
@@ -8976,18 +8972,7 @@ final class LibraryWindowController: NSWindowController,
             frame.size.height = documentHeight
             editorTextView.frame = frame
         }
-        statusLabel.frame = NSRect(
-            x: horizontalInset + LibraryNotesLayout.editorStatusHorizontalOffset,
-            y: statusTop,
-            width: max(0, editorTextView.bounds.width - (horizontalInset * 2)),
-            height: rowHeight
-        )
-        wordCountLabel.frame = NSRect(
-            x: max(horizontalInset, editorTextView.bounds.width - 112),
-            y: statusTop,
-            width: 88,
-            height: rowHeight
-        )
+
     }
 
     @discardableResult

@@ -17,6 +17,11 @@ As of 2026-09-19, this prototype records 303 implementation iterations, includin
 
 ## Iterations
 
+### Simplify macOS library chrome and note metadata
+- Problem: Sidebar controls, empty tag rows, separate timestamps, and boxed relations competed with note content.
+- Fix: Move the file-tree switch to the toolbar, hide the all-notes count, use small overlay scrollers, tighten document tabs, hide empty tag rows until explicitly adding a tag, blend relations into the document, and place both timestamps at the bottom right.
+- Lesson: Keep optional metadata out of the reading path while preserving its actions.
+
 ### Preserve references and keep both versions after conflicts
 - Problem: Moving or renaming notes broke relative references, code examples created false knowledge relations, and continuing after an iOS save conflict could silently overwrite the other version.
 - Fix: Maintain note references during macOS note/folder moves and renames, restore originals when a move fails, share code-aware link parsing and refresh cached relations. On iOS, keep conflict protection while editing and offer Save a Copy without changing the original.

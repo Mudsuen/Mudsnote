@@ -20,7 +20,7 @@ final class NoteLinksView: NSView {
             bezelStyle = .shadowlessSquare
             isBordered = false
             controlSize = .small
-            font = .systemFont(ofSize: 13, weight: .medium)
+            font = .systemFont(ofSize: 12, weight: .regular)
             attributedTitle = NSAttributedString(string: item.title, attributes: [
                 .font: font!, .foregroundColor: NSColor.labelColor
             ])
@@ -138,8 +138,8 @@ final class NoteLinksView: NSView {
         let button = NSButton(title: "知识关系", target: self, action: #selector(toggleExpanded(_:)))
         button.bezelStyle = .shadowlessSquare
         button.isBordered = false
-        button.contentTintColor = .labelColor
-        button.font = .systemFont(ofSize: 12, weight: .medium)
+        button.contentTintColor = .secondaryLabelColor
+        button.font = .systemFont(ofSize: 11, weight: .regular)
         button.imagePosition = .imageLeading
         button.identifier = NSUserInterfaceItemIdentifier("LibraryRelationsDisclosure")
         return button
@@ -211,8 +211,8 @@ final class NoteLinksView: NSView {
         identifier = NSUserInterfaceItemIdentifier("LibraryNoteLinksView")
         setAccessibilityLabel("知识关系")
         wantsLayer = true
-        layer?.backgroundColor = NSColor.separatorColor.withAlphaComponent(0.08).cgColor
-        layer?.cornerRadius = 8
+        layer?.backgroundColor = NSColor.clear.cgColor
+        layer?.cornerRadius = 0
 
         layerLabel.font = .systemFont(ofSize: 10, weight: .semibold)
         layerLabel.textColor = .secondaryLabelColor
@@ -280,7 +280,7 @@ final class NoteLinksView: NSView {
         hasRenderedRelations = true
         knowledgeRelations = relations
         layerLabel.stringValue = relations.currentLayer.map {
-            "当前：\($0.displayName)"
+            "\($0.displayName)"
         } ?? ""
         layerLabel.isHidden = relations.currentLayer == nil
         populate(parentsContent, with: relations.outgoing, accessibilityPrefix: "打开引用笔记")
@@ -327,7 +327,9 @@ final class NoteLinksView: NSView {
     }
 
     func updateNavigation(canGoBack: Bool, canGoForward: Bool) {
+        backButton.isHidden = !canGoBack
         backButton.isEnabled = canGoBack
+        forwardButton.isHidden = !canGoForward
         forwardButton.isEnabled = canGoForward
     }
 
@@ -349,7 +351,7 @@ final class NoteLinksView: NSView {
         let button = NSButton(title: title, target: self, action: action)
         button.bezelStyle = .inline
         button.controlSize = .small
-        button.font = .systemFont(ofSize: 13, weight: .medium)
+        button.font = .systemFont(ofSize: 12, weight: .regular)
         button.setAccessibilityLabel(accessibilityLabel)
         button.isEnabled = false
         return button
