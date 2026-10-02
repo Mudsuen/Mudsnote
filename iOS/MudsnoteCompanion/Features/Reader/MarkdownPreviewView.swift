@@ -1260,24 +1260,6 @@ struct MarkdownPreviewView: View {
     }
 
     @ViewBuilder
-    private var shareControl: some View {
-        if case .document(let document) = source,
-           let url = localFileURL(for: document.relativePath) {
-            ShareLink(item: url) {
-                Image(systemName: "square.and.arrow.up")
-            }
-            .accessibilityLabel("Share Note")
-            .accessibilityIdentifier("share-note-button")
-        } else {
-            ShareLink(item: draftMarkdown) {
-                Image(systemName: "square.and.arrow.up")
-            }
-            .accessibilityLabel("Share Note")
-            .accessibilityIdentifier("share-note-button")
-        }
-    }
-
-    @ViewBuilder
     private var attachmentMenuContent: some View {
         Button {
             isPhotoPickerPresented = true
@@ -1558,27 +1540,11 @@ struct MarkdownPreviewView: View {
         return .handled
     }
 
-    private func openRenderedURL(_ url: URL) {
-        guard MarkdownNoteLink.resolvedRelativePath(
-            for: url.relativeString,
-            from: currentSourceRelativePath
-        ) != nil else {
-            UIApplication.shared.open(url)
-            return
-        }
-        _ = handleMarkdownURL(url)
-    }
-
     private func openLinkedNote(_ file: RecentMarkdownFile) async {
         guard file.relativePath != currentSourceRelativePath,
               let target = await appModel.loadDocument(relativePath: file.relativePath) else { return }
         linkedSourceHistory.append(source)
         showLinkedSource(.document(target))
-    }
-
-    private func returnToPreviousLinkedNote() {
-        guard let previous = linkedSourceHistory.popLast() else { return }
-        showLinkedSource(previous)
     }
 
     private func showLinkedSource(_ linkedSource: Source) {

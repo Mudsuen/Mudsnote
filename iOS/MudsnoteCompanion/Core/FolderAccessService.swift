@@ -83,10 +83,6 @@ final class FolderAccessService {
         return url
     }
 
-    func withAccess<T>(to url: URL, _ work: () throws -> T) throws -> T {
-        try withValidatedAccess(to: url, validateFolder: false, work)
-    }
-
     func validateCurrentFolder() throws {
         guard let currentRoot else { throw FolderAccessError.missingFolder }
         try withValidatedAccess(to: currentRoot) {}

@@ -50,7 +50,6 @@ enum MudsnoteColors {
     static let text = adaptive(light: 0x17171A, dark: 0xF7F7F7)
     static let muted = adaptive(light: 0x68686F, dark: 0xB8B8BD)
     static let primary = adaptive(light: 0x17171A, dark: 0xF7F7F7)
-    static let captureAccent = Color(uiColor: .systemBlue)
 
     private static func adaptive(
         light: UInt32,
@@ -68,10 +67,8 @@ enum MudsnoteColors {
 }
 
 enum MudsnoteRadius {
-    static let bottomSheet: CGFloat = 42
     static let panel: CGFloat = 34
     static let card: CGFloat = 24
-    static let pill: CGFloat = 999
 }
 
 enum MudsnoteSpacing {
@@ -150,24 +147,6 @@ struct CapsuleCommandButtonStyle: ButtonStyle {
                 Capsule().stroke(MudsnoteColors.line.opacity(isPrimary ? 0 : 1), lineWidth: 1)
             }
             .scaleEffect(configuration.isPressed ? 0.96 : 1)
-            .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
-    }
-}
-
-struct IconCircleButtonStyle: ButtonStyle {
-    var isActive = false
-
-    func makeBody(configuration: Configuration) -> some View {
-        configuration.label
-            .font(.system(size: 15, weight: .semibold))
-            .foregroundStyle(isActive ? .black : MudsnoteColors.text)
-            .frame(width: 48, height: 48)
-            .background(isActive ? MudsnoteColors.primary : MudsnoteColors.card)
-            .clipShape(Circle())
-            .overlay {
-                Circle().stroke(MudsnoteColors.line, lineWidth: isActive ? 0 : 1)
-            }
-            .scaleEffect(configuration.isPressed ? 0.94 : 1)
             .animation(.easeOut(duration: 0.16), value: configuration.isPressed)
     }
 }

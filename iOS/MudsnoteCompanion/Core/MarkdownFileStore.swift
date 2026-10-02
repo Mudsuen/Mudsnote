@@ -2634,23 +2634,6 @@ actor MarkdownFileStore {
         return lhs.relativePath.localizedStandardCompare(rhs.relativePath) == .orderedAscending
     }
 
-    private static func inboxAttachmentOwners(
-        in items: [MemoBlock]
-    ) -> [String: [LibraryAttachment.Owner]] {
-        var owners: [String: [LibraryAttachment.Owner]] = [:]
-        for memo in items {
-            let owner = LibraryAttachment.Owner(
-                id: "memo:\(memo.id)",
-                title: String(memo.preview.prefix(80)),
-                destination: .memo(memo.id)
-            )
-            for path in MarkdownAttachmentSearch.relativePaths(in: memo.body) {
-                owners[path, default: []].append(owner)
-            }
-        }
-        return owners
-    }
-
     private func invalidateAfterMutation(relativePaths: [String]) {
         cachedLibrarySnapshot = nil
         libraryInventoryState = nil
@@ -3414,13 +3397,6 @@ actor MarkdownFileStore {
             .replacingOccurrences(of: "\n", with: "\\n")
         return "\"\(escaped)\""
     }
-
-    private static let memoFormatter: DateFormatter = {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyy-MM-dd HH:mm"
-        return formatter
-    }()
 
     private static let monthFormatter: DateFormatter = {
         let formatter = DateFormatter()

@@ -363,16 +363,6 @@ enum MarkdownTagSyntax {
         }.joined(separator: "\n")
     }
 
-    private static func forVisibleLine(
-        in markdown: String,
-        body: (String) -> Void
-    ) {
-        _ = mapVisibleLines(in: markdown) { line in
-            body(line)
-            return line
-        }
-    }
-
     private static func fenceMarker(in trimmedLine: String) -> Character? {
         guard let marker = trimmedLine.first,
               marker == "`" || marker == "~",
@@ -439,7 +429,4 @@ enum MarkdownTagSyntax {
         return compact.isEmpty ? "" : String(indentation) + compact
     }
 
-    private static func isHorizontalWhitespace(_ character: unichar) -> Bool {
-        character == 32 || character == 9
-    }
 }
