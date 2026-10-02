@@ -9891,12 +9891,6 @@ final class LibraryWindowController: NSWindowController,
         )
     }
 
-    private var storedNoteColumnWidthForLibrary: CGFloat {
-        LibraryNotesLayout.clampedNoteColumnWidth(
-            CGFloat(noteStore.libraryNoteColumnWidth ?? Double(LibraryNotesLayout.noteColumnWidth))
-        )
-    }
-
     func applyStoredLibrarySplitLayoutForLibrary() {
         guard let splitView = librarySplitView,
               splitView.arrangedSubviews.count == 2,
@@ -10438,14 +10432,6 @@ final class LibraryWindowController: NSWindowController,
     }
 
     @discardableResult
-    func moveSelectedNoteForLibrary(to directory: URL) throws -> URL {
-        guard let movedURL = try moveSelectedNotesForLibrary(to: directory).first else {
-            throw LibraryActionError.noNoteSelected
-        }
-        return movedURL
-    }
-
-    @discardableResult
     func moveSelectedNotesForLibrary(to directory: URL) throws -> [URL] {
         try saveCurrentNoteIfNeeded()
         guard selectedScope != .trash else {
@@ -10492,14 +10478,6 @@ final class LibraryWindowController: NSWindowController,
         }
 
         return isInsideConfiguredLibraryRoot(sourceURL)
-    }
-
-    @discardableResult
-    func moveDraggedNoteForLibrary(at noteURL: URL, to directory: URL) throws -> URL {
-        guard let movedURL = try moveDraggedNotesForLibrary(at: [noteURL], to: directory).first else {
-            throw LibraryActionError.noNoteSelected
-        }
-        return movedURL
     }
 
     @discardableResult
@@ -11039,12 +11017,6 @@ final class LibraryWindowController: NSWindowController,
         lastListScope = selectedScope
         setSidebarPresentation(.list, animated: true)
         reloadNotesForNavigation(selecting: url, loadFirstIfNeeded: false)
-    }
-
-    @objc
-    private func revealTreeNoteMenuItemPressed(_ sender: NSMenuItem) {
-        guard let url = sender.representedObject as? URL else { return }
-        NSWorkspace.shared.activateFileViewerSelecting([url])
     }
 
     @objc
@@ -11885,23 +11857,6 @@ final class LibraryWindowController: NSWindowController,
     private func deleteMarkdownTableColumnMenuItemPressed(_ sender: NSMenuItem) {
         guard let characterIndex = sender.representedObject as? Int else { return }
         deleteMarkdownTableColumnForLibrary(atCharacterIndex: characterIndex)
-    }
-
-    private func promptForText(title: String, message: String, placeholder: String, defaultValue: String) -> String? {
-        let alert = NSAlert()
-        alert.messageText = title
-        alert.informativeText = message
-        alert.addButton(withTitle: "确定")
-        alert.addButton(withTitle: "取消")
-
-        let field = NSTextField(string: defaultValue)
-        field.placeholderString = placeholder
-        field.frame = NSRect(x: 0, y: 0, width: 260, height: 28)
-        alert.accessoryView = field
-
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        let value = field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-        return value.isEmpty ? nil : value
     }
 
     private func confirmDestructiveAction(title: String, message: String) -> Bool {

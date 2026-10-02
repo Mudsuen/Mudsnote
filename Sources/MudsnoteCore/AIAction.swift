@@ -13,14 +13,6 @@ public enum AIActionID: String, CaseIterable, Sendable {
         }
     }
 
-    public var slashCommands: [String] {
-        switch self {
-        case .summarize: return ["summarize", "sum", "tldr"]
-        case .fix: return ["fix", "proofread", "grammar"]
-        case .todos: return ["todos", "actions", "tasks"]
-        }
-    }
-
     public var defaultOutputMode: AIOutputMode {
         switch self {
         case .summarize, .todos: return .insertBelow

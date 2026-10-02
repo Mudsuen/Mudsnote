@@ -780,7 +780,6 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     private weak var selectionFormattingStack: NSStackView?
     private var imageResizeDragState: ImageResizeDragState?
     var isSelectionFormattingPanelVisible: Bool { selectionFormattingPanel?.isVisible == true }
-    var selectionFormattingPanelFrame: NSRect? { selectionFormattingPanel?.frame }
     var pasteboardForPaste: () -> NSPasteboard = { .general }
     var markdownPasteTheme: MarkdownEditorTheme?
     private var isInterpretingShiftReturn = false

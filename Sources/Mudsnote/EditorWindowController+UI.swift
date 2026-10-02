@@ -535,10 +535,6 @@ extension EditorWindowController {
         return button
     }
 
-    @objc func floatingPreferencesPressed(_ sender: Any?) {
-        onRequestPreferences()
-    }
-
     @objc func floatingBrowseNotesPressed(_ sender: Any?) {
         showFloatingNoteBrowser(relativeTo: (sender as? NSView) ?? floatingNoteBrowseButton)
     }

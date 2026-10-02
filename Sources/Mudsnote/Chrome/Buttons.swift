@@ -12,28 +12,12 @@ private final class OffsetImageButtonCell: NSButtonCell {
 }
 
 @MainActor
-func styleAccentButton(_ button: NSButton) {
-    button.bezelStyle = .rounded
-    button.controlSize = .regular
-    button.contentTintColor = .white
-    button.imageHugsTitle = true
-    button.bezelColor = panelAccentColor()
-}
-
-@MainActor
 func styleSecondaryButton(_ button: NSButton) {
     button.bezelStyle = .rounded
     button.controlSize = .regular
     button.contentTintColor = panelPrimaryTextColor()
     button.imageHugsTitle = true
     button.bezelColor = NSColor.controlBackgroundColor.withAlphaComponent(0.9)
-}
-
-@MainActor
-func styleToolbarButton(_ button: NSButton) {
-    button.bezelStyle = .texturedRounded
-    button.controlSize = .large
-    button.contentTintColor = .white
 }
 
 @MainActor
@@ -299,43 +283,6 @@ final class FocusAwareAccentButton: ModernPillButton {
             shadowColor: NSColor.black.withAlphaComponent(isWindowFocused ? 0.18 : 0.10),
             shadowOpacity: isWindowFocused ? 1 : 0.82,
             shadowRadius: isHovered ? 8 : 6,
-            shadowOffset: CGSize(width: 0, height: -1)
-        )
-    }
-}
-
-@MainActor
-final class FocusAwareSecondaryButton: ModernPillButton {
-    override func currentPalette() -> PillButtonPalette {
-        let foreground: NSColor
-        let background: NSColor
-        let border: NSColor
-
-        if !isEnabled {
-            foreground = panelTertiaryTextColor()
-            background = NSColor.controlBackgroundColor.withAlphaComponent(0.42)
-            border = .clear
-        } else if isHighlighted {
-            foreground = panelPrimaryTextColor()
-            background = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.98 : 0.82)
-            border = .clear
-        } else if isHovered {
-            foreground = panelPrimaryTextColor()
-            background = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.78 : 0.62)
-            border = .clear
-        } else {
-            foreground = isWindowFocused ? panelPrimaryTextColor() : panelSecondaryTextColor()
-            background = NSColor.controlBackgroundColor.withAlphaComponent(isWindowFocused ? 0.72 : 0.58)
-            border = .clear
-        }
-
-        return PillButtonPalette(
-            foreground: foreground,
-            background: background,
-            border: border,
-            shadowColor: NSColor.black.withAlphaComponent(isWindowFocused ? 0.05 : 0.02),
-            shadowOpacity: isWindowFocused ? 1 : 0.7,
-            shadowRadius: isHovered ? 4 : 2,
             shadowOffset: CGSize(width: 0, height: -1)
         )
     }

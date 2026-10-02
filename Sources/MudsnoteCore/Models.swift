@@ -361,53 +361,6 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
             .filter { seen.insert($0.lowercased()).inserted }
     }
 
-    public static func inlineTags(in text: String) -> [String] {
-        var tags: [String] = []
-        var activeFence: Character?
-        for line in text.components(separatedBy: "\n") {
-            let trimmed = line.trimmingCharacters(in: .whitespaces)
-            if let marker = trimmed.first,
-               (marker == "`" || marker == "~"),
-               trimmed.prefix(3).allSatisfy({ $0 == marker }) {
-                activeFence = activeFence == nil ? marker : (activeFence == marker ? nil : activeFence)
-                continue
-            }
-            guard activeFence == nil else { continue }
-
-            let characters = Array(line)
-            var index = 0
-            var inlineCodeMarkerLength: Int?
-            while index < characters.count {
-                if characters[index] == "`" {
-                    var runLength = 1
-                    while index + runLength < characters.count,
-                          characters[index + runLength] == "`" {
-                        runLength += 1
-                    }
-                    if inlineCodeMarkerLength == nil {
-                        inlineCodeMarkerLength = runLength
-                    } else if inlineCodeMarkerLength == runLength {
-                        inlineCodeMarkerLength = nil
-                    }
-                    index += runLength
-                    continue
-                }
-                if inlineCodeMarkerLength == nil,
-                   characters[index] == "#",
-                   (index == 0 || characters[index - 1].isWhitespace) {
-                    if let end = inlineTagEnd(in: characters, markerIndex: index) {
-                        tags.append(String(characters[(index + 1)..<end]))
-                        index = end
-                        continue
-                    }
-                }
-                index += 1
-            }
-        }
-
-        return normalizedTags(tags)
-    }
-
     public static func extractingInlineTags(from text: String) -> InlineTagMigration {
         var tags: [String] = []
         var activeFence: Character?

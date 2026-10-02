@@ -16,11 +16,6 @@ func normalizedPanelOpacity(_ rawOpacity: Double) -> CGFloat {
 }
 
 @MainActor
-func accentSurfaceAlpha(for rawOpacity: Double) -> CGFloat {
-    0.84 + (normalizedPanelOpacity(rawOpacity) * 0.10)
-}
-
-@MainActor
 func primarySurfaceAlpha(for rawOpacity: Double) -> CGFloat {
     0.80 + (normalizedPanelOpacity(rawOpacity) * 0.12)
 }

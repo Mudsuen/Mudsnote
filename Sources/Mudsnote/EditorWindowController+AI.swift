@@ -3,26 +3,6 @@ import Foundation
 import MudsnoteCore
 
 extension EditorWindowController {
-    func configureAIContextMenu(_ menu: NSMenu) {
-        menu.addItem(.separator())
-
-        let aiMenu = NSMenu(title: "AI")
-        for actionID in AIActionID.allCases {
-            let item = NSMenuItem(title: actionID.displayName, action: #selector(aiContextMenuItemPressed(_:)), keyEquivalent: "")
-            item.target = self
-            item.representedObject = actionID.rawValue
-            item.isEnabled = aiMenuItemEnabled(for: actionID)
-            aiMenu.addItem(item)
-        }
-        aiMenu.addItem(.separator())
-        let settings = NSMenuItem(title: "配置 AI...", action: #selector(aiConfigurePressed(_:)), keyEquivalent: "")
-        settings.target = self
-        aiMenu.addItem(settings)
-
-        let aiItem = NSMenuItem(title: "AI", action: nil, keyEquivalent: "")
-        aiItem.submenu = aiMenu
-        menu.addItem(aiItem)
-    }
 
     private func aiMenuItemEnabled(for actionID: AIActionID) -> Bool {
         guard noteStore.aiEnabled else { return false }

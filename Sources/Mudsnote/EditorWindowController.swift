@@ -85,7 +85,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     let toolbarButtonHeight: CGFloat = 26
     let toolbarButtonVisualHeight: CGFloat = 24
     let toolbarButtonSpacing: CGFloat = 0
-    let footerGapToSave: CGFloat = 1
     let footerEdgeInset: CGFloat = 2
 
     let editorTextView = MarkdownTextView(frame: .zero)
@@ -269,11 +268,6 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         if isFloatingNoteMode && isDirty { markDocumentDirty() }
         window.makeFirstResponder(editorTextView)
         editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
-    }
-
-    func hasMeaningfulUnsavedContent() -> Bool {
-        let document = currentDocument()
-        return !document.title.isEmpty || !document.body.isEmpty || !document.tags.isEmpty
     }
 
     var isWindowClosed: Bool { didCloseWindow }

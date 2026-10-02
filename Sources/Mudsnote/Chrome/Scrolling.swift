@@ -2,27 +2,6 @@ import AppKit
 import QuartzCore
 
 @MainActor
-final class SlimScroller: NSScroller {
-    override class func scrollerWidth(for controlSize: NSControl.ControlSize, scrollerStyle: NSScroller.Style) -> CGFloat {
-        8
-    }
-
-    override func drawKnobSlot(in slotRect: NSRect, highlight flag: Bool) {
-        let trackRect = slotRect
-        NSColor.black.withAlphaComponent(0.12).setFill()
-        NSBezierPath(roundedRect: trackRect, xRadius: 4, yRadius: 4).fill()
-    }
-
-    override func drawKnob() {
-        var knobRect = rect(for: .knob)
-        guard !knobRect.isEmpty else { return }
-        knobRect = knobRect.insetBy(dx: 0, dy: 1)
-        NSColor.black.withAlphaComponent(0.34).setFill()
-        NSBezierPath(roundedRect: knobRect, xRadius: 3, yRadius: 3).fill()
-    }
-}
-
-@MainActor
 final class ScrollIndicatorOverlay: NSView {
     private weak var scrollView: NSScrollView?
     private let trackLayer = CALayer()
