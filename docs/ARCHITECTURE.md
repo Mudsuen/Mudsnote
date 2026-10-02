@@ -90,7 +90,7 @@ Run `./scripts/agent_context.sh --list` for the executable topic names.
 | macOS quick capture or floating editor | `EditorWindowController.swift` and focused extensions; `Chrome/`; `QuickCaptureDocumentState.swift` | Core draft/save code |
 | iOS app state and routing | `iOS/MudsnoteCompanion/App/` | The one feature/Core boundary involved |
 | iOS Markdown storage and lifecycle | `MarkdownFileStore.swift`; `AuthorizedLibraryPath.swift`; `MarkdownLibraryModels.swift`; `MarkdownSearch.swift` | `AppModel` caller and focused tests |
-| iOS library, folders, tags, search, gallery | `RecentSearchView.swift`; `SmartFolder.swift`; `AppModel.swift` | Store query/mutation used by the flow |
+| iOS library, folders, tags, search, gallery | `LibraryHomeView.swift`; `SmartFolder.swift`; `AppModel.swift` | Store query/mutation used by the flow |
 | iOS note reader/editor and attachments | `MarkdownPreviewView.swift`; `Features/Shared/`; focused Core helpers | `AppModel` and UI tests |
 | Build, package, CI, install | `scripts/verify`; platform verify script; shared delivery policy | Package/device script for the selected platform |
 
@@ -103,7 +103,7 @@ bottom by default:
 - `MarkdownRichEditorTests.swift` contains the serialized macOS integration suite; library and floating/quick-capture tests extend it in `+Library` and `+FloatingCapture`.
 - `MarkdownFileStore.swift` owns the iOS filesystem transaction boundary.
 - `MarkdownPreviewView.swift` owns iOS rendering/editing helpers and presentation.
-- `RecentSearchView.swift` owns several related library navigation surfaces.
+- `LibraryHomeView.swift` owns several related library navigation surfaces.
 - `AppModel.swift` is the iOS application-state coordinator.
 
 For these files:

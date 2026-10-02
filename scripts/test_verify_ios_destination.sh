@@ -63,8 +63,8 @@ test "$actual" = "platform=iOS Simulator,id=EXPLICIT-SIMULATOR"
 focused_ui_tests="$(
   printf '%s\n' \
     "CHANGELOG.md" \
-    "iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift" \
-    "iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift" \
+    "iOS/MudsnoteCompanion/Features/Reader/LibraryHomeView.swift" \
+    "iOS/MudsnoteCompanion/Features/Reader/LibraryHomeView.swift" \
     | focused_ui_tests_from_paths
 )"
 test "$focused_ui_tests" = \

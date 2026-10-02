@@ -165,7 +165,7 @@ load_topic() {
     ios-library)
       DESCRIPTION="iOS home, folders, tags, search, gallery, smart folders, and attachment browser"
       FILES=(
-        iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift
+        iOS/MudsnoteCompanion/Features/Reader/LibraryHomeView.swift
         iOS/MudsnoteCompanion/Core/SmartFolder.swift
         iOS/MudsnoteCompanion/Core/AttachmentTextIndex.swift
         iOS/MudsnoteCompanion/App/AppModel.swift

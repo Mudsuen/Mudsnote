@@ -131,11 +131,18 @@ focused_ui_tests_from_paths() {
 
   while IFS= read -r path; do
     case "$path" in
-      iOS/MudsnoteCompanion/Features/Reader/RecentSearchView.swift)
+      iOS/MudsnoteCompanion/Features/Reader/LibraryHomeView.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/NoteListPresentation.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/LibraryFolderView.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/NoteFileActions.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/RecentlyDeletedView.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/LibraryRows.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/NotesBottomCommandBar.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/TagsAndSmartFolders.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/AttachmentLibraryView.swift)
         needs_directory_drawer_test=1
         ;;
       iOS/MudsnoteCompanion/Features/Capture/CaptureConsoleView.swift|\
-      iOS/MudsnoteCompanion/Features/Capture/TargetMenuView.swift|\
       iOS/MudsnoteCompanion/Core/MarkdownTagSyntax.swift|\
       iOS/MudsnoteCompanion/Design/MudsnoteTokens.swift)
         needs_capture_test=1
