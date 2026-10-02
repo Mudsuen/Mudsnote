@@ -84,7 +84,11 @@ load_topic() {
     macos-library)
       DESCRIPTION="macOS three-pane library, source/list/gallery projection, and file monitoring"
       FILES=(
-        Sources/Mudsnote/LibraryWindowController.swift
+        Sources/Mudsnote/LibraryWindowController*.swift
+        Sources/Mudsnote/LibraryModels.swift
+        Sources/Mudsnote/LibraryBackgroundWork.swift
+        Sources/Mudsnote/LibrarySourceOutlineViews.swift
+        Sources/Mudsnote/LibraryNoteListViews.swift
         Sources/Mudsnote/LibrarySourceProjection.swift
         Sources/Mudsnote/LibraryNotesLayout.swift
         Sources/Mudsnote/LibraryNoteListProjection.swift
