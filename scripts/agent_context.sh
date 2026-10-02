@@ -103,6 +103,10 @@ load_topic() {
       DESCRIPTION="macOS rich Markdown rendering, commands, links, tables, paste, and attachments"
       FILES=(
         Sources/Mudsnote/MarkdownRichEditor.swift
+        Sources/Mudsnote/MarkdownRichTextCodec.swift
+        Sources/Mudsnote/MarkdownEditorModels.swift
+        Sources/Mudsnote/MarkdownAttachmentCells.swift
+        Sources/Mudsnote/MarkdownEditorScrollViews.swift
         Sources/Mudsnote/MarkdownRichPasteNormalizer.swift
         Sources/Mudsnote/MarkdownAttachmentStorage.swift
         Sources/Mudsnote/AttachmentQuickLookController.swift

@@ -86,7 +86,7 @@ Run `./scripts/agent_context.sh --list` for the executable topic names.
 | Core note storage, settings, migration, search | `Sources/MudsnoteCore/`; `Tests/MudsnoteCoreTests/` | App controller using the changed API |
 | macOS app launch, menus, URLs, hotkeys | `Sources/Mudsnote/AppController.swift`; `Sources/Mudsnote/HotKey.swift` | Destination window controller |
 | macOS library, unified tree/list sidebar, gallery | `LibraryWindowController.swift` and its `+<Area>` extensions; `LibraryModels.swift`; `LibrarySourceProjection.swift`; `LibraryNotesLayout.swift`; list/gallery projections | Rich editor or store only at their boundary |
-| macOS rich editor, tables, links, attachments | `MarkdownRichEditor.swift`; focused Markdown/attachment helpers | Library or quick-capture command adapter |
+| macOS rich editor, tables, links, attachments | `MarkdownRichEditor.swift` (text view), `MarkdownRichTextCodec.swift` (render/serialize), `MarkdownAttachmentCells.swift`; focused Markdown/attachment helpers | Library or quick-capture command adapter |
 | macOS quick capture or floating editor | `EditorWindowController.swift` and focused extensions; `Chrome/`; `QuickCaptureDocumentState.swift` | Core draft/save code |
 | iOS app state and routing | `iOS/MudsnoteCompanion/App/` | The one feature/Core boundary involved |
 | iOS Markdown storage and lifecycle | `MarkdownFileStore.swift`; `AuthorizedLibraryPath.swift`; `MarkdownLibraryModels.swift`; `MarkdownSearch.swift` | `AppModel` caller and focused tests |
