@@ -178,6 +178,10 @@ load_topic() {
       DESCRIPTION="iOS note reader/editor, Markdown commands, tables, find, and native attachment bridges"
       FILES=(
         iOS/MudsnoteCompanion/Features/Reader/MarkdownPreviewView.swift
+        iOS/MudsnoteCompanion/Features/Reader/MarkdownEditingModels.swift
+        iOS/MudsnoteCompanion/Features/Reader/MarkdownEditorSheets.swift
+        iOS/MudsnoteCompanion/Features/Reader/MarkdownTextEditor.swift
+        iOS/MudsnoteCompanion/Features/Reader/MarkdownAttachmentPlayers.swift
         iOS/MudsnoteCompanion/Features/Shared
         iOS/MudsnoteCompanion/Core/NotePDFExporter.swift
         iOS/MudsnoteCompanion/Core/AttachmentPresentationPreferences.swift

@@ -147,7 +147,11 @@ focused_ui_tests_from_paths() {
       iOS/MudsnoteCompanion/Design/MudsnoteTokens.swift)
         needs_capture_test=1
         ;;
-      iOS/MudsnoteCompanion/Features/Reader/MarkdownPreviewView.swift)
+      iOS/MudsnoteCompanion/Features/Reader/MarkdownPreviewView.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/MarkdownEditingModels.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/MarkdownEditorSheets.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/MarkdownTextEditor.swift|\
+      iOS/MudsnoteCompanion/Features/Reader/MarkdownAttachmentPlayers.swift)
         needs_editor_test=1
         ;;
     esac

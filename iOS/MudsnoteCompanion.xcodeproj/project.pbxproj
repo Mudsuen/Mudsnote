@@ -32,6 +32,10 @@
 		6EF8001D96AC4917BCF62D49 /* AudioCaptureService.swift in Sources */ = {isa = PBXBuildFile; fileRef = 678FA41769CA4AB898CB89C3 /* AudioCaptureService.swift */; };
 		5420E72BAA314DC090AE0100 /* CaptureConsoleView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 60279F4DC6C14B998C1972EA /* CaptureConsoleView.swift */; };
 		03B559B451EB4FE994579990 /* MarkdownPreviewView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 830B7C4CF3EA4FD2B42FE760 /* MarkdownPreviewView.swift */; };
+		0A16FCBA034249CB3F82C451 /* MarkdownAttachmentPlayers.swift in Sources */ = {isa = PBXBuildFile; fileRef = 117F63D13C0E74EF1E5826CB /* MarkdownAttachmentPlayers.swift */; };
+		4A47099B0E7253865308D6BD /* MarkdownTextEditor.swift in Sources */ = {isa = PBXBuildFile; fileRef = AEE065B91854619D5C6B598A /* MarkdownTextEditor.swift */; };
+		4A32C82066C7F23642BD8D4D /* MarkdownEditorSheets.swift in Sources */ = {isa = PBXBuildFile; fileRef = 47FEE0B84AF7916331439417 /* MarkdownEditorSheets.swift */; };
+		4005F10DEBEA2F30BA49429B /* MarkdownEditingModels.swift in Sources */ = {isa = PBXBuildFile; fileRef = 465A9A119760E8900BDE3ABF /* MarkdownEditingModels.swift */; };
 		CD6BC6DBAEF0494B96B50011 /* LibraryHomeView.swift in Sources */ = {isa = PBXBuildFile; fileRef = E8F922F593974C479D7C2F8B /* LibraryHomeView.swift */; };
 		177AB55AE64954EA3B8F88FE /* AttachmentLibraryView.swift in Sources */ = {isa = PBXBuildFile; fileRef = 4294BDB5224A03539091D73A /* AttachmentLibraryView.swift */; };
 		B3097ECC54305E000AABE754 /* TagsAndSmartFolders.swift in Sources */ = {isa = PBXBuildFile; fileRef = E59C1CEADE488EE2EA11A0B7 /* TagsAndSmartFolders.swift */; };
@@ -127,6 +131,10 @@
 		678FA41769CA4AB898CB89C3 /* AudioCaptureService.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Core/AudioCaptureService.swift; sourceTree = "<group>"; };
 		60279F4DC6C14B998C1972EA /* CaptureConsoleView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Capture/CaptureConsoleView.swift; sourceTree = "<group>"; };
 		830B7C4CF3EA4FD2B42FE760 /* MarkdownPreviewView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/MarkdownPreviewView.swift; sourceTree = "<group>"; };
+		117F63D13C0E74EF1E5826CB /* MarkdownAttachmentPlayers.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/MarkdownAttachmentPlayers.swift; sourceTree = "<group>"; };
+		AEE065B91854619D5C6B598A /* MarkdownTextEditor.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/MarkdownTextEditor.swift; sourceTree = "<group>"; };
+		47FEE0B84AF7916331439417 /* MarkdownEditorSheets.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/MarkdownEditorSheets.swift; sourceTree = "<group>"; };
+		465A9A119760E8900BDE3ABF /* MarkdownEditingModels.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/MarkdownEditingModels.swift; sourceTree = "<group>"; };
 		E8F922F593974C479D7C2F8B /* LibraryHomeView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/LibraryHomeView.swift; sourceTree = "<group>"; };
 		4294BDB5224A03539091D73A /* AttachmentLibraryView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/AttachmentLibraryView.swift; sourceTree = "<group>"; };
 		E59C1CEADE488EE2EA11A0B7 /* TagsAndSmartFolders.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/TagsAndSmartFolders.swift; sourceTree = "<group>"; };
@@ -245,6 +253,10 @@
 				678FA41769CA4AB898CB89C3 /* AudioCaptureService.swift */,
 				60279F4DC6C14B998C1972EA /* CaptureConsoleView.swift */,
 				830B7C4CF3EA4FD2B42FE760 /* MarkdownPreviewView.swift */,
+				117F63D13C0E74EF1E5826CB /* MarkdownAttachmentPlayers.swift */,
+				AEE065B91854619D5C6B598A /* MarkdownTextEditor.swift */,
+				47FEE0B84AF7916331439417 /* MarkdownEditorSheets.swift */,
+				465A9A119760E8900BDE3ABF /* MarkdownEditingModels.swift */,
 				E8F922F593974C479D7C2F8B /* LibraryHomeView.swift */,
 				4294BDB5224A03539091D73A /* AttachmentLibraryView.swift */,
 				E59C1CEADE488EE2EA11A0B7 /* TagsAndSmartFolders.swift */,
@@ -461,6 +473,10 @@
 				6EF8001D96AC4917BCF62D49 /* AudioCaptureService.swift in Sources */,
 				5420E72BAA314DC090AE0100 /* CaptureConsoleView.swift in Sources */,
 				03B559B451EB4FE994579990 /* MarkdownPreviewView.swift in Sources */,
+				0A16FCBA034249CB3F82C451 /* MarkdownAttachmentPlayers.swift in Sources */,
+				4A47099B0E7253865308D6BD /* MarkdownTextEditor.swift in Sources */,
+				4A32C82066C7F23642BD8D4D /* MarkdownEditorSheets.swift in Sources */,
+				4005F10DEBEA2F30BA49429B /* MarkdownEditingModels.swift in Sources */,
 				CD6BC6DBAEF0494B96B50011 /* LibraryHomeView.swift in Sources */,
 				177AB55AE64954EA3B8F88FE /* AttachmentLibraryView.swift in Sources */,
 				B3097ECC54305E000AABE754 /* TagsAndSmartFolders.swift in Sources */,
