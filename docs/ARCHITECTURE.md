@@ -100,7 +100,7 @@ Several mature files are still deliberate hotspots. Do not read them from top to
 bottom by default:
 
 - `LibraryWindowController.swift` owns the macOS two-column editor and unified tree/list sidebar orchestration: stored state and setup stay in the main file; behavior lives in `LibraryWindowController+<Area>.swift` (sources, note list, saving, menus, tables, and so on). Helper views and models live in `LibraryModels`, `LibraryBackgroundWork`, `LibrarySourceOutlineViews` and `LibraryNoteListViews`.
-- `MarkdownRichEditorTests.swift` contains the serialized macOS integration suite.
+- `MarkdownRichEditorTests.swift` contains the serialized macOS integration suite; library and floating/quick-capture tests extend it in `+Library` and `+FloatingCapture`.
 - `MarkdownFileStore.swift` owns the iOS filesystem transaction boundary.
 - `MarkdownPreviewView.swift` owns iOS rendering/editing helpers and presentation.
 - `RecentSearchView.swift` owns several related library navigation surfaces.

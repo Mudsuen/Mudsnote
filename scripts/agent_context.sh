@@ -78,7 +78,7 @@ load_topic() {
         Sources/Mudsnote/PreferencesWindowController.swift
         Sources/Mudsnote/FloatingNoteBrowserController.swift
       )
-      TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests.swift)
+      TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests*.swift)
       SEARCH_HINT='applicationDidFinishLaunching|openFiles|showLibrary|HotKey|validateMenuItem'
       ;;
     macos-library)
@@ -95,7 +95,7 @@ load_topic() {
         Sources/Mudsnote/LibraryGalleryView.swift
         Sources/Mudsnote/LibraryFileSystemMonitor.swift
       )
-      TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests.swift scripts/library_smoke.sh)
+      TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests*.swift scripts/library_smoke.sh)
       DOCS=(docs/apple-notes-parity-roadmap.md)
       SEARCH_HINT='reloadNotes|selectedScope|outlineView|tableView|collectionView|saveCurrentNote'
       ;;
@@ -112,7 +112,7 @@ load_topic() {
         Sources/Mudsnote/AttachmentQuickLookController.swift
         Sources/Mudsnote/LinkEditorSheetController.swift
       )
-      TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests.swift)
+      TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests*.swift)
       SEARCH_HINT='MarkdownTextView|render|serialize|menu\(for|RichMarkdownTable|Attachment'
       ;;
     quick-capture)
@@ -132,7 +132,7 @@ load_topic() {
         Sources/Mudsnote/MarkdownRichEditor.swift
         Sources/Mudsnote/Chrome
       )
-      TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests.swift)
+      TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests*.swift)
       SEARCH_HINT='buildQuickCaptureUI|persistDraft|savePressed|QuickCapture|MarkdownTextView'
       ;;
     ios-app)
@@ -313,7 +313,11 @@ print_topic() {
   local status=0
   local matches=""
   set +e
-  matches="$(rg -n --no-heading --color never -m 12 -- "$query" "${FILES[@]}" "${TESTS[@]}")"
+  if command -v rg >/dev/null 2>&1; then
+    matches="$(rg -n --no-heading --color never -m 12 -- "$query" "${FILES[@]}" "${TESTS[@]}")"
+  else
+    matches="$(grep -n -E -m 12 -- "$query" "${FILES[@]}" "${TESTS[@]}")"
+  fi
   status=$?
   set -e
   if (( status == 1 )); then
