@@ -15,4 +15,4 @@ Exclude archives unless explicitly requested.
 - Refactor history: `docs/REFACTOR_LOG.md`
 - Decisions: `agent-memory/decisions/`
 - Incidents: `agent-memory/incidents/YYYY/`
-- Historical evidence: `agent-memory/iterations/`, then `agent-memory/archive/`
+- Historical evidence: `agent-memory/archive/`, then `git log`

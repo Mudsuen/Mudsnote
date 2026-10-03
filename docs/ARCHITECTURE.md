@@ -14,7 +14,7 @@ Historical changes do not belong here.
 | Current takeover state and durable behavior constraints | `docs/AI_HANDOFF.md` |
 | User-visible iteration history | `CHANGELOG.md` |
 | Durable decisions and concrete incidents | `agent-memory/decisions/`; `agent-memory/incidents/` |
-| Old implementation evidence | `agent-memory/iterations/`; `agent-memory/archive/` |
+| Old implementation evidence | `agent-memory/archive/`; `git log` |
 | Delivery lifecycle | `docs/delivery-workflow.md`; `/Users/Donald/Code/AGENTS.md` |
 
 Do not copy the same fact into several owners. Link to the owner instead.
