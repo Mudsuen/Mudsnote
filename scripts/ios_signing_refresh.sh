@@ -23,7 +23,9 @@ LAST_SUCCESS_PATH="$STATE_DIR/ios-signing-refresh-last-success"
 ATTENTION_PATH="$STATE_DIR/ios-signing-refresh-attention-required"
 PROFILE_CACHE_DIR="${MUDSNOTE_IOS_PROFILE_CACHE_DIR:-${HOME:-/tmp}/Library/Developer/Xcode/UserData/Provisioning Profiles}"
 PROFILE_BACKUP_DIR="${MUDSNOTE_IOS_PROFILE_BACKUP_DIR:-$STATE_DIR/signing-profile-backups}"
-RENEWAL_THRESHOLD_SECONDS="${MUDSNOTE_IOS_SIGNING_RENEWAL_THRESHOLD_SECONDS:-172800}"
+# Free-team profiles last 7 days and the Xcode Apple ID session lapses every few
+# weeks. Renewing at 5 days left surfaces a lapsed session while the app still runs.
+RENEWAL_THRESHOLD_SECONDS="${MUDSNOTE_IOS_SIGNING_RENEWAL_THRESHOLD_SECONDS:-432000}"
 CHECK_INTERVAL_SECONDS="${MUDSNOTE_IOS_SIGNING_CHECK_INTERVAL_SECONDS:-21600}"
 LAUNCHCTL_BIN="${MUDSNOTE_IOS_SIGNING_LAUNCHCTL:-launchctl}"
 OSASCRIPT_BIN="${MUDSNOTE_IOS_SIGNING_OSASCRIPT:-osascript}"
@@ -77,11 +79,15 @@ configure_logging() {
 }
 
 notify_failure() {
+  local title="Mudsnote 续签失败" body="查看 ~/Library/Logs/Mudsnote/ios-signing-refresh.log"
   if ! command -v "$OSASCRIPT_BIN" >/dev/null 2>&1; then
     return
   fi
-  "$OSASCRIPT_BIN" -e \
-    'display notification "Open Xcode Apple Accounts, sign in, then run the Mudsnote signing refresh." with title "Mudsnote signing refresh failed" sound name "Basso"' \
+  if grep -q 'xcode-account-authentication' "$ATTENTION_PATH" 2>/dev/null; then
+    title="Xcode 登录已失效"
+    body="打开 Xcode › 设置 › Apple 账户重新登录；之后会自动续签。"
+  fi
+  "$OSASCRIPT_BIN" -e "display notification \"$body\" with title \"$title\" sound name \"Basso\"" \
     >/dev/null 2>&1 || true
 }
 
