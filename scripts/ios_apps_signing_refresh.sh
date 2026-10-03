@@ -7,19 +7,13 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MUDSNOTE_REFRESH="$ROOT_DIR/scripts/ios_signing_refresh.sh"
-BADGE_ROOT="${BADGE_ANIMATION_ROOT:-/Users/Donald/Documents/Codex/2026-08-25/jl/work/ios-badge-animation}"
+BADGE_ROOT="${BADGE_ANIMATION_ROOT:-/Users/Donald/Code/BadgeAnimation}"
 BADGE_PROJECT="$BADGE_ROOT/BadgeAnimation.xcodeproj"
 BADGE_DERIVED_DATA="$BADGE_ROOT/build/SigningRefreshDerivedData"
 BADGE_APP="$BADGE_DERIVED_DATA/Build/Products/Debug-iphoneos/BadgeAnimation.app"
 BADGE_BUNDLE_ID="com.codex.badgeanimation"
-SHORTCUT_ROOT="${SHORTCUT_TILES_ROOT:-}"
-SHORTCUT_PROJECT="$SHORTCUT_ROOT/ShortcutTiles.xcodeproj"
-SHORTCUT_DERIVED_DATA="$SHORTCUT_ROOT/build/SigningRefreshDerivedData"
-SHORTCUT_APP="$SHORTCUT_DERIVED_DATA/Build/Products/Debug-iphoneos/ShortcutTiles.app"
-SHORTCUT_BUNDLE_ID="com.donald.ShortcutTiles"
 STATE_DIR="${MUDSNOTE_IOS_SIGNING_STATE_DIR:-${HOME:-/tmp}/Library/Application Support/Mudsnote}"
 BADGE_PENDING_PATH="$STATE_DIR/badge-animation-signing-refresh-needs-install"
-SHORTCUT_PENDING_PATH="$STATE_DIR/shortcut-tiles-signing-refresh-needs-install"
 RENEWAL_THRESHOLD_SECONDS="${MUDSNOTE_IOS_SIGNING_RENEWAL_THRESHOLD_SECONDS:-432000}"
 
 AUTO_INSTALL=0
@@ -109,7 +103,7 @@ case "$MODE" in
     ;;
   status)
     "$MUDSNOTE_REFRESH" --status || true
-    for pending in "$BADGE_PENDING_PATH" "$SHORTCUT_PENDING_PATH"; do
+    for pending in "$BADGE_PENDING_PATH"; do
       if [[ -f "$pending" ]]; then
         echo "A renewed local iOS build is waiting for installation: $pending"
       fi
@@ -118,7 +112,7 @@ case "$MODE" in
   run)
     if [[ "$DRY_RUN" == 1 ]]; then
       "$MUDSNOTE_REFRESH" --dry-run
-      echo "Dry run: would inspect, refresh, and conditionally install BadgeAnimation (and ShortcutTiles only when SHORTCUT_TILES_ROOT is configured)."
+      echo "Dry run: would inspect, refresh, and conditionally install BadgeAnimation."
       exit 0
     fi
     mudsnote_args=(--run)
@@ -142,15 +136,6 @@ case "$MODE" in
       install_app BadgeAnimation "$BADGE_APP" "$BADGE_BUNDLE_ID" "$BADGE_PENDING_PATH" || result=1
     fi
 
-    if [[ -n "$SHORTCUT_ROOT" ]]; then
-      shortcut_ready=1
-      if app_requires_refresh "$SHORTCUT_APP"; then
-        refresh_app ShortcutTiles "$SHORTCUT_PROJECT" ShortcutTiles "$SHORTCUT_DERIVED_DATA" "$SHORTCUT_APP" "$SHORTCUT_PENDING_PATH" || { shortcut_ready=0; result=1; }
-      fi
-      if [[ "$AUTO_INSTALL" == 1 && "$shortcut_ready" == 1 && -f "$SHORTCUT_PENDING_PATH" ]]; then
-        install_app ShortcutTiles "$SHORTCUT_APP" "$SHORTCUT_BUNDLE_ID" "$SHORTCUT_PENDING_PATH" || result=1
-      fi
-    fi
     exit "$result"
     ;;
 esac
