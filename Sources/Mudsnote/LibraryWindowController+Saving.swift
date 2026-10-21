@@ -321,7 +321,7 @@ extension LibraryWindowController {
         let viewportHeight = editorTextView.enclosingScrollView?.contentView.bounds.height ?? 0
         let relationsTop = contentBottom + LibraryNotesLayout.editorBottomInset
         var documentHeight = max(viewportHeight, relationsTop)
-        if !noteLinksView.isPinned, noteLinksView.superview === editorTextView {
+        if !noteLinksView.isHidden, !noteLinksView.isPinned, noteLinksView.superview === editorTextView {
             noteLinksView.setFrameSize(NSSize(width: max(0, editorTextView.bounds.width - 20), height: noteLinksView.frame.height))
             noteLinksView.layoutSubtreeIfNeeded()
             let linksHeight = noteLinksView.fittingSize.height

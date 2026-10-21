@@ -8,6 +8,7 @@ enum LibraryCopy {
     static let folders = "文件夹"
     static let tags = "标签"
     static let pinned = "置顶"
+    static let floating = "浮窗笔记"
     static let today = "今天"
     static let yesterday = "昨天"
     static let previousSevenDays = "过去 7 天"

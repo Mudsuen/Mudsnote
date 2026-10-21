@@ -4,27 +4,35 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 BUILD_DIR="${ROOT_DIR}/dist/build"
-APP_DIR="/Applications/Mudsnote.app"
+APP_DIR="${ROOT_DIR}/dist/Mudsnote.app"
+CANDIDATE_ONLY=0
+if [[ "${1:-}" == "--candidate-only" ]]; then
+    CANDIDATE_ONLY=1
+elif [[ $# -gt 0 ]]; then
+    echo "Usage: $0 [--candidate-only]" >&2
+    exit 2
+fi
 CONTENTS_DIR="${APP_DIR}/Contents"
 MACOS_DIR="${CONTENTS_DIR}/MacOS"
 RESOURCES_DIR="${CONTENTS_DIR}/Resources"
 
 "${ROOT_DIR}/scripts/check_macos_install_scope.sh" "${ROOT_DIR}"
+if [[ -n "$(git -C "${ROOT_DIR}" status --porcelain)" ]]; then
+    echo "ERROR: commit source changes before packaging a versioned candidate." >&2
+    exit 2
+fi
 
-"${ROOT_DIR}/scripts/generate_icon_assets.sh"
+# Use the versioned icon assets; packaging must not dirty its source checkout.
+[[ -f "${ROOT_DIR}/assets/generated/MudsnoteAppIcon.icns" ]]
+[[ -f "${ROOT_DIR}/assets/generated/MudsnoteStatusTemplate.png" ]]
 
-mkdir -p /tmp/codex-swift-module-cache /tmp/codex-xdg-cache /tmp/codex-home
-HOME=/tmp/codex-home \
-XDG_CACHE_HOME=/tmp/codex-xdg-cache \
-SWIFT_MODULECACHE_PATH=/tmp/codex-swift-module-cache \
-CLANG_MODULE_CACHE_PATH=/tmp/codex-swift-module-cache \
 swift build -c release --scratch-path "${BUILD_DIR}"
+BIN_DIR="$(swift build -c release --scratch-path "${BUILD_DIR}" --show-bin-path)"
 
 rm -rf "${APP_DIR}"
-rm -rf /Applications/QuickMarkdown.app
 mkdir -p "${MACOS_DIR}" "${RESOURCES_DIR}"
 
-cp "${BUILD_DIR}/arm64-apple-macosx/release/mudsnote" "${MACOS_DIR}/Mudsnote"
+cp "${BIN_DIR}/mudsnote" "${MACOS_DIR}/Mudsnote"
 chmod +x "${MACOS_DIR}/Mudsnote"
 cp "${ROOT_DIR}/assets/generated/MudsnoteAppIcon.icns" "${RESOURCES_DIR}/MudsnoteAppIcon.icns"
 cp "${ROOT_DIR}/assets/generated/MudsnoteStatusTemplate.png" "${RESOURCES_DIR}/MudsnoteStatusTemplate.png"
@@ -105,12 +113,14 @@ SIGN_IDENTITY="$(security find-identity -v -p codesigning 2>/dev/null | awk '/Ap
 if [[ -z "${SIGN_IDENTITY}" ]]; then
     SIGN_IDENTITY="-"
 fi
+# Record the exact source revision before signing the final bundle.
+REVISION="$(git -C "${ROOT_DIR}" rev-parse HEAD)"
+/usr/libexec/PlistBuddy -c "Add :MudsnoteSourceRevision string ${REVISION}" "${CONTENTS_DIR}/Info.plist"
 codesign --force --deep --sign "${SIGN_IDENTITY}" "${APP_DIR}" >/dev/null
+codesign --verify --deep --strict "${APP_DIR}"
 
-/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister -f "${APP_DIR}"
-pkill -f '/Applications/Mudsnote.app/Contents/MacOS/Mudsnote' || true
-sleep 1
-open -a "${APP_DIR}"
+if [[ "${CANDIDATE_ONLY}" == 0 ]]; then
+    python3 "${ROOT_DIR}/scripts/macos_update.py" install-candidate "${APP_DIR}" --quit --launch
+fi
 
-echo "Packaged app at: ${APP_DIR}"
-echo "Signed with: ${SIGN_IDENTITY}"
+echo "Verified candidate at: ${APP_DIR}"

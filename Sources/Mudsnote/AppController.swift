@@ -618,7 +618,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         cleanupClosedWindows()
         let key = url.standardizedFileURL.path
 
-        if let controller = editorControllers[key], controller.window?.isVisible == true {
+        if let controller = editorControllers[key], !controller.isWindowClosed {
             controller.showWindowAndFocus()
             return
         }
@@ -681,7 +681,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         controller?.showWindowAndFocus()
     }
 
+    private func refreshFloatingNoteClassification() {
+        let paths = ([floatingNoteController] + Array(editorControllers.values))
+            .compactMap { $0 }
+            .filter { !$0.isWindowClosed && $0.isFloatingNoteMode }
+            .compactMap { ($0.activeFloatingNoteURL ?? $0.fileURL)?.standardizedFileURL.path }
+        libraryWindowController?.updateFloatingNotePaths(Set(paths))
+    }
+
     private func refreshFloatingNoteBrowsers() {
+        refreshFloatingNoteClassification()
         floatingNoteController?.refreshFloatingNoteBrowser()
         editorControllers.values.forEach { $0.refreshFloatingNoteBrowser() }
     }
@@ -749,6 +758,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         )
 
         libraryWindowController = controller
+        refreshFloatingNoteClassification()
         controller.showWindowAndFocus()
         selectVisualQANoteIfNeeded(in: controller)
     }
@@ -1051,6 +1061,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     private func didSaveNote(at _: URL) {
+        refreshFloatingNoteClassification()
         statusMenuRefreshTask?.cancel()
         let noteStore = noteStore
         statusMenuRefreshTask = Task { @MainActor [weak self] in
@@ -1248,7 +1259,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             }
         }
 
-        editorControllers = editorControllers.filter { $0.value.window?.isVisible == true }
+        editorControllers = editorControllers.filter { !$0.value.isWindowClosed }
+        refreshFloatingNoteClassification()
 
         if libraryWindowController?.window?.isVisible != true {
             libraryWindowController = nil

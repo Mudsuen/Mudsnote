@@ -2496,9 +2496,9 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func knowledgeRelationsViewStaysAvailableWithoutExistingRelations() {
+    func knowledgeRelationsViewHidesWithoutExistingRelations() {
         let view = NoteLinksView(frame: .zero)
-        #expect(!view.isHidden)
+        #expect(view.isHidden)
         var requestedLayer: KnowledgeLayer?
         var requestedGraph = false
         view.onGenerateHigherLayer = { requestedLayer = $0 }
@@ -2536,7 +2536,7 @@ struct MarkdownRichEditorTests {
         #expect(requestedGraph)
 
         view.update(.empty)
-        #expect(!view.isHidden)
+        #expect(view.isHidden)
     }
 
     @MainActor

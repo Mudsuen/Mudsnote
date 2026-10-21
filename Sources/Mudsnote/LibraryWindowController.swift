@@ -25,6 +25,8 @@ final class LibraryWindowController: NSWindowController,
 {
     let noteStore: NoteStore
 
+    var floatingNotePaths: Set<String> = []
+
     let sourceOutlineView = LibrarySourceOutlineView()
 
     let tableView = LibraryNoteTableView()

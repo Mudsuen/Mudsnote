@@ -290,8 +290,10 @@ final class NoteLinksView: NSView {
         populate(relatedContent, with: legacyRelations, accessibilityPrefix: "打开明确关联笔记")
         populateSuggestions(suggestedContent, with: relations.suggested)
 
+        isHidden = relations.outgoing.isEmpty && relations.incoming.isEmpty
+            && relations.parents.isEmpty && relations.children.isEmpty
+            && relations.related.isEmpty && relations.suggested.isEmpty
         updateExpandedPresentation()
-        isHidden = false
         if let targetLayer = relations.currentLayer?.nextHigher,
            targetLayer == .line || targetLayer == .plane {
             synthesisButton.title = "生成\(targetLayer.displayName)层草案"
@@ -316,7 +318,6 @@ final class NoteLinksView: NSView {
             || !knowledgeRelations.incoming.isEmpty
             || (knowledgeRelations.parents + knowledgeRelations.children + knowledgeRelations.related).isEmpty
         suggestedRow.isHidden = !isExpanded || knowledgeRelations.suggested.isEmpty
-        // The graph action remains available even when there are no relations.
         disclosureButton.image = NSImage(
             systemSymbolName: isExpanded ? "chevron.down" : "chevron.right",
             accessibilityDescription: nil

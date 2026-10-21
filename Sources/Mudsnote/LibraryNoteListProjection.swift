@@ -154,6 +154,7 @@ enum LibraryNoteListProjection {
         groupsByDate: Bool,
         includesPinnedGroup: Bool,
         pinnedPaths: Set<String>,
+        floatingPaths: Set<String> = [],
         now: Date = Date(),
         calendar: Calendar = .current,
         where predicate: (NoteSearchResult) -> Bool
@@ -165,8 +166,8 @@ enum LibraryNoteListProjection {
         candidates.reserveCapacity(min(batchLimit, 256))
 
         let orderedBefore: (RankedNote, RankedNote) -> Bool = { lhs, rhs in
-            if lhs.isPinned != rhs.isPinned {
-                return lhs.isPinned
+            if lhs.priority != rhs.priority {
+                return lhs.priority > rhs.priority
             }
 
             if let lhsGroup = lhs.dateGroup,
@@ -186,13 +187,15 @@ enum LibraryNoteListProjection {
             : nil
         for note in notes where predicate(note) {
             let prepared = PreparedNote(note)
-            let isPinned = includesPinnedGroup && pinnedPaths.contains(prepared.standardizedPath)
-            let dateGroup = !isPinned
+            let priority = !includesPinnedGroup ? 0
+                : floatingPaths.contains(prepared.standardizedPath) ? 2
+                : pinnedPaths.contains(prepared.standardizedPath) ? 1 : 0
+            let dateGroup = priority == 0
                 ? dateGrouping?.group(for: note.modifiedAt)
                 : nil
             candidates.append(RankedNote(
                 prepared: prepared,
-                isPinned: isPinned,
+                priority: priority,
                 dateGroup: dateGroup
             ))
             if candidates.count == batchLimit {
@@ -246,6 +249,7 @@ enum LibraryNoteListProjection {
         groupsByDate: Bool,
         includesPinnedGroup: Bool,
         pinnedPaths: Set<String>,
+        floatingPaths: Set<String> = [],
         now: Date = Date(),
         preservesInputOrder: Bool = false,
         calendar: Calendar = .current
@@ -256,12 +260,15 @@ enum LibraryNoteListProjection {
             : sorted(preparedNotes, by: sortOrder)
         let canShowPinnedGroup = !preservesInputOrder && includesPinnedGroup
 
+        var floatingNotes: [PreparedNote] = []
         var pinnedNotes: [PreparedNote] = []
         var unpinnedNotes: [PreparedNote] = []
         pinnedNotes.reserveCapacity(min(orderedNotes.count, pinnedPaths.count))
         unpinnedNotes.reserveCapacity(orderedNotes.count)
         for note in orderedNotes {
-            if canShowPinnedGroup, pinnedPaths.contains(note.standardizedPath) {
+            if canShowPinnedGroup, floatingPaths.contains(note.standardizedPath) {
+                floatingNotes.append(note)
+            } else if canShowPinnedGroup, pinnedPaths.contains(note.standardizedPath) {
                 pinnedNotes.append(note)
             } else {
                 unpinnedNotes.append(note)
@@ -270,6 +277,10 @@ enum LibraryNoteListProjection {
 
         var rows: [LibraryNoteListRow] = []
         rows.reserveCapacity(notes.count + 6)
+        if !floatingNotes.isEmpty {
+            rows.append(.group(title: LibraryCopy.floating))
+            rows.append(contentsOf: floatingNotes.map { .note($0.note) })
+        }
         if !pinnedNotes.isEmpty {
             rows.append(.group(title: LibraryCopy.pinned))
             rows.append(contentsOf: pinnedNotes.map { .note($0.note) })
@@ -327,7 +338,7 @@ enum LibraryNoteListProjection {
 
     private struct RankedNote {
         let prepared: PreparedNote
-        let isPinned: Bool
+        let priority: Int
         let dateGroup: DateGroup?
     }
 

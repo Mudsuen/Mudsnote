@@ -209,7 +209,7 @@ extension LibraryWindowController {
         let pinnedPaths = selectedScope == .trash
             ? Set<String>()
             : Set(noteStore.libraryPinnedNotePaths)
-        if noteListSortOrder == .dateEdited, pinnedPaths.isEmpty {
+        if noteListSortOrder == .dateEdited, pinnedPaths.isEmpty, floatingNotePaths.isEmpty {
             return notesForSelectedScopeByModifiedDate(limit: limit, allNotes: allNotes)
         }
 
@@ -255,6 +255,7 @@ extension LibraryWindowController {
             groupsByDate: groupsNoteListByDate,
             includesPinnedGroup: selectedScope != .trash,
             pinnedPaths: pinnedPaths,
+            floatingPaths: floatingNotePaths,
             where: predicate
         )
     }
@@ -495,6 +496,7 @@ extension LibraryWindowController {
             groupsByDate: groupsNoteListByDate,
             includesPinnedGroup: selectedScope != .trash,
             pinnedPaths: Set(noteStore.libraryPinnedNotePaths),
+            floatingPaths: floatingNotePaths,
             now: now,
             preservesInputOrder: preservesInputOrder
         )
@@ -549,6 +551,12 @@ extension LibraryWindowController {
         synchronizeGallerySelectionFromTable()
         updateNoteListEmptyState(query: query)
         updateToolbarActionState()
+    }
+
+    func updateFloatingNotePaths(_ paths: Set<String>) {
+        guard floatingNotePaths != paths else { return }
+        floatingNotePaths = paths
+        rebuildNoteListRowsForDisplayOptions()
     }
 
     func rowIndex(for standardizedPath: String) -> Int? {

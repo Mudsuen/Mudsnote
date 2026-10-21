@@ -24,9 +24,11 @@ PERFORMANCE_TESTS='StaysInteractiveAtSnapshotLimit|richMarkdownSerializationStay
 
 case "$MODE" in
   pr)
+    python3 scripts/test_macos_update.py
     run_macos_tests debug --skip "$PERFORMANCE_TESTS"
     ;;
   full)
+    python3 scripts/test_macos_update.py
     run_macos_tests debug --skip "$PERFORMANCE_TESTS"
     if [[ -n "${CI:-}" ]]; then
       swift build -c release

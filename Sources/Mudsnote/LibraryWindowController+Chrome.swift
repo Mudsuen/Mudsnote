@@ -460,8 +460,8 @@ extension LibraryWindowController {
         statusLabel.lineBreakMode = .byTruncatingTail
         wordCountLabel.setAccessibilityLabel("字数")
         wordCountLabel.font = .monospacedDigitSystemFont(
-            ofSize: LibraryNotesLayout.editorStatusFontSize,
-            weight: .medium
+            ofSize: 11,
+            weight: .regular
         )
         wordCountLabel.textColor = panelTertiaryTextColor()
         wordCountLabel.alignment = .right
@@ -473,6 +473,9 @@ extension LibraryWindowController {
         createdDateLabel.textColor = panelTertiaryTextColor()
         createdDateLabel.alignment = .right
         createdDateLabel.lineBreakMode = .byTruncatingTail
+        createdDateLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        statusLabel.setContentCompressionResistancePriority(.defaultHigh, for: .horizontal)
+        wordCountLabel.setContentCompressionResistancePriority(.required, for: .horizontal)
         let scrollView = LibraryEditorScrollView()
         let clipView = EditorClipView()
         scrollView.drawsBackground = false
@@ -504,13 +507,13 @@ extension LibraryWindowController {
             scrollView.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: bodyContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -44)
+            scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -32)
         ])
 
         let dates = NSStackView(views: [createdDateLabel, statusLabel])
-        dates.orientation = .vertical
-        dates.alignment = .trailing
-        dates.spacing = 2
+        dates.orientation = .horizontal
+        dates.alignment = .firstBaseline
+        dates.spacing = 16
         bodyContainer.addSubview(dates)
         bodyContainer.addSubview(wordCountLabel)
         dates.translatesAutoresizingMaskIntoConstraints = false
@@ -520,7 +523,7 @@ extension LibraryWindowController {
             dates.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -8),
             dates.leadingAnchor.constraint(greaterThanOrEqualTo: wordCountLabel.trailingAnchor, constant: 12),
             wordCountLabel.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor, constant: 20),
-            wordCountLabel.bottomAnchor.constraint(equalTo: dates.bottomAnchor)
+            wordCountLabel.firstBaselineAnchor.constraint(equalTo: statusLabel.firstBaselineAnchor)
         ])
 
         noteLinksView.onOpen = { [weak self] url in

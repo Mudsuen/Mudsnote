@@ -7,6 +7,33 @@ import MudsnoteCore
 
 @Suite(.serialized)
 struct FloatingNotePublishingTests {
+    @Test func floatingNotesRankAbovePinsBeforeResultLimitAndAppearOnce() {
+        let now = Date()
+        let notes = (0..<10).map { index in
+            NoteSearchResult(url: URL(fileURLWithPath: "/tmp/note-\(index).md"),
+                title: "Note \(index)", snippet: "", modifiedAt: now.addingTimeInterval(Double(-index)))
+        }
+        let floating = notes[9].url.path
+        let pinned = notes[8].url.path
+        for sort in [LibraryNoteSortOrder.dateEdited, .dateCreated, .title] {
+            let ranked = LibraryNoteListProjection.rankedPrefix(notes, limit: 2,
+                sortOrder: sort, groupsByDate: true, includesPinnedGroup: true,
+                pinnedPaths: [pinned, floating], floatingPaths: [floating], where: { _ in true })
+            #expect(ranked.map(\.url.path) == [floating, pinned])
+            let rows = LibraryNoteListProjection.rows(for: ranked, sortOrder: sort,
+                groupsByDate: true, includesPinnedGroup: true,
+                pinnedPaths: [pinned, floating], floatingPaths: [floating])
+            #expect(rows.compactMap(\.note).map(\.url.path) == [floating, pinned])
+            #expect(rows.compactMap { row -> String? in
+                if case .group(let title) = row { return title }; return nil
+            } == ["浮窗笔记", "置顶"])
+        }
+        let ordinary = LibraryNoteListProjection.rows(for: notes, sortOrder: .dateEdited,
+            groupsByDate: false, includesPinnedGroup: false,
+            pinnedPaths: [pinned], floatingPaths: [floating])
+        #expect(ordinary.compactMap(\.note).map(\.url) == notes.map(\.url))
+    }
+
     @MainActor @Test
     func floatingAutosavePublishesBodyForLibraryWithoutClosingWindow() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)

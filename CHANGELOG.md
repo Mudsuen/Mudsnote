@@ -11,6 +11,17 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-10-21 — Mac floating-note priority and personal updates
+
+- Problem: Open floating notes could appear below ordinary pins, empty knowledge
+  relations occupied editor space, and footer metadata had mismatched alignment.
+- Fix: Add a separate floating-note group above pins (including bounded result
+  selection), hide empty relations and their space, and align footer metadata
+  on one baseline. Add isolated Git-based Mac update checks, verified candidate
+  packaging, recoverable installation and rollback receipts.
+- Lesson: Rank priority groups before truncating results. Keep app version
+  updates separate from note synchronization and never replace an active app.
+
 ## Iteration Count
 
 As of 2026-09-19, this prototype records 303 implementation iterations, including the initial MVP.
