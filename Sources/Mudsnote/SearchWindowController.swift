@@ -120,6 +120,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
         searchField.focusRingType = .none
         searchField.target = self
         searchField.action = #selector(openSelectedResult)
+        searchField.sendsWholeSearchString = true
         searchField.delegate = self
 
         let searchSurface = makeModernSurface(

@@ -4523,6 +4523,38 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func searchWindowTypingDoesNotActivateAResult() async throws {
+        let suiteName = "mudsnote.search-window-typing.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-search-typing-\(UUID().uuidString)", isDirectory: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil,
+                              appSupportDirectory: root.appendingPathComponent("Support", isDirectory: true))
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        let beta = try store.saveNewNote(title: "Beta", body: "Synthetic typing fixture")
+        var opened: [URL] = []
+        let controller = SearchWindowController(noteStore: store, onOpen: { opened.append($0) }, onClose: {})
+        defer { controller.close() }
+        await controller.waitForSearchForTesting()
+        controller.searchField.selectText(nil)
+        let editor = try #require(controller.searchField.currentEditor() as? NSTextView)
+        // Native text editing exercises NSSearchField's delayed incremental action,
+        // which directly assigning stringValue and calling the delegate does not.
+        editor.insertText("Beta", replacementRange: NSRange(location: 0, length: editor.string.utf16.count))
+        try await Task.sleep(for: .milliseconds(800))
+        await controller.waitForSearchForTesting()
+        #expect(controller.resultTitlesForTesting == ["Beta"])
+        #expect(opened.isEmpty)
+        controller.searchField.sendAction(controller.searchField.action, to: controller.searchField.target)
+        #expect(opened == [beta])
+    }
+
+    @MainActor
+    @Test
     func separateNoteWindowReusesFloatingNoteChromeAndManager() throws {
         let notesRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-floating-style-test-\(UUID().uuidString)", isDirectory: true)
