@@ -27,6 +27,8 @@ Known open issue:
 - Fix: Prepare one persistent Markdown note before opening the primary window,
   recover the existing draft into it, retain its URL across launches, and
   validate the library snapshot when a newly floating file is not indexed yet.
+  Floating documents in legacy folders are included individually through the
+  existing external-document projection, without moving notes or attachments.
 - Lesson: Test the primary legacy-draft entry path as well as existing files.
   Conversion checkpoints preserve retries; failed writes retain the original
   draft and diverged external content is never overwritten. Git rollback leaves

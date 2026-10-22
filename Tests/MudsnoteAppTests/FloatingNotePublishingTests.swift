@@ -23,9 +23,10 @@ struct FloatingNotePublishingTests {
         let library = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
         defer { library.close() }
         try store.saveDraft(DraftSnapshot(id: "floating-note", sourcePath: nil,
-            selectedDirectoryPath: store.notesDirectory.path, title: "Flow",
+            selectedDirectoryPath: root.appendingPathComponent("LegacyQuickMarkdown").path, title: "Flow",
             body: "Recovered **body**", tags: ["work"], updatedAt: Date()))
         let url = try store.preparePrimaryFloatingNote()
+        #expect(url.deletingLastPathComponent() == root.appendingPathComponent("LegacyQuickMarkdown"))
         #expect(store.loadDraft(id: "floating-note") == nil)
         #expect(store.primaryFloatingNoteURL == url)
         #expect(try store.loadNote(at: url).body == "Recovered **body**")
@@ -44,10 +45,13 @@ struct FloatingNotePublishingTests {
         editor.markDocumentDirty()
         await editor.flushPendingDraftAutosaveForTesting()
         #expect(try store.loadNote(at: url).body == "Continued in floating window")
+        library.refreshPublishedFloatingNote(at: url)
+        await library.waitForSourceSnapshotValidationForLibrary()
+        #expect(library.listRows.compactMap(\.note).first?.snippet == "Continued in floating window")
         let reopenedStore = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
         let reopened = try reopenedStore.preparePrimaryFloatingNote()
         #expect(reopened == url)
-        #expect(store.listNotes(limit: 10).count == 2)
+        #expect(store.listNotes(limit: 10, roots: [store.notesDirectory, url.deletingLastPathComponent()]).count == 2)
         #expect(try reopenedStore.loadNote(at: reopened).body == "Continued in floating window")
         library.updateFloatingNotePaths([])
         #expect(library.listRows.compactMap(\.note).first?.url == pinned)

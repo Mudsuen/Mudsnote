@@ -1070,8 +1070,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         preferencesWindowController?.updatePanelOpacity(opacity)
     }
 
-    private func didSaveNote(at _: URL) {
+    private func didSaveNote(at url: URL) {
         refreshFloatingNoteClassification()
+        libraryWindowController?.refreshPublishedFloatingNote(at: url)
         statusMenuRefreshTask?.cancel()
         let noteStore = noteStore
         statusMenuRefreshTask = Task { @MainActor [weak self] in

@@ -86,7 +86,10 @@ extension LibraryWindowController {
         let snapshotLimit = Self.sourceCountSnapshotLimit
         let preferredDirectories = noteStore.preferredDirectories
         let sourceFolderPaths = currentSourceFolderPaths()
-        let externalDocumentPaths = Set(externallyOpenedDocumentsByPath.keys)
+        let externalDocumentPaths = Set(externallyOpenedDocumentsByPath.keys).union(floatingNotePaths)
+        let externalFloatingPaths = floatingNotePaths.filter { path in
+            !preferredDirectories.contains { path.hasPrefix($0.standardizedFileURL.path + "/") }
+        }
 
         sourceSnapshotValidationTask = Task.detached(priority: .userInitiated) { [weak self] in
             await Task.yield()
@@ -103,6 +106,20 @@ extension LibraryWindowController {
                 roots: preferredDirectories
             )
             guard !Task.isCancelled else { return }
+            // A legacy floating draft may live outside the current library roots.
+            // Read only these explicit documents; do not index their whole folder.
+            let floatingNotes = externalFloatingPaths.compactMap { path -> NoteSearchResult? in
+                let url = URL(fileURLWithPath: path)
+                guard let loaded = try? noteStore.loadNoteDocument(at: url) else { return nil }
+                let values = try? url.resourceValues(forKeys: [.contentModificationDateKey, .creationDateKey])
+                return NoteSearchResult(url: url, title: loaded.title,
+                    snippet: MarkdownEditorDocument.firstPreviewLine(in: loaded.body) ?? "",
+                    modifiedAt: values?.contentModificationDate ?? Date(),
+                    createdAt: values?.creationDate,
+                    tags: loaded.tags,
+                    hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: loaded.body),
+                    thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(in: loaded.body, relativeTo: url))
+            }
             let trashedNotes = noteStore.listTrashedNotes(limit: snapshotLimit)
             guard !Task.isCancelled else { return }
             let countIndex = LibrarySourceCountIndex(
@@ -121,6 +138,9 @@ extension LibraryWindowController {
                 }
 
                 self.sourceSnapshotValidationTask = nil
+                for note in floatingNotes {
+                    self.externallyOpenedDocumentsByPath[note.url.standardizedFileURL.path] = note
+                }
                 self.sourceInboxDirectory = inboxDirectory
                 let mergedAllNotes = self.includingExternallyOpenedDocuments(in: allNotes)
                 let reusableCountIndex = self.currentSourceFolderPaths() == sourceFolderPaths

@@ -6,6 +6,14 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 extension LibraryWindowController {
+    func refreshPublishedFloatingNote(at url: URL) {
+        guard floatingNotePaths.contains(url.standardizedFileURL.path) else { return }
+        handleLibraryFileSystemChanges([LibraryFileSystemChange(
+            path: url.standardizedFileURL.path,
+            flags: FSEventStreamEventFlags(kFSEventStreamEventFlagItemModified | kFSEventStreamEventFlagItemIsFile)
+        )], requiresVisibleWindow: false)
+    }
+
     func startLibraryFileSystemMonitorIfNeeded() {
         guard fileSystemMonitor == nil else { return }
         let monitor = LibraryFileSystemMonitor(roots: noteStore.preferredDirectories) { [weak self] changes in
