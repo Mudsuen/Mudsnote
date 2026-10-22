@@ -117,9 +117,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             return .terminateCancel
         }
         if let libraryController,
-           let window = libraryController.window,
-           !libraryController.windowShouldClose(window) {
-            window.makeKeyAndOrderFront(nil)
+           !libraryController.prepareForApplicationTermination() {
+            libraryController.window?.makeKeyAndOrderFront(nil)
             return .terminateCancel
         }
         return .terminateNow

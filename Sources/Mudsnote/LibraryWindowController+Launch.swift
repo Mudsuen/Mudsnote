@@ -344,11 +344,25 @@ extension LibraryWindowController {
     }
 
     func windowShouldClose(_ sender: NSWindow) -> Bool {
+        saveBeforeLeavingLibrary(errorMessage: "无法关闭资料库")
+    }
+
+    func prepareForApplicationTermination() -> Bool {
+        saveBeforeLeavingLibrary(errorMessage: "无法保存笔记，退出已取消")
+    }
+
+    private func saveBeforeLeavingLibrary(errorMessage: String) -> Bool {
         do {
-            try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
+            // Closing can release this controller, and quitting stops its queue.
+            // Drain even when the visible document is clean after navigation.
+            _ = try saveCurrentNote(force: false)
             return true
         } catch {
-            presentErrorAlert(message: "无法关闭资料库", details: error.localizedDescription)
+            if let persistenceErrorHandler {
+                persistenceErrorHandler(error)
+            } else {
+                presentErrorAlert(message: errorMessage, details: error.localizedDescription)
+            }
             return false
         }
     }

@@ -6,6 +6,10 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 extension LibraryWindowController {
+    var currentSaveDocumentIdentifier: String {
+        selectedURL?.standardizedFileURL.path ?? "draft:\(unsavedDocumentID)"
+    }
+
     func markDirty() {
         guard !suppressEditorChanges, selectedScope != .trash else { return }
         editorContentRevision &+= 1
@@ -60,6 +64,7 @@ extension LibraryWindowController {
         let generation = backgroundAutosaveGeneration
         let editorRevision = editorContentRevision
         let previousURL = selectedURL
+        let documentIdentifier = currentSaveDocumentIdentifier
         let tags = selectedTags
         let targetDirectory = previousURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote()
         let updatesInPlace = previousURL.map {
@@ -74,26 +79,26 @@ extension LibraryWindowController {
         let willPersist = backgroundAutosaveWillPersist
         autosavePersistenceQueue.async { [weak self] in
             willPersist()
+            let document = MarkdownEditorDocument.parse(
+                editorText: editorSnapshot.markdown(),
+                tags: tags
+            )
+            let snapshot = LibraryBackgroundSaveSnapshot(
+                generation: generation,
+                documentIdentifier: documentIdentifier,
+                editorRevision: editorRevision,
+                previousURL: previousURL,
+                title: document.title,
+                body: document.body,
+                tags: tags,
+                targetDirectory: targetDirectory,
+                updatesInPlace: updatesInPlace,
+                expectedContents: expectedContents
+            )
             let result = Result {
-                let document = MarkdownEditorDocument.parse(
-                    editorText: editorSnapshot.markdown(),
-                    tags: tags
-                )
-                let title = document.title
-                let snapshot = LibraryBackgroundSaveSnapshot(
-                    generation: generation,
-                    editorRevision: editorRevision,
-                    previousURL: previousURL,
-                    title: title,
-                    body: document.body,
-                    tags: tags,
-                    targetDirectory: targetDirectory,
-                    updatesInPlace: updatesInPlace,
-                    expectedContents: expectedContents
-                )
                 return try Self.performBackgroundSave(snapshot, noteStore: noteStore)
             }
-            resultStore.insert(LibraryBackgroundSaveResultBox(result), for: generation)
+            resultStore.insert(LibraryBackgroundSaveResultBox(result, snapshot: snapshot), for: generation)
             DispatchQueue.main.async { [weak self] in
                 self?.finishBackgroundAutosave(generation: generation)
             }
@@ -167,6 +172,8 @@ extension LibraryWindowController {
                 backgroundAutosaveNeedsLatest = false
             }
         case .failure:
+            discardSupersededFailedAutosaves(by: boxedResult.snapshot)
+            failedBackgroundAutosaveSnapshots[generation] = boxedResult.snapshot
             backgroundAutosaveNeedsLatest = false
             updateEditorStatus(
                 "自动保存失败，编辑仍保留",
@@ -181,6 +188,7 @@ extension LibraryWindowController {
 
     func applyBackgroundSaveSuccess(_ success: LibraryBackgroundSaveSuccess) {
         let snapshot = success.snapshot
+        discardSupersededFailedAutosaves(by: snapshot)
         let changedURLs = [snapshot.previousURL, success.savedURL].compactMap { $0 }
         recordInternalFileSystemChanges(for: changedURLs)
         if let previousURL = snapshot.previousURL {
@@ -205,7 +213,7 @@ extension LibraryWindowController {
             externallyOpenedDocumentsByPath[success.savedURL.standardizedFileURL.path] = recoveryNote
         }
         let isCurrentDocument = selectedScope != .trash
-            && selectedURL?.path == snapshot.previousURL?.path
+            && currentSaveDocumentIdentifier == snapshot.documentIdentifier
         guard isCurrentDocument else {
             onSave(success.savedURL)
             return
@@ -253,6 +261,43 @@ extension LibraryWindowController {
             for generation in backgroundAutosaveResultStore.pendingGenerations() {
                 finishBackgroundAutosave(generation: generation)
             }
+        }
+    }
+
+    func retryFailedBackgroundAutosaves() throws {
+        for generation in failedBackgroundAutosaveSnapshots.keys.sorted() {
+            guard let snapshot = failedBackgroundAutosaveSnapshots[generation] else { continue }
+            let success: LibraryBackgroundSaveSuccess
+            do {
+                success = try Self.performBackgroundSave(snapshot, noteStore: noteStore)
+            } catch {
+                throw NSError(domain: "Mudsnote.LibraryPersistence", code: 1, userInfo: [
+                    NSLocalizedDescriptionKey: "“\(snapshot.title)”尚未保存。\n\(error.localizedDescription)",
+                    NSUnderlyingErrorKey: error
+                ])
+            }
+            failedBackgroundAutosaveSnapshots.removeValue(forKey: generation)
+            let restoresReloadedDocument = selectedScope != .trash
+                && currentSaveDocumentIdentifier == snapshot.documentIdentifier
+                && !isDirty
+            applyBackgroundSaveSuccess(success)
+            if restoresReloadedDocument {
+                // Returning to the note may have loaded its older on-disk version.
+                // Do not write that clean editor over the just-recovered revision.
+                cancelActiveNoteLoad()
+                editorContentRevision &+= 1
+                applyDocument(title: snapshot.title, body: snapshot.body, tags: snapshot.tags)
+                isDirty = false
+                activeDocumentTab.isDirty = false
+                updateDocumentTabBar()
+                updateToolbarActionState()
+            }
+        }
+    }
+
+    private func discardSupersededFailedAutosaves(by snapshot: LibraryBackgroundSaveSnapshot) {
+        failedBackgroundAutosaveSnapshots = failedBackgroundAutosaveSnapshots.filter { _, failed in
+            failed.documentIdentifier != snapshot.documentIdentifier || failed.generation > snapshot.generation
         }
     }
 
@@ -342,6 +387,7 @@ extension LibraryWindowController {
     @discardableResult
     func saveCurrentNote(force: Bool) throws -> URL? {
         drainBackgroundAutosaves()
+        try retryFailedBackgroundAutosaves()
         guard force || isDirty else { return selectedURL }
         guard selectedScope != .trash else { return selectedURL }
         autosaveTask?.cancel()

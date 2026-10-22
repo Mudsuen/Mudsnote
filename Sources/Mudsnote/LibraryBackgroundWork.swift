@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 
 struct LibraryBackgroundSaveSnapshot: Sendable {
     let generation: Int
+    let documentIdentifier: String
     let editorRevision: Int
     let previousURL: URL?
     let title: String
@@ -55,9 +56,11 @@ struct LibraryBackgroundSaveSuccess: Sendable {
 }
 
 final class LibraryBackgroundSaveResultBox: @unchecked Sendable {
+    let snapshot: LibraryBackgroundSaveSnapshot
     let result: Result<LibraryBackgroundSaveSuccess, Error>
 
-    init(_ result: Result<LibraryBackgroundSaveSuccess, Error>) {
+    init(_ result: Result<LibraryBackgroundSaveSuccess, Error>, snapshot: LibraryBackgroundSaveSnapshot) {
+        self.snapshot = snapshot
         self.result = result
     }
 }

@@ -45,6 +45,7 @@ public final class NoteStore: @unchecked Sendable {
         self.defaults = defaults
         self.fileManager = fileManager
         Self.migrateLegacyDefaultsIfNeeded(defaults: defaults, legacyDefaults: legacyDefaults)
+        Self.recoverMigratedHomeDirectories(defaults: defaults, fileManager: fileManager)
         self.appSupportDirectory = appSupportDirectory ?? Self.defaultAppSupportDirectory(fileManager: fileManager)
     }
 

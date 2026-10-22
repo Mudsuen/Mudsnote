@@ -135,6 +135,8 @@ final class LibraryWindowController: NSWindowController,
 
     let backgroundAutosaveWillPersist: @Sendable () -> Void
 
+    let persistenceErrorHandler: ((Error) -> Void)?
+
     let backgroundSourceCountWillLoad: @Sendable () -> Void
 
     let backgroundDeletionWillPersist: @Sendable () -> Void
@@ -173,6 +175,8 @@ final class LibraryWindowController: NSWindowController,
 
     var selectedURL: URL?
 
+    var unsavedDocumentID = UUID()
+
     var selectedSourceContents: String?
 
     var selectedTags: [String] = []
@@ -201,6 +205,8 @@ final class LibraryWindowController: NSWindowController,
     var backgroundAutosaveGeneration = 0
 
     var backgroundAutosaveIsActive = false
+
+    var failedBackgroundAutosaveSnapshots: [Int: LibraryBackgroundSaveSnapshot] = [:]
 
     var backgroundAutosaveNeedsLatest = false
 
@@ -489,6 +495,7 @@ final class LibraryWindowController: NSWindowController,
         fileModificationDateLoader: (@Sendable (URL) -> Date?)? = nil,
         thumbnailDecoder: (@Sendable (URL) -> CGImage?)? = nil,
         backgroundAutosaveWillPersist: @escaping @Sendable () -> Void = {},
+        persistenceErrorHandler: ((Error) -> Void)? = nil,
         backgroundSourceCountWillLoad: @escaping @Sendable () -> Void = {},
         backgroundDeletionWillPersist: @escaping @Sendable () -> Void = {},
         onOpenInSeparateWindow: @escaping (URL) -> Void,
@@ -519,6 +526,7 @@ final class LibraryWindowController: NSWindowController,
         self.fileModificationDateLoader = fileModificationDateLoader ?? Self.fileModificationDate(at:)
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
         self.backgroundAutosaveWillPersist = backgroundAutosaveWillPersist
+        self.persistenceErrorHandler = persistenceErrorHandler
         self.backgroundSourceCountWillLoad = backgroundSourceCountWillLoad
         self.backgroundDeletionWillPersist = backgroundDeletionWillPersist
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
