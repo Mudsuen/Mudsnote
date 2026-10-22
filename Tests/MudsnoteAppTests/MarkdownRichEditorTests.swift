@@ -4485,6 +4485,44 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func searchWindowDoesNotOpenPreviousQueryWhileReplacementIsPending() async throws {
+        let suiteName = "mudsnote.search-window-pending-open.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suiteName))
+        let root = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-search-pending-open-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil,
+                              appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true))
+        store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
+        _ = try store.saveNewNote(title: "Alpha", body: "First")
+        let beta = try store.saveNewNote(title: "Beta", body: "Second")
+        var opened: [URL] = []
+        let controller = SearchWindowController(noteStore: store, onOpen: { opened.append($0) }, onClose: {})
+        defer { controller.close() }
+        controller.searchField.stringValue = "Alpha"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification,
+                                                     object: controller.searchField))
+        await controller.waitForSearchForTesting()
+        #expect(controller.resultTitlesForTesting == ["Alpha"])
+
+        controller.searchField.stringValue = "Beta"
+        controller.controlTextDidChange(Notification(name: NSControl.textDidChangeNotification,
+                                                     object: controller.searchField))
+        // Send the real Return action before yielding to the replacement search.
+        controller.searchField.sendAction(controller.searchField.action, to: controller.searchField.target)
+        #expect(opened.isEmpty)
+        await controller.waitForSearchForTesting()
+        #expect(controller.resultTitlesForTesting == ["Beta"])
+        controller.searchField.sendAction(controller.searchField.action, to: controller.searchField.target)
+        #expect(opened == [beta])
+    }
+
+    @MainActor
+    @Test
     func separateNoteWindowReusesFloatingNoteChromeAndManager() throws {
         let notesRoot = FileManager.default.temporaryDirectory
             .appendingPathComponent("mudsnote-floating-style-test-\(UUID().uuidString)", isDirectory: true)

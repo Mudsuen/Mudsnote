@@ -49,6 +49,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     private let tableView = NSTableView()
     private var results: [NoteSearchResult] = []
     private lazy var searchController = DebouncedNoteSearchController(noteStore: noteStore, limit: 60)
+    private var isSearchPending = true
     private var currentPanelOpacity: Double
     private weak var backdropView: GradientBackdropView?
     private weak var searchSurfaceView: NSView?
@@ -307,6 +308,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
 
     @objc
     private func openSelectedResult() {
+        guard !isSearchPending else { return }
         let row = tableView.selectedRow >= 0 ? tableView.selectedRow : 0
         guard results.indices.contains(row) else { return }
         onOpen(results[row].url)
@@ -319,6 +321,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     }
 
     private func scheduleSearch(delay: Duration = DebouncedNoteSearchController.defaultDelay) {
+        isSearchPending = true
         let query = searchField.stringValue
         searchController.submit(
             query: query,
@@ -337,6 +340,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     }
 
     private func applySearchResults(_ payload: DebouncedNoteSearchResults) {
+        isSearchPending = false
         let selectedPath = results.indices.contains(tableView.selectedRow)
             ? results[tableView.selectedRow].url.standardizedFileURL.path
             : nil
