@@ -20,6 +20,18 @@ Known open issue:
 - Lesson: Borderless panels need an explicit close action that honors the
   editor's persistence guard.
 
+## 2026-10-22 — Include the primary floating draft in the library
+
+- Problem: The hotkey's primary floating window stored only a draft, so the
+  library's file-backed floating group could not show it.
+- Fix: Prepare one persistent Markdown note before opening the primary window,
+  recover the existing draft into it, retain its URL across launches, and
+  validate the library snapshot when a newly floating file is not indexed yet.
+- Lesson: Test the primary legacy-draft entry path as well as existing files.
+  Conversion checkpoints preserve retries; failed writes retain the original
+  draft and diverged external content is never overwritten. Git rollback leaves
+  the converted Markdown file intact and discoverable in the library.
+
 ## 2026-10-21 — Mac floating-note priority and personal updates
 
 - Problem: Open floating notes could appear below ordinary pins, empty knowledge

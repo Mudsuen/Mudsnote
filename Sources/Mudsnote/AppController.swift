@@ -597,10 +597,15 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         }
 
         floatingNoteController = nil
-        let controller = makeFloatingNoteWindowController()
-        floatingNoteController = controller
-        controller.window?.alphaValue = windowAlphaValue(for: noteStore.panelOpacity)
-        showFloatingWindowWithoutRevealingOtherWindows(controller)
+        do {
+            let controller = try makeFloatingNoteWindowController()
+            floatingNoteController = controller
+            controller.window?.alphaValue = windowAlphaValue(for: noteStore.panelOpacity)
+            showFloatingWindowWithoutRevealingOtherWindows(controller)
+            refreshFloatingNoteBrowsers()
+        } catch {
+            presentErrorAlert(message: "无法打开悬浮笔记", details: error.localizedDescription)
+        }
     }
 
     private func showFloatingWindowWithoutRevealingOtherWindows(
@@ -617,6 +622,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private func openEditor(for url: URL) {
         cleanupClosedWindows()
         let key = url.standardizedFileURL.path
+        if let primary = floatingNoteController, !primary.isWindowClosed,
+           primary.activeFloatingNoteURL?.standardizedFileURL.path == key {
+            primary.showWindowAndFocus()
+            return
+        }
 
         if let controller = editorControllers[key], !controller.isWindowClosed {
             controller.showWindowAndFocus()
@@ -1140,6 +1150,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             remembersWindowFrame: remembersWindowFrame,
             onSave: { [weak self] savedURL in
                 if let self, let controller = controllerReference,
+                   controller === self.floatingNoteController {
+                    self.noteStore.primaryFloatingNoteURL = savedURL
+                }
+                if let self, let controller = controllerReference,
                    self.editorControllers.values.contains(where: { $0 === controller }) {
                     let savedPath = savedURL.standardizedFileURL.path
                     let previousKeys = self.editorControllers.compactMap { key, value in
@@ -1198,8 +1212,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         openEditor(for: url)
     }
 
-    private func makeFloatingNoteWindowController() -> EditorWindowController {
-        makeEditorWindowController(fileURL: nil, usesFloatingNoteStyle: true)
+    private func makeFloatingNoteWindowController() throws -> EditorWindowController {
+        let url = try noteStore.preparePrimaryFloatingNote()
+        let key = url.standardizedFileURL.path
+        if let existing = editorControllers.removeValue(forKey: key), !existing.isWindowClosed {
+            return existing
+        }
+        return makeEditorWindowController(fileURL: url, usesFloatingNoteStyle: true)
     }
 
     private func storedQuickCaptureFrame() -> NSRect? {

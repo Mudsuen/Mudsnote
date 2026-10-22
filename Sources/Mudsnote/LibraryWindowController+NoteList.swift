@@ -557,6 +557,10 @@ extension LibraryWindowController {
         guard floatingNotePaths != paths else { return }
         floatingNotePaths = paths
         rebuildNoteListRowsForDisplayOptions()
+        let indexedPaths = Set(sourceCountSnapshot.map { $0.url.standardizedFileURL.path })
+        if !paths.isSubset(of: indexedPaths) {
+            scheduleSourceSnapshotValidation(loadFirstIfNeeded: false)
+        }
     }
 
     func rowIndex(for standardizedPath: String) -> Int? {

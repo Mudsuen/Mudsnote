@@ -116,7 +116,9 @@ extension MarkdownRichEditorTests {
         controller.updateInlineSuggestions()
 
         #expect(controller.knownTagsForSuggestions == nil || controller.knownTagsForSuggestions?.contains("alpha") == true)
-        try await Task.sleep(for: .milliseconds(100))
+        // Other window tests share the main actor; await completion rather than
+        // assuming the background index always finishes within 100 milliseconds.
+        await controller.tagSuggestionTask?.value
 
         #expect(controller.knownTagsForSuggestions?.contains("alpha") == true)
         guard case .tags(let query, _, let items) = controller.inlineSuggestionContext else {

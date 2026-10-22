@@ -7,6 +7,101 @@ import MudsnoteCore
 
 @Suite(.serialized)
 struct FloatingNotePublishingTests {
+    @MainActor @Test
+    func legacyFloatingDraftBecomesOneLibraryNoteAndReopensLatestContents() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "floating-primary-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let pinned = try store.saveNewNote(title: "Ordinary pin", body: "Keep")
+        store.setLibraryNotePinned(true, at: pinned)
+        let library = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { library.close() }
+        try store.saveDraft(DraftSnapshot(id: "floating-note", sourcePath: nil,
+            selectedDirectoryPath: store.notesDirectory.path, title: "Flow",
+            body: "Recovered **body**", tags: ["work"], updatedAt: Date()))
+        let url = try store.preparePrimaryFloatingNote()
+        #expect(store.loadDraft(id: "floating-note") == nil)
+        #expect(store.primaryFloatingNoteURL == url)
+        #expect(try store.loadNote(at: url).body == "Recovered **body**")
+        #expect(try store.loadNote(at: url).tags == ["work"])
+        library.updateFloatingNotePaths([url.path])
+        await library.waitForSourceSnapshotValidationForLibrary()
+        #expect(library.listRows.compactMap(\.note).prefix(2).map(\.url) == [url, pinned])
+        #expect(library.listRows.compactMap { row -> String? in
+            if case .group(let title) = row { return title }; return nil
+        }.prefix(2) == ["浮窗笔记", "置顶"])
+        let editor = EditorWindowController(noteStore: store, panelOpacity: 1, fileURL: url,
+            draftIDOverride: "floating-note", showsSaveButton: false,
+            onSave: { _ in }, onClose: {}, onRequestSearch: {}, onRequestPreferences: {})
+        defer { editor.close() }
+        editor.applyInitialContent(title: "Flow", body: "Continued in floating window")
+        editor.markDocumentDirty()
+        await editor.flushPendingDraftAutosaveForTesting()
+        #expect(try store.loadNote(at: url).body == "Continued in floating window")
+        let reopenedStore = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        let reopened = try reopenedStore.preparePrimaryFloatingNote()
+        #expect(reopened == url)
+        #expect(store.listNotes(limit: 10).count == 2)
+        #expect(try reopenedStore.loadNote(at: reopened).body == "Continued in floating window")
+        library.updateFloatingNotePaths([])
+        #expect(library.listRows.compactMap(\.note).first?.url == pinned)
+        editor.close()
+        let renamed = try store.updateNote(at: url, title: "Renamed Flow", body: "Edited in library")
+        #expect(store.primaryFloatingNoteURL == renamed)
+        #expect(try reopenedStore.preparePrimaryFloatingNote() == renamed)
+    }
+
+    @Test func primaryFloatingDraftConversionFailurePreservesRecovery() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "floating-primary-failure-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
+        let blockedDirectory = root.appendingPathComponent("not-a-directory")
+        try "keep".write(to: blockedDirectory, atomically: true, encoding: .utf8)
+        try store.saveDraft(DraftSnapshot(id: "floating-note", sourcePath: nil,
+            selectedDirectoryPath: blockedDirectory.path, title: "Flow", body: "Do not lose",
+            tags: [], updatedAt: Date()))
+        #expect(throws: (any Error).self) { try store.preparePrimaryFloatingNote() }
+        #expect(store.loadDraft(id: "floating-note")?.body == "Do not lose")
+        #expect(store.primaryFloatingNoteURL == nil)
+    }
+
+    @Test func primaryFloatingDraftCheckpointDoesNotDuplicateOrOverwriteExternalEdits() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "floating-primary-retry-\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defer {
+            try? FileManager.default.removeItem(at: root)
+            defaults.removePersistentDomain(forName: suite)
+        }
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let url = try store.saveNewNote(title: "Flow", body: "Body")
+        let checkpoint = DraftSnapshot(id: "floating-note", sourcePath: url.path,
+            selectedDirectoryPath: store.notesDirectory.path, title: "Flow", body: "Body",
+            tags: [], updatedAt: Date())
+        try store.saveDraft(checkpoint)
+        #expect(try store.preparePrimaryFloatingNote() == url)
+        #expect(store.listNotes(limit: 10).count == 1)
+        try "# Flow\n\nExternal change".write(to: url, atomically: true, encoding: .utf8)
+        try store.saveDraft(checkpoint)
+        let recovered = try store.preparePrimaryFloatingNote()
+        #expect(recovered != url)
+        #expect(try store.loadNote(at: url).body == "External change")
+        #expect(try store.loadNote(at: recovered).body == "Body")
+    }
+
     @Test func floatingNotesRankAbovePinsBeforeResultLimitAndAppearOnce() {
         let now = Date()
         let notes = (0..<10).map { index in

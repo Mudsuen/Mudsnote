@@ -196,6 +196,7 @@ extension NoteStore {
 
         rememberRecentFile(desiredURL, replacing: desiredURL == sourceURL ? nil : sourceURL)
         if desiredURL != sourceURL {
+            replacePrimaryFloatingNotePath(sourceURL, with: desiredURL)
             replaceLibraryPinnedNotePath(sourceURL, with: desiredURL)
         }
         markSearchIndexDirty(at: [sourceURL, desiredURL])
@@ -309,6 +310,7 @@ extension NoteStore {
                 try fileManager.moveItem(at: oldDirectory, to: newDirectory)
             }
             replaceRecentPathPrefix(oldDirectory, with: newDirectory)
+            replacePrimaryFloatingNotePath(oldDirectory, with: newDirectory)
             replaceLibraryPinnedNotePathPrefix(oldDirectory, with: newDirectory)
             replaceLibraryFolderDisclosurePathPrefix(oldDirectory, with: newDirectory)
             invalidateSearchIndexContents()
@@ -353,6 +355,7 @@ extension NoteStore {
         }
         didCommitRelocation = true
         rememberRecentFile(movedURL, replacing: sourceURL)
+        replacePrimaryFloatingNotePath(sourceURL, with: movedURL)
         replaceLibraryPinnedNotePath(sourceURL, with: movedURL)
         markSearchIndexDirty(at: [sourceURL, movedURL])
         return movedURL
@@ -378,6 +381,7 @@ extension NoteStore {
             try fileManager.moveItem(at: sourceURL, to: destinationURL)
         }
         replaceRecentPathPrefix(sourceURL, with: destinationURL)
+        replacePrimaryFloatingNotePath(sourceURL, with: destinationURL)
         replaceLibraryPinnedNotePathPrefix(sourceURL, with: destinationURL)
         replaceLibraryFolderDisclosurePathPrefix(sourceURL, with: destinationURL)
         replaceLibraryFolderOrderPathPrefix(sourceURL, with: destinationURL)
