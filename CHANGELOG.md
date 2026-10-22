@@ -11,6 +11,14 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-10-22 — Floating-note titlebar context menu
+
+- Problem: Floating notes had no close action in the top drag area.
+- Fix: Add a native right-click menu with Close, saving pending edits before
+  closing and keeping the window open if saving fails.
+- Lesson: Borderless panels need an explicit close action that honors the
+  editor's persistence guard.
+
 ## 2026-10-21 — Mac floating-note priority and personal updates
 
 - Problem: Open floating notes could appear below ordinary pins, empty knowledge

@@ -138,6 +138,17 @@ extension EditorWindowController {
         let topDragBar: WindowMoveBackgroundView = isFloatingNoteMode ? HoverRevealTitlebarView() : DragHandleView()
         topDragBar.translatesAutoresizingMaskIntoConstraints = false
         floatingNoteTitlebarView = isFloatingNoteMode ? topDragBar : nil
+        if isFloatingNoteMode {
+            let menu = NSMenu()
+            let closeItem = NSMenuItem(
+                title: "关闭",
+                action: #selector(closeFloatingNotePressed(_:)),
+                keyEquivalent: ""
+            )
+            closeItem.target = self
+            menu.addItem(closeItem)
+            topDragBar.menu = menu
+        }
 
         let divider = NSBox()
         divider.boxType = .separator

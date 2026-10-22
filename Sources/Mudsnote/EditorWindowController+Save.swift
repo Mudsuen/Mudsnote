@@ -84,6 +84,12 @@ extension EditorWindowController {
         window?.close()
     }
 
+    @objc func closeFloatingNotePressed(_ sender: Any?) {
+        guard isFloatingNoteMode, let window, windowShouldClose(window) else { return }
+        // Borderless panels cannot use performClose; explicitly run the save guard.
+        window.close()
+    }
+
     @objc func searchPressed() {
         if isFloatingNoteMode {
             showFloatingNoteBrowser(relativeTo: floatingNoteBrowseButton)
