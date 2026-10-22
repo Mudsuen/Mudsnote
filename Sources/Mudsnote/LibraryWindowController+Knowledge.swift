@@ -217,6 +217,7 @@ extension LibraryWindowController {
     }
 
     func setSelectedURLForLibrary(_ nextURL: URL?) {
+        if nextURL == nil { unsavedDocumentID = UUID() }
         cancelKnowledgeSynthesisForSelectionChange(to: nextURL)
         if selectedURL?.standardizedFileURL != nextURL?.standardizedFileURL {
             cancelNoteLinksRefresh()
