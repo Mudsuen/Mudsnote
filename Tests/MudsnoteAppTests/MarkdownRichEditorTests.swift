@@ -4533,6 +4533,19 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
+    func floatingTitlebarHitTestingUsesParentCoordinates() {
+        let host = NSView(frame: NSRect(x: 0, y: 0, width: 300, height: 400))
+        let titlebar = HoverRevealTitlebarView(frame: NSRect(x: 12, y: 368, width: 276, height: 22))
+        host.addSubview(titlebar)
+
+        #expect(host.hitTest(NSPoint(x: 150, y: 379)) === titlebar)
+        #expect(titlebar.hitTest(NSPoint(x: 150, y: 350)) == nil)
+        titlebar.isHidden = true
+        #expect(titlebar.hitTest(NSPoint(x: 150, y: 379)) == nil)
+    }
+
+    @MainActor
+    @Test
     func subviewPassthroughViewDoesNotSwallowBlankClicks() {
         let view = SubviewPassthroughView(frame: NSRect(x: 0, y: 0, width: 120, height: 80))
         let point = NSPoint(x: 24, y: 20)

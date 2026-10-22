@@ -15,7 +15,8 @@ Known open issue:
 
 - Problem: Floating notes had no close action in the top drag area.
 - Fix: Add a native right-click menu with Close, saving pending edits before
-  closing and keeping the window open if saving fails.
+  closing and keeping the window open if saving fails. Correct drag-area hit
+  testing to use parent coordinates so the titlebar receives mouse events.
 - Lesson: Borderless panels need an explicit close action that honors the
   editor's persistence guard.
 

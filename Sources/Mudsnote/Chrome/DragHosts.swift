@@ -10,7 +10,7 @@ class WindowMoveBackgroundView: NSView {
     private var dragStartWindowOrigin: NSPoint?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point) else { return nil }
+        guard !isHidden, bounds.contains(convert(point, from: superview)) else { return nil }
         return super.hitTest(point) ?? self
     }
 
