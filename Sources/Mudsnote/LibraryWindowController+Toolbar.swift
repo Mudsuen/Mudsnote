@@ -13,6 +13,8 @@ extension LibraryWindowController {
         searchField.setAccessibilityLabel(LibraryCopy.searchNotes)
         searchField.font = .systemFont(ofSize: 14)
         searchField.delegate = self
+        searchField.target = self
+        searchField.action = #selector(searchFieldAction(_:))
         searchField.isBordered = true
         searchField.bezelStyle = .roundedBezel
         searchField.focusRingType = .default

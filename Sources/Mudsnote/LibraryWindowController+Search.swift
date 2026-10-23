@@ -6,8 +6,17 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 extension LibraryWindowController {
+    @objc func searchFieldAction(_ sender: NSSearchField) {
+        // The native cancel button sends the control action after clearing the
+        // field, without necessarily sending a text-editing notification.
+        guard sender === searchField,
+              sender.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty else { return }
+        scheduleSearchReloadFromTyping()
+    }
+
     func clearSearchFromKeyboard() -> Bool {
-        guard !searchField.stringValue.isEmpty else { return false }
+        guard !searchField.stringValue.isEmpty || activeSearchSession != nil
+            || hasPendingSearchReload || isSearchResultReloading || !searchScopeControl.isHidden else { return false }
         searchField.stringValue = ""
         activeSearchSession = nil
         cancelPendingSearchReload()
