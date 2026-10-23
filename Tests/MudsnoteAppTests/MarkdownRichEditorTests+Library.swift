@@ -3420,18 +3420,45 @@ extension MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(activeHighlightItem.action), to: activeHighlightItem.target, from: activeHighlightItem))
         #expect(MarkdownRichTextCodec.serialize(controller.editorTextView.attributedString(), theme: controller.theme) == "# Editor Tools\n\nplain")
 
+        NSApp.activate(ignoringOtherApps: true)
+        window.makeKeyAndOrderFront(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
         controller.editorTextView.showSelectionMenuIfNeeded()
+        defer { controller.editorTextView.dismissSelectionFormattingPanel() }
         #expect(controller.editorTextView.isSelectionFormattingPanelVisible)
         let selectionPanelSubviews: [NSView] = (window.childWindows ?? []).flatMap { childWindow in
             childWindow.contentView?.allSubviews ?? []
         }
         let selectionPanelButtons = selectionPanelSubviews.compactMap { $0 as? NSButton }
         let formattingButton = try #require(selectionPanelButtons.first { $0.toolTip == "加粗" })
+        let formattingWindow = try #require(formattingButton.window)
+        formattingWindow.contentView?.layoutSubtreeIfNeeded()
+        let formattingPoint = formattingButton.convert(
+            NSPoint(x: formattingButton.bounds.midX, y: formattingButton.bounds.midY), to: nil
+        )
+        let hoverEvent = try #require(NSEvent.enterExitEvent(
+            with: .mouseEntered, location: formattingPoint, modifierFlags: [], timestamp: 0,
+            windowNumber: formattingWindow.windowNumber, context: nil,
+            eventNumber: 1, trackingNumber: 0, userData: nil
+        ))
         NSCursor.iBeam.set()
-        formattingButton.mouseEntered(with: contextEvent)
+        formattingButton.mouseEntered(with: hoverEvent)
         #expect(NSCursor.current === NSCursor.arrow)
+        let formattingMouseDown = try #require(NSEvent.mouseEvent(
+            with: .leftMouseDown, location: formattingPoint, modifierFlags: [], timestamp: 0.01,
+            windowNumber: formattingWindow.windowNumber, context: nil,
+            eventNumber: 2, clickCount: 1, pressure: 1
+        ))
+        let formattingMouseUp = try #require(NSEvent.mouseEvent(
+            with: .leftMouseUp, location: formattingPoint, modifierFlags: [], timestamp: 0.02,
+            windowNumber: formattingWindow.windowNumber, context: nil,
+            eventNumber: 3, clickCount: 1, pressure: 0
+        ))
         NSCursor.iBeam.set()
-        formattingButton.performClick(nil)
+        // Cursor restoration follows native button tracking; performClick only
+        // invokes the action and bypasses the button's post-mouseDown behavior.
+        NSApp.postEvent(formattingMouseUp, atStart: true)
+        formattingWindow.sendEvent(formattingMouseDown)
         #expect(NSCursor.current === NSCursor.arrow)
         RunLoop.current.run(until: Date().addingTimeInterval(0.05))
         #expect(NSCursor.current === NSCursor.arrow)
