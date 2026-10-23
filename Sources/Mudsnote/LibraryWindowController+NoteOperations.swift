@@ -248,40 +248,83 @@ extension LibraryWindowController {
     func restoreSelectedNoteForLibrary() throws -> URL? {
         let urls = selectedMarkdownFileURLsForLibrary()
         guard selectedScope == .trash, !urls.isEmpty else { return nil }
-        let restoredURLs = try urls.map { try noteStore.restoreTrashedNote(at: $0) }
-        let restoredURL = restoredURLs.first
-        recordInternalFileSystemChanges(for: urls + restoredURLs)
-        removeNotesFromTrashSnapshot(at: urls)
-        for url in restoredURLs {
-            let document = try noteStore.loadNote(at: url)
-            let modifiedAt = (try? FileManager.default.attributesOfItem(atPath: url.path)[.modificationDate])
-                as? Date ?? Date()
-            updateSourceCountSnapshotAfterSave(
-                previousURL: nil,
-                savedURL: url,
-                title: document.title,
-                tags: document.tags,
-                modifiedAt: modifiedAt,
-                snippet: libraryFirstMeaningfulLine(from: document.body) ?? "",
-                hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: document.body),
-                thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(
-                    in: document.body,
-                    relativeTo: url
-                )
-            )
+        let previousNotes = Dictionary(trashedNotesSnapshot.map {
+            (trashSnapshotPathKey($0.url), $0)
+        }, uniquingKeysWith: { first, _ in first })
+        var restoredSourceURLs: [URL] = []
+        var restoredURLs: [URL] = []
+        var failures: [(url: URL, error: Error)] = []
+        for sourceURL in urls {
+            do {
+                let restoredURL = try noteStore.restoreTrashedNote(at: sourceURL)
+                restoredSourceURLs.append(sourceURL)
+                restoredURLs.append(restoredURL)
+                let modifiedAt = (try? restoredURL.resourceValues(forKeys: [.contentModificationDateKey]))?
+                    .contentModificationDate ?? Date()
+                if let document = try? noteStore.loadNote(at: restoredURL) {
+                    updateSourceCountSnapshotAfterSave(
+                        previousURL: nil,
+                        savedURL: restoredURL,
+                        title: document.title,
+                        tags: document.tags,
+                        modifiedAt: modifiedAt,
+                        snippet: libraryFirstMeaningfulLine(from: document.body) ?? "",
+                        hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: document.body),
+                        thumbnailURL: MarkdownEditorDocument.firstLocalImageURL(
+                            in: document.body, relativeTo: restoredURL
+                        )
+                    )
+                } else {
+                    // The move already succeeded; a failed preview read must not
+                    // leave the restored file displayed as if it were still in Trash.
+                    let note = previousNotes[trashSnapshotPathKey(sourceURL)]?
+                        .replacingURL(restoredURL, modifiedAt: modifiedAt)
+                        ?? NoteSearchResult(url: restoredURL,
+                                            title: restoredURL.deletingPathExtension().lastPathComponent,
+                                            snippet: "", modifiedAt: modifiedAt)
+                    LibraryNoteListProjection.upsertByModifiedDate(
+                        note, into: &sourceCountSnapshot, replacingPaths: [],
+                        limit: Self.sourceCountSnapshotLimit
+                    )
+                }
+            } catch {
+                failures.append((sourceURL, error))
+            }
         }
+        let restoredURL = restoredURLs.first
+        recordInternalFileSystemChanges(for: restoredSourceURLs + restoredURLs)
+        removeNotesFromTrashSnapshot(at: restoredSourceURLs)
         activeSearchSession = nil
-        selectedScope = restoredURL.map { .folder($0.deletingLastPathComponent()) }
-            ?? .folder(noteStore.notesDirectory)
+        if failures.isEmpty {
+            selectedScope = restoredURL.map { .folder($0.deletingLastPathComponent()) }
+                ?? .folder(noteStore.notesDirectory)
+        }
         clearCurrentDocumentAfterRemoval()
         rebuildSourceRows(includeTags: sourceTagsLoaded)
-        reloadNotes(selecting: restoredURL, loadFirstIfNeeded: true)
+        reloadNotes(selecting: failures.first?.url ?? restoredURL, loadFirstIfNeeded: true)
+        if !failures.isEmpty {
+            let details = failures.map { failure in
+                let title = previousNotes[trashSnapshotPathKey(failure.url)]?.title
+                    ?? failure.url.deletingPathExtension().lastPathComponent
+                return "\(title)：\(failure.error.localizedDescription)"
+            }.joined(separator: "\n")
+            throw NSError(domain: "Mudsnote.LibraryRestore", code: 1, userInfo: [
+                NSLocalizedDescriptionKey: "已恢复 \(restoredURLs.count) 条，\(failures.count) 条未恢复。\n\(details)"
+            ])
+        }
         return restoredURL
     }
 
     func removeNotesFromTrashSnapshot(at urls: [URL]) {
-        let removedPaths = Set(urls.map { $0.standardizedFileURL.path })
-        trashedNotesSnapshot.removeAll { removedPaths.contains($0.url.standardizedFileURL.path) }
+        let removedPaths = Set(urls.map(trashSnapshotPathKey))
+        trashedNotesSnapshot.removeAll { removedPaths.contains(trashSnapshotPathKey($0.url)) }
+    }
+
+    private func trashSnapshotPathKey(_ url: URL) -> String {
+        // The note no longer exists after restore/delete. Resolve its still-existing
+        // parent so aliases such as /var and /private/var keep the same identity.
+        let parent = url.deletingLastPathComponent().resolvingSymlinksInPath().path
+        return parent + "/" + url.lastPathComponent
     }
 
     func sortAndTrimTrashSnapshot() {
