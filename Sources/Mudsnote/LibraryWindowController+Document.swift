@@ -40,7 +40,7 @@ extension LibraryWindowController {
         editorTextView.setMetadataTags(tags) { [weak self] tag in
             self?.removeSelectedMetadataTag(tag)
         }
-        editorTextView.typingAttributes = theme.baseAttributes(for: .heading(level: 1))
+        editorTextView.typingAttributes = automaticTitleTypingAttributes
         let requestedSelection = preservedSelection ?? NSRange(location: 0, length: 0)
         let contentLength = editorTextView.textStorage?.length ?? 0
         let location = min(requestedSelection.location, contentLength)
@@ -118,6 +118,12 @@ extension LibraryWindowController {
                              value: theme.baseAttributes(for: .paragraph), range: first)
     }
 
+    private var automaticTitleTypingAttributes: [NSAttributedString.Key: Any] {
+        var attributes = theme.baseAttributes(for: .heading(level: 1))
+        attributes[.qmAutomaticTitleBaseline] = theme.baseAttributes(for: .paragraph)
+        return attributes
+    }
+
     func normalizeUnifiedTitleLineFormatting() {
         guard !suppressEditorChanges,
               !isEditorShowingMarkdownSource,
@@ -125,7 +131,7 @@ extension LibraryWindowController {
             return
         }
         guard storage.length > 0 else {
-            editorTextView.typingAttributes = theme.baseAttributes(for: .heading(level: 1))
+            editorTextView.typingAttributes = automaticTitleTypingAttributes
             return
         }
 

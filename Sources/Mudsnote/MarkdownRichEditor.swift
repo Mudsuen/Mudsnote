@@ -828,19 +828,37 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func deleteBackward(_ sender: Any?) {
+        let automaticTitleBaseline = automaticTitleBaselineBeforeDeletion
         let removedSelection = selectedRange().length > 0
         super.deleteBackward(sender)
         if removedSelection {
             resetInlineTypingAttributesAfterSelectionDeletion()
         }
+        restoreEmptyAutomaticTitleBaseline(automaticTitleBaseline)
     }
 
     override func deleteForward(_ sender: Any?) {
+        let automaticTitleBaseline = automaticTitleBaselineBeforeDeletion
         let removedSelection = selectedRange().length > 0
         super.deleteForward(sender)
         if removedSelection {
             resetInlineTypingAttributesAfterSelectionDeletion()
         }
+        restoreEmptyAutomaticTitleBaseline(automaticTitleBaseline)
+    }
+
+    private var automaticTitleBaselineBeforeDeletion: Any? {
+        guard let textStorage, textStorage.length > 0 else { return nil }
+        return textStorage.attribute(.qmAutomaticTitleBaseline, at: 0, effectiveRange: nil)
+    }
+
+    private func restoreEmptyAutomaticTitleBaseline(_ baseline: Any?) {
+        guard string.isEmpty, let baseline else { return }
+        // Native deletion can replace typing attributes after the delegate's
+        // empty-document normalization. Preserve the automatic title's origin.
+        var attributes = typingAttributes
+        attributes[.qmAutomaticTitleBaseline] = baseline
+        typingAttributes = attributes
     }
 
     @discardableResult
