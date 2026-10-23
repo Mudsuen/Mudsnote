@@ -45,8 +45,14 @@ public final class NoteStore: @unchecked Sendable {
         self.defaults = defaults
         self.fileManager = fileManager
         Self.migrateLegacyDefaultsIfNeeded(defaults: defaults, legacyDefaults: legacyDefaults)
-        Self.recoverMigratedHomeDirectories(defaults: defaults, fileManager: fileManager)
         self.appSupportDirectory = appSupportDirectory ?? Self.defaultAppSupportDirectory(fileManager: fileManager)
+    }
+
+    public func prepareNotesDirectoryForLaunch() async throws {
+        try await Task.detached(priority: .userInitiated) { [self] in
+            Self.recoverMigratedHomeDirectories(defaults: defaults, fileManager: fileManager)
+            try ensureNotesDirectory()
+        }.value
     }
 
     public static func defaultNotesDirectory(fileManager: FileManager = .default) -> URL {

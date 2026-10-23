@@ -1,13 +1,28 @@
 import Foundation
+import Darwin
 
 extension NoteStore {
+    enum HomeMigrationPathStatus: Equatable {
+        case missing, directory, other, inaccessible
+    }
+
+    static func homeMigrationPathStatus(_ path: String, _ followsSymlinks: Bool) -> HomeMigrationPathStatus {
+        var info = stat()
+        let result = path.withCString { pointer in
+            followsSymlinks ? stat(pointer, &info) : lstat(pointer, &info)
+        }
+        guard result == 0 else { return errno == ENOENT ? .missing : .inaccessible }
+        return (info.st_mode & mode_t(S_IFMT)) == mode_t(S_IFDIR) ? .directory : .other
+    }
+
     /// Migration Assistant preserves absolute preferences even when the account's
     /// home changes. Reuse only an existing directory at the identical home-relative
     /// path; a missing or inaccessible library must never become a new empty one.
     static func recoverMigratedHomeDirectories(
         defaults: UserDefaults,
         fileManager: FileManager,
-        currentAccountName: String = NSUserName()
+        currentAccountName: String = NSUserName(),
+        readPathStatus: (String, Bool) -> HomeMigrationPathStatus = NoteStore.homeMigrationPathStatus
     ) {
         let currentHome = fileManager.homeDirectoryForCurrentUser.standardizedFileURL
         guard currentHome.deletingLastPathComponent().path == "/Users",
@@ -21,22 +36,14 @@ extension NoteStore {
                   components[1] == "Users",
                   components[2] == currentAccountName,
                   components[2] != currentHome.lastPathComponent else { return rawPath }
-            do {
-                _ = try fileManager.attributesOfItem(atPath: original.path)
-                return rawPath
-            } catch {
-                let error = error as NSError
-                guard error.domain == NSCocoaErrorDomain,
-                      [NSFileNoSuchFileError, NSFileReadNoSuchFileError].contains(error.code) else {
-                    return rawPath
-                }
-            }
+            // Foundation's full attributes include extended attributes, which can
+            // wait indefinitely on an iCloud provider. Only basic path type is needed.
+            guard readPathStatus(original.path, false) == .missing else { return rawPath }
 
             let candidate = components.dropFirst(3).reduce(currentHome) {
                 $0.appendingPathComponent($1, isDirectory: true)
             }
-            guard let attributes = try? fileManager.attributesOfItem(atPath: candidate.path),
-                  attributes[.type] as? FileAttributeType == .typeDirectory,
+            guard readPathStatus(candidate.path, true) == .directory,
                   fileManager.isReadableFile(atPath: candidate.path) else { return rawPath }
             return candidate.path
         }

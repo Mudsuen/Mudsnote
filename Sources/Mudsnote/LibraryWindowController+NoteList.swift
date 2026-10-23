@@ -74,6 +74,11 @@ extension LibraryWindowController {
             loadFirstIfNeeded: loadFirstIfNeeded,
             refreshCounts: false
         )
+        if selectedScope == .trash {
+            // Trash lives outside the watched library roots. Keep navigation on
+            // the cached snapshot, then supersede any older in-flight refresh.
+            forceFullLibrarySnapshotReload()
+        }
     }
 
     func scheduleSourceSnapshotValidation(loadFirstIfNeeded: Bool) {

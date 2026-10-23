@@ -4100,15 +4100,28 @@ struct MarkdownRichEditorTests {
         defer { controller.close() }
         controller.showWindowAndFocus()
 
-        let noteURL = try store.saveNewNote(title: "Background Trash", body: "Loaded off navigation.")
-        _ = try store.trashNote(at: noteURL)
-        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
-        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
-
-        let deadline = Date().addingTimeInterval(6)
-        while Date() < deadline, controller.noteListSearchResultsForLibrary().isEmpty {
+        // Finish the empty launch snapshot and remove FSEvents as an accidental
+        // refresh trigger. Entering Recently Deleted must request fresh data itself.
+        let launchDeadline = Date().addingTimeInterval(6)
+        while Date() < launchDeadline, controller.isFullLibrarySnapshotLoading {
             try await Task.sleep(for: .milliseconds(50))
         }
+        try #require(!controller.isFullLibrarySnapshotLoading)
+        controller.fileSystemMonitor?.stop()
+        controller.fileSystemMonitor = nil
+
+        let noteURL = try store.saveNewNote(title: "Background Trash", body: "Loaded off navigation.")
+        _ = try store.trashNote(at: noteURL)
+        let previousGeneration = controller.fullLibrarySnapshotReloadGeneration
+        #expect(controller.selectSourceForLibrary(titled: "最近删除"))
+        #expect(controller.noteListSearchResultsForLibrary().isEmpty)
+        #expect(controller.fullLibrarySnapshotReloadGeneration > previousGeneration)
+
+        let deadline = Date().addingTimeInterval(6)
+        while Date() < deadline, controller.isFullLibrarySnapshotLoading {
+            try await Task.sleep(for: .milliseconds(50))
+        }
+        #expect(!controller.isFullLibrarySnapshotLoading)
         #expect(controller.noteListSearchResultsForLibrary().map(\.title) == ["Background Trash"])
     }
 

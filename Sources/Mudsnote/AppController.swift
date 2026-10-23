@@ -29,6 +29,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private var fileMoveNoteMenu: NSMenu?
     private var pendingExternalMarkdownURLs: [URL] = []
     private var hasFinishedLaunching = false
+    private var hasPendingReopen = false
     private var statusMenuRefreshTask: Task<Void, Never>?
 
     override init() {
@@ -42,20 +43,38 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     func applicationDidFinishLaunching(_ notification: Notification) {
-        let opensExternalMarkdown = !pendingExternalMarkdownURLs.isEmpty
-        let opensLibrary = Self.shouldOpenLibraryOnLaunch(arguments: launchArguments) && !opensExternalMarkdown
-        NSApp.setActivationPolicy(opensLibrary || opensExternalMarkdown ? .regular : .accessory)
+        Task { [weak self] in
+            guard let self else { return }
+            var preparationError: String?
+            do {
+                try await noteStore.prepareNotesDirectoryForLaunch()
+            } catch {
+                preparationError = error.localizedDescription
+            }
+            finishLaunching(preparationError: preparationError)
+        }
+    }
 
-        do {
-            try noteStore.ensureNotesDirectory()
-        } catch {
-            presentErrorAlert(message: "无法准备笔记文件夹", details: error.localizedDescription)
+    private func finishLaunching(preparationError: String?) {
+        let startsWithLibrary = Self.shouldOpenLibraryOnLaunch(arguments: launchArguments)
+        NSApp.setActivationPolicy(
+            startsWithLibrary || hasPendingReopen || !pendingExternalMarkdownURLs.isEmpty ? .regular : .accessory
+        )
+
+        if let preparationError {
+            presentErrorAlert(message: "无法准备笔记文件夹", details: preparationError)
         }
 
         setupMainMenu()
         setupStatusItem()
         registerHotKeysIfNeeded()
         synchronizeAIMemoryIfNeeded()
+        // Modal startup alerts can receive new Dock reopen and open-file events.
+        // Consume those intents only after every launch-time alert has returned.
+        let opensExternalMarkdown = !pendingExternalMarkdownURLs.isEmpty
+        let opensLibrary = (hasPendingReopen || startsWithLibrary) && !opensExternalMarkdown
+        hasPendingReopen = false
+        NSApp.setActivationPolicy(opensLibrary || opensExternalMarkdown ? .regular : .accessory)
         hasFinishedLaunching = true
 
         if opensExternalMarkdown {
@@ -139,6 +158,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     func applicationShouldHandleReopen(_ sender: NSApplication, hasVisibleWindows flag: Bool) -> Bool {
+        guard hasFinishedLaunching else {
+            hasPendingReopen = true
+            return true
+        }
         showLibraryWindow()
         return true
     }
