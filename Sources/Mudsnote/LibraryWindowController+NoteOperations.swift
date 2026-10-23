@@ -79,6 +79,8 @@ extension LibraryWindowController {
         let paths = Set(urls.map { $0.standardizedFileURL.path })
         pendingDeletionPaths.formUnion(paths)
         pendingDeletionBatchCount += 1
+        deletionBatchGeneration += 1
+        let batchID = deletionBatchGeneration
 
         if deletesFromTrash {
             removeNotesFromTrashSnapshot(at: urls)
@@ -95,6 +97,7 @@ extension LibraryWindowController {
 
         let noteStore = noteStore
         let willPersist = backgroundDeletionWillPersist
+        let resultStore = deletionResultStore
         libraryMutationQueue.async { [weak self] in
             willPersist()
             var deletedNotes: [LibraryDeletedNote] = []
@@ -125,21 +128,43 @@ extension LibraryWindowController {
                 deletedNotes: deletedNotes,
                 failures: failures
             )
+            resultStore.insert(LibraryDeletionCompletion(
+                result: result,
+                notesByPath: notesByPath,
+                deletesFromTrash: deletesFromTrash
+            ), for: batchID)
             DispatchQueue.main.async {
-                self?.finishBackgroundDeletion(
-                    result,
-                    notesByPath: notesByPath,
-                    deletesFromTrash: deletesFromTrash
-                )
+                self?.finishBackgroundDeletion(batchID: batchID)
             }
         }
     }
 
-    func finishBackgroundDeletion(
+    @discardableResult
+    func finishBackgroundDeletion(batchID: Int) -> Bool? {
+        guard let completion = deletionResultStore.remove(batchID: batchID) else { return nil }
+        return applyBackgroundDeletion(completion.result, notesByPath: completion.notesByPath,
+                                       deletesFromTrash: completion.deletesFromTrash)
+    }
+
+    @discardableResult
+    func drainBackgroundDeletions() -> Bool {
+        var succeeded = true
+        while pendingDeletionBatchCount > 0 {
+            // Results are retained before the main-thread callback is queued, so
+            // close/quit can consume them without waiting on its own run loop.
+            libraryMutationQueue.sync {}
+            for batchID in deletionResultStore.pendingBatchIDs() {
+                if finishBackgroundDeletion(batchID: batchID) == false { succeeded = false }
+            }
+        }
+        return succeeded
+    }
+
+    private func applyBackgroundDeletion(
         _ result: LibraryDeletionPersistenceResult,
         notesByPath: [String: NoteSearchResult],
         deletesFromTrash: Bool
-    ) {
+    ) -> Bool {
         let completedPaths = Set(
             result.deletedNotes.map { $0.sourceURL.standardizedFileURL.path }
                 + result.failures.map { $0.sourceURL.standardizedFileURL.path }
@@ -187,11 +212,6 @@ extension LibraryWindowController {
                 refreshCounts: false,
                 mutationAnimation: .insertion
             )
-            let details = result.failures.map(\.message).joined(separator: "\n")
-            presentErrorAlert(
-                message: deletesFromTrash ? "永久删除失败" : "删除失败，笔记已恢复",
-                details: details
-            )
         }
 
         activeSearchSession = nil
@@ -203,6 +223,18 @@ extension LibraryWindowController {
             pendingDeletionWaiters.removeAll()
             waiters.forEach { $0.resume() }
         }
+        if !result.failures.isEmpty {
+            let message = deletesFromTrash ? "永久删除失败" : "删除失败，笔记已恢复"
+            let details = result.failures.map(\.message).joined(separator: "\n")
+            if let persistenceErrorHandler {
+                persistenceErrorHandler(NSError(domain: "Mudsnote.LibraryDeletion", code: 1,
+                                                userInfo: [NSLocalizedDescriptionKey: "\(message)\n\(details)"]))
+            } else {
+                presentErrorAlert(message: message, details: details)
+            }
+            return false
+        }
+        return true
     }
 
     func waitForBackgroundDeletionsForLibrary() async {

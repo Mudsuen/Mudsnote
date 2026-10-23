@@ -352,6 +352,7 @@ extension LibraryWindowController {
     }
 
     private func saveBeforeLeavingLibrary(errorMessage: String) -> Bool {
+        guard drainBackgroundDeletions() else { return false }
         do {
             // Closing can release this controller, and quitting stops its queue.
             // Drain even when the visible document is clean after navigation.

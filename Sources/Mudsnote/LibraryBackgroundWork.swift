@@ -103,6 +103,35 @@ struct LibraryDeletionPersistenceResult: Sendable {
     let failures: [LibraryDeletionFailure]
 }
 
+struct LibraryDeletionCompletion: Sendable {
+    let result: LibraryDeletionPersistenceResult
+    let notesByPath: [String: NoteSearchResult]
+    let deletesFromTrash: Bool
+}
+
+final class LibraryDeletionResultStore: @unchecked Sendable {
+    private let lock = NSLock()
+    private var results: [Int: LibraryDeletionCompletion] = [:]
+
+    func insert(_ completion: LibraryDeletionCompletion, for batchID: Int) {
+        lock.lock()
+        defer { lock.unlock() }
+        results[batchID] = completion
+    }
+
+    func remove(batchID: Int) -> LibraryDeletionCompletion? {
+        lock.lock()
+        defer { lock.unlock() }
+        return results.removeValue(forKey: batchID)
+    }
+
+    func pendingBatchIDs() -> [Int] {
+        lock.lock()
+        defer { lock.unlock() }
+        return results.keys.sorted()
+    }
+}
+
 final class LoadedLibraryNoteCacheEntry: NSObject {
     let loaded: LoadedLibraryNote
     let fileModifiedAt: Date

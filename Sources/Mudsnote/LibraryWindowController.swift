@@ -274,6 +274,10 @@ final class LibraryWindowController: NSWindowController,
 
     var pendingDeletionBatchCount = 0
 
+    var deletionBatchGeneration = 0
+
+    let deletionResultStore = LibraryDeletionResultStore()
+
     var pendingDeletionWaiters: [CheckedContinuation<Void, Never>] = []
 
     var sourceInboxDirectory: URL?
