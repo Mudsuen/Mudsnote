@@ -11,6 +11,16 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-10-28 — Tag input and editor focus
+
+- Problem: Chinese tag composition could be interrupted, confirming tags moved
+  the caret to a new line, and dismissing the tag field could steal focus.
+- Fix: Let the input method finish composition, preserve the document selection
+  when adding tags, respect focus changes, and use UTF-16 ranges for floating
+  editor suggestions after emoji or combined characters.
+- Lesson: Metadata input must preserve document text and follow the field
+  editor's event lifecycle rather than reuse its confirmation keystroke.
+
 ## 2026-10-22 — Floating-note titlebar context menu
 
 - Problem: Floating notes had no close action in the top drag area.

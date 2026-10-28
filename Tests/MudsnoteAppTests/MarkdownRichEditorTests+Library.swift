@@ -1480,7 +1480,7 @@ extension MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryExposesAddTagForNotesWithoutTags() throws {
+    func libraryExposesAddTagForNotesWithoutTags() async throws {
         let harness = try makeEditorControllerHarness(draftID: "add-tag-ui", showsSaveButton: false)
         defer { harness.tearDown() }
         _ = try harness.store.saveNewNote(title: "Untagged", body: "Body")
@@ -1494,6 +1494,7 @@ extension MarkdownRichEditorTests {
         #expect(NSApp.modalWindow == nil)
         #expect(controller.window?.firstResponder === input.currentEditor())
         input.cancelOperation(nil)
+        await finishTagInputEvent()
         #expect(!controller.editorTextView.allSubviews.contains { $0.identifier?.rawValue == "AddNoteTagButton" })
         #expect(!controller.editorTextView.allSubviews.contains { $0.identifier?.rawValue == "InlineNoteTagInput" })
         controller.editorTextView.onAddMetadataTag?()
@@ -1501,6 +1502,7 @@ extension MarkdownRichEditorTests {
             .first { $0.identifier?.rawValue == "InlineNoteTagInput" })
         committedInput.stringValue = "#Created"
         #expect(NSApp.sendAction(try #require(committedInput.action), to: committedInput.target, from: committedInput))
+        await finishTagInputEvent()
         controller.addSelectedMetadataTag("created")
         let badges = controller.editorTextView.allSubviews.compactMap { $0 as? NSButton }
         #expect(badges.filter { $0.title == "#Created" }.count == 1)

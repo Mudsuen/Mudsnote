@@ -96,6 +96,13 @@ final class QuickEntryPanel: NSPanel {
             return
         }
 
+        // Composition owns Return, Escape and candidate navigation. In
+        // particular, Escape must cancel the IME rather than close the panel.
+        if (firstResponder as? NSTextView)?.hasMarkedText() == true {
+            super.sendEvent(event)
+            return
+        }
+
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
 
         if modifiers == [.command], event.keyCode == 3 {

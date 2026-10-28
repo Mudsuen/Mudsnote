@@ -350,7 +350,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     // MARK: - MarkdownTextViewCommands
 
     func markdownTextViewInsertNewline(_ textView: MarkdownTextView) {
-        if commitPendingTagIfNeeded(insertingTrailingText: "\n") { return }
+        if commitPendingTagIfNeeded() { return }
         if demoteAutomaticTitleFormattingIfNeeded() {
             textView.insertNewlineIgnoringFieldEditor(self)
             updateTypingAttributesFromInsertionPoint()
@@ -365,7 +365,7 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     func markdownTextView(_ textView: MarkdownTextView, shouldInterceptInsertedText text: String) -> Bool {
         guard text == " " || text == "\t" else { return false }
-        return commitPendingTagIfNeeded(insertingTrailingText: text)
+        return commitPendingTagIfNeeded()
     }
 
     func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool {

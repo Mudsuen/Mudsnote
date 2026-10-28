@@ -165,6 +165,7 @@ extension EditorWindowController {
     }
 
     func handleShortcutEvent(_ event: NSEvent) -> Bool {
+        guard (window?.firstResponder as? NSTextView)?.hasMarkedText() != true else { return false }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if let saveShortcut, saveShortcut.matches(event) {
             savePressed()
@@ -180,11 +181,11 @@ extension EditorWindowController {
                 suggestionController.moveSelection(delta: -1)
                 return true
             case 36, 76:
-                if commitPendingTagIfNeeded(insertingTrailingText: "\n") {
-                    dismissInlineSuggestions()
+                if suggestionController.acceptSelection() {
                     return true
                 }
-                if suggestionController.acceptSelection() {
+                if commitPendingTagIfNeeded() {
+                    dismissInlineSuggestions()
                     return true
                 }
                 dismissInlineSuggestions()

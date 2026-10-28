@@ -45,30 +45,43 @@ private final class MetadataTagButton: NSButton {
 
 private final class InlineMetadataTagComboBox: NSComboBox {
     var onCommit: ((String) -> Void)?
-    var onCancel: (() -> Void)?
+    var onCancel: ((_ restoresEditorFocus: Bool) -> Void)?
     private var hasFinished = false
 
     @objc private func commitValue() {
+        guard (currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }
+        finish(value: stringValue, restoresEditorFocus: true)
+    }
+
+    private func finish(value: String?, restoresEditorFocus: Bool) {
         guard !hasFinished else { return }
         hasFinished = true
-        onCommit?(stringValue)
+        // Let the field editor finish handling this event before removing its
+        // control or restoring the document responder. Otherwise Return can
+        // continue in the document as an unintended newline.
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            if let value {
+                onCommit?(value)
+            } else {
+                onCancel?(restoresEditorFocus)
+            }
+        }
     }
 
     override func textDidEndEditing(_ notification: Notification) {
         let movement = notification.userInfo?["NSTextMovement"] as? Int
+        super.textDidEndEditing(notification)
         if movement == NSReturnTextMovement || movement == NSTabTextMovement || movement == NSBacktabTextMovement {
             commitValue()
-        } else if !hasFinished {
-            hasFinished = true
-            onCancel?()
+        } else {
+            finish(value: nil, restoresEditorFocus: false)
         }
-        super.textDidEndEditing(notification)
     }
 
     override func cancelOperation(_ sender: Any?) {
-        guard !hasFinished else { return }
-        hasFinished = true
-        onCancel?()
+        guard (currentEditor() as? NSTextView)?.hasMarkedText() != true else { return }
+        finish(value: nil, restoresEditorFocus: true)
     }
 
     func configureCommitAction() {
@@ -220,6 +233,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     private weak var metadataTagStack: NSStackView?
     private var metadataTagAddButton: NSButton?
     private weak var metadataTagInput: InlineMetadataTagComboBox?
+    private var metadataTagEditorSelection: NSRange?
 
     func replaceAllContent(with attributedString: NSAttributedString) {
         textStorage?.setAttributedString(attributedString)
@@ -230,6 +244,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         metadataTagStack = nil
         metadataTagAddButton = nil
         metadataTagInput = nil
+        metadataTagEditorSelection = nil
 
         // This view is transparent. TextKit can invalidate only the new glyph
         // range after a shorter replacement, leaving pixels from the previous
@@ -307,8 +322,9 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             window?.makeFirstResponder(input)
             return
         }
+        metadataTagEditorSelection = selectedRange()
+        isAddingMetadataTag = true
         if metadataTagStack == nil {
-            isAddingMetadataTag = true
             setMetadataTags(metadataTags)
         }
         guard let stack = metadataTagStack, let addButton = metadataTagAddButton else { return }
@@ -319,18 +335,25 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         input.identifier = NSUserInterfaceItemIdentifier("InlineNoteTagInput")
         input.placeholderString = "标签名称"
         input.setAccessibilityLabel("标签名称")
-        input.completes = true
+        // Native autocomplete can replace the marked pinyin range before the
+        // input method has committed it. Keep the dropdown, without type-ahead.
+        input.completes = false
+        (input.cell as? NSTextFieldCell)?.sendsActionOnEndEditing = false
         input.addItems(withObjectValues: suggestions.filter { suggestion in
             !metadataTags.contains { $0.localizedCaseInsensitiveCompare(suggestion) == .orderedSame }
         })
         input.translatesAutoresizingMaskIntoConstraints = false
         input.widthAnchor.constraint(equalToConstant: 160).isActive = true
         input.heightAnchor.constraint(equalToConstant: 24).isActive = true
-        input.onCommit = { [weak self] value in
-            self?.finishAddingMetadataTag()
+        input.onCommit = { [weak self, weak input] value in
+            guard let self, let input, metadataTagInput === input else { return }
+            finishAddingMetadataTag(restoringEditorFocus: true)
             onCommit(value)
         }
-        input.onCancel = { [weak self] in self?.finishAddingMetadataTag() }
+        input.onCancel = { [weak self, weak input] restoresEditorFocus in
+            guard let self, let input, metadataTagInput === input else { return }
+            finishAddingMetadataTag(restoringEditorFocus: restoresEditorFocus)
+        }
         input.configureCommitAction()
         stack.addArrangedSubview(input)
         metadataTagInput = input
@@ -343,7 +366,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         metadataTagScrollView?.contentView.scrollToVisible(input.frame)
     }
 
-    private func finishAddingMetadataTag() {
+    private func finishAddingMetadataTag(restoringEditorFocus: Bool) {
         guard let stack = metadataTagStack, let input = metadataTagInput else { return }
         stack.removeArrangedSubview(input)
         input.removeFromSuperview()
@@ -354,7 +377,16 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
         resizeMetadataTagStack()
         isAddingMetadataTag = false
         if metadataTags.isEmpty { setMetadataTags([]) }
-        window?.makeFirstResponder(self)
+        let selection = metadataTagEditorSelection
+        metadataTagEditorSelection = nil
+        if restoringEditorFocus {
+            window?.makeFirstResponder(self)
+            if let selection {
+                let length = (string as NSString).length
+                let location = min(selection.location, length)
+                setSelectedRange(NSRange(location: location, length: min(selection.length, length - location)))
+            }
+        }
     }
 
     private func resizeMetadataTagStack() {
@@ -591,6 +623,10 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     override func keyDown(with event: NSEvent) {
         dismissSelectionFormattingPanel()
+        if hasMarkedText(), !isShiftReturnKey(event) {
+            super.keyDown(with: event)
+            return
+        }
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
         if event.keyCode == UInt16(kVK_Tab),
            modifiers.isSubset(of: [.shift]),

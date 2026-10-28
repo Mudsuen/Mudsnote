@@ -43,6 +43,7 @@ extension EditorWindowController {
         }
         editorTextView.onTextInputStateChanged = { [weak self] in
             self?.refreshChrome()
+            self?.updateInlineSuggestions()
         }
         editorTextView.isRichText = true
         editorTextView.importsGraphics = false

@@ -123,7 +123,7 @@ extension LibraryWindowController {
     }
 
     func markdownTextViewInsertNewline(_ textView: MarkdownTextView) {
-        if commitSelectedMetadataTagIfNeeded(insertingTrailingText: "\n") { return }
+        if commitSelectedMetadataTagIfNeeded(insertingTrailingText: "") { return }
         guard handleStructuredNewline() else {
             textView.insertNewlineIgnoringFieldEditor(self)
             updateTypingAttributesFromInsertionPoint()
@@ -140,7 +140,7 @@ extension LibraryWindowController {
         insertingTrailingText trailingText: String
     ) -> Bool {
         let selection = editorTextView.selectedRange()
-        guard selection.length == 0 else { return false }
+        guard !editorTextView.hasMarkedText(), selection.length == 0 else { return false }
         let source = editorTextView.string as NSString
         let caret = min(selection.location, source.length)
         let paragraph = source.paragraphRange(
@@ -256,7 +256,7 @@ extension LibraryWindowController {
     }
 
     func markdownTextView(_ textView: MarkdownTextView, handleKeyDown event: NSEvent) -> Bool {
-        guard textView === editorTextView else { return false }
+        guard textView === editorTextView, !textView.hasMarkedText() else { return false }
         if !editorSuggestionController.view.isHidden {
             switch event.keyCode {
             case UInt16(kVK_DownArrow):
@@ -267,11 +267,8 @@ extension LibraryWindowController {
                 return true
             case UInt16(kVK_Return), UInt16(kVK_ANSI_KeypadEnter):
                 if editorTagSuggestion != nil {
-                    if editorSuggestionController.acceptSelection() {
-                        textView.insertNewlineIgnoringFieldEditor(self)
-                        return true
-                    }
-                    if commitSelectedMetadataTagIfNeeded(insertingTrailingText: "\n") { return true }
+                    if editorSuggestionController.acceptSelection() { return true }
+                    if commitSelectedMetadataTagIfNeeded(insertingTrailingText: "") { return true }
                     dismissEditorSlashSuggestions()
                     return false
                 }
@@ -300,6 +297,7 @@ extension LibraryWindowController {
 
     func updateEditorSlashSuggestions() {
         if editorTextView.hasMarkedText() {
+            dismissEditorSlashSuggestions()
             return
         }
         guard !isEditorShowingMarkdownSource,

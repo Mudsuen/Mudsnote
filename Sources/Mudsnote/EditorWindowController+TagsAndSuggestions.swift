@@ -45,9 +45,11 @@ extension EditorWindowController {
 
         let token = String(linePrefix[match])
         let query = String(token.trimmingCharacters(in: .whitespaces).dropFirst())
+        guard let marker = linePrefix[match].firstIndex(of: "#") else { return nil }
+        let tokenRange = NSRange(marker..<match.upperBound, in: linePrefix)
         let replacementRange = NSRange(
-            location: paragraphRange.location + linePrefix.distance(from: linePrefix.startIndex, to: match.lowerBound) + (token.hasPrefix(" ") ? 1 : 0),
-            length: token.trimmingCharacters(in: .whitespaces).utf16.count
+            location: paragraphRange.location + tokenRange.location,
+            length: tokenRange.length
         )
         return (query, replacementRange)
     }
@@ -70,14 +72,11 @@ extension EditorWindowController {
 
         let token = String(linePrefix[match])
         let trimmedToken = token.trimmingCharacters(in: .whitespaces)
+        guard let marker = linePrefix[match].firstIndex(of: "@") else { return nil }
+        let tokenRange = NSRange(marker..<match.upperBound, in: linePrefix)
         return (
             String(trimmedToken.dropFirst()),
-            NSRange(
-                location: paragraphRange.location
-                    + linePrefix.distance(from: linePrefix.startIndex, to: match.lowerBound)
-                    + (token.hasPrefix(" ") ? 1 : 0),
-                length: trimmedToken.utf16.count
-            )
+            NSRange(location: paragraphRange.location + tokenRange.location, length: tokenRange.length)
         )
     }
 
@@ -127,6 +126,7 @@ extension EditorWindowController {
     func updateInlineSuggestions() {
         guard editorTextView.window != nil else { return }
         if editorTextView.hasMarkedText() {
+            dismissInlineSuggestions()
             return
         }
         if currentTagToken() != nil, knownTagsForSuggestions == nil {
@@ -251,9 +251,11 @@ extension EditorWindowController {
         if let match = linePrefix.range(of: #"(^|\s)/([^\s/]*)$"#, options: .regularExpression) {
             let token = String(linePrefix[match])
             let query = token.trimmingCharacters(in: .whitespaces).dropFirst().lowercased()
+            guard let marker = linePrefix[match].firstIndex(of: "/") else { return nil }
+            let tokenRange = NSRange(marker..<match.upperBound, in: linePrefix)
             let replacementRange = NSRange(
-                location: paragraphRange.location + linePrefix.distance(from: linePrefix.startIndex, to: match.lowerBound) + (token.hasPrefix(" ") ? 1 : 0),
-                length: token.trimmingCharacters(in: .whitespaces).utf16.count
+                location: paragraphRange.location + tokenRange.location,
+                length: tokenRange.length
             )
             let commands = SlashCommand.matching(String(query), includesAI: true)
             return .slash(query: String(query), replacementRange: replacementRange, items: commands)
@@ -404,28 +406,12 @@ extension EditorWindowController {
         }
     }
 
-    func commitPendingTagIfNeeded(insertingTrailingText trailingText: String? = nil) -> Bool {
-        guard let token = currentTagToken() else { return false }
+    func commitPendingTagIfNeeded() -> Bool {
+        guard !editorTextView.hasMarkedText(), let token = currentTagToken() else { return false }
         let normalized = token.query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !normalized.isEmpty else { return false }
         applyTag(normalized, replacementRange: token.replacementRange)
-        if trailingText == "\n" {
-            let neutralAttributes = neutralTypingAttributesForCurrentLine()
-            insertTextAtSelection("\n", attributes: neutralAttributes)
-            editorTextView.typingAttributes = neutralAttributes
-        }
         return true
-    }
-
-    func neutralTypingAttributesForCurrentLine() -> [NSAttributedString.Key: Any] {
-        guard let storage = editorTextView.textStorage, storage.length > 0 else {
-            return theme.baseAttributes(for: .paragraph)
-        }
-        let lineRange = visibleLineRangeForSelection()
-        let kind = MarkdownRichTextCodec.paragraphKind(at: lineRange, in: storage)
-        var attributes = theme.baseAttributes(for: kind)
-        attributes.removeValue(forKey: .qmTag)
-        return attributes
     }
 
     // MARK: - String algorithms
