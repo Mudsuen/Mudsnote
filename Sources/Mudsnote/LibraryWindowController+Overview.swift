@@ -9,7 +9,10 @@ import MudsnoteCore
     override func layout() {
         super.layout()
         guard let owner else { return }
-        if owner.isShowingOverview { owner.overviewView?.frame = NSRect(x: 0, y: safeAreaInsets.top, width: bounds.width, height: max(0, bounds.height - safeAreaInsets.top)) }
+        if owner.isShowingOverview {
+            let inset = max(safeAreaInsets.top, window.map { max(0, $0.frame.height - $0.contentLayoutRect.height) } ?? 52)
+            owner.overviewView?.frame = NSRect(x: 0, y: inset, width: bounds.width, height: max(0, bounds.height - inset))
+        }
         else { owner.regularEditorView?.frame = bounds }
     }
 }
@@ -87,7 +90,10 @@ extension LibraryWindowController {
             overviewView = overview
             host.addSubview(overview)
         }
-        let entering = !isShowingOverview
+        cancelActiveNoteLoad()
+        if let id = overviewView?.selectedID { overviewView?.cards[id]?.embed(nil) }
+        overviewView?.selectedID = nil
+        if let editor = regularEditorView { overviewHost?.addSubview(editor) }
         isShowingOverview = true
         _ = setSourceListVisibleForLibrary(true)
         overviewView?.isHidden = false
@@ -108,7 +114,14 @@ extension LibraryWindowController {
         }
         refreshOverview()
         overviewHost?.needsLayout = true
-        if entering { overviewView?.scroll.contentView.scroll(to: .zero) }
+        DispatchQueue.main.async { [weak self] in
+            guard let self, self.isShowingOverview, self.overviewView?.selectedID == nil else { return }
+            self.overviewHost?.layoutSubtreeIfNeeded()
+            if let scroll = self.overviewView?.scroll {
+                scroll.contentView.scroll(to: .zero)
+                scroll.reflectScrolledClipView(scroll.contentView)
+            }
+        }
     }
 
     @discardableResult func commitOverviewEditor() -> Bool {

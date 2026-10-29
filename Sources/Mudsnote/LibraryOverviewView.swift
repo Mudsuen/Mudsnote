@@ -82,7 +82,11 @@ import MudsnoteCore
             path.move(to: start)
             let offset = max(30, abs(end.x - start.x) * 0.45)
             let sign: CGFloat = end.x > start.x ? 1 : -1
-            path.curve(to: end, controlPoint1: NSPoint(x: start.x + sign * offset, y: start.y), controlPoint2: NSPoint(x: end.x - sign * offset, y: end.y))
+            if isCardLink && abs(start.x - end.x) < 1 {
+                path.curve(to: end, controlPoint1: NSPoint(x: start.x + 28, y: start.y), controlPoint2: NSPoint(x: end.x + 28, y: end.y))
+            } else {
+                path.curve(to: end, controlPoint1: NSPoint(x: start.x + sign * offset, y: start.y), controlPoint2: NSPoint(x: end.x - sign * offset, y: end.y))
+            }
             path.lineWidth = isCardLink ? 1.5 : 1
             path.stroke()
         }
@@ -116,6 +120,7 @@ import MudsnoteCore
         scroll.hasVerticalScroller = true
         scroll.hasHorizontalScroller = true
         scroll.autohidesScrollers = true
+        scroll.automaticallyAdjustsContentInsets = false
         scroll.drawsBackground = false
         scroll.documentView = canvas
         addSubview(scroll)
@@ -231,7 +236,7 @@ import MudsnoteCore
         }
         for edge in state.connections {
             guard let a = cards[edge.from]?.frame, let b = cards[edge.to]?.frame else { continue }
-            canvas.lines.append((NSPoint(x: a.maxX, y: a.midY), NSPoint(x: b.minX, y: b.midY), true))
+            canvas.lines.append((NSPoint(x: a.maxX, y: a.midY), NSPoint(x: abs(a.minX - b.minX) < 1 ? b.maxX : b.minX, y: b.midY), true))
         }
         let contentWidth = max(width, (cards.values.map { $0.frame.maxX }.max() ?? width - 28) + 28)
         canvas.setFrameSize(NSSize(width: contentWidth, height: max(bounds.height, looseY + 32)))
