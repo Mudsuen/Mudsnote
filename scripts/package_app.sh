@@ -52,6 +52,8 @@ cat > "${CONTENTS_DIR}/Info.plist" <<'PLIST'
     <string>MudsnoteAppIcon</string>
     <key>CFBundleIdentifier</key>
     <string>local.codex.mudsnote</string>
+    <key>MudsnoteInstanceProtocol</key>
+    <integer>1</integer>
     <key>CFBundleInfoDictionaryVersion</key>
     <string>6.0</string>
     <key>CFBundleName</key>

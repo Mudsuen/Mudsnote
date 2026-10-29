@@ -36,9 +36,23 @@ if arguments.contains("--migrate-inline-tags") {
     }
 }
 
+// This gate precedes NoteStore construction and global shortcut registration.
 let application = NSApplication.shared
+let instance: SingleInstanceCoordinator
+do {
+    instance = try SingleInstanceCoordinator(arguments: arguments)
+} catch {
+    FileHandle.standardError.write(Data("Cannot coordinate Mudsnote launch: \(error.localizedDescription)\n".utf8))
+    exit(1)
+}
+if !instance.isPrimary {
+    instance.runSecondary(application: application)
+}
 let delegate = AppController()
 application.delegate = delegate
-withExtendedLifetime(delegate) {
+instance.startReceiving { [weak delegate] request in
+    delegate?.receiveInstanceRequest(request) ?? false
+}
+withExtendedLifetime((delegate, instance)) {
     application.run()
 }

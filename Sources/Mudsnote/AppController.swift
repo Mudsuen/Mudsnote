@@ -1,4 +1,5 @@
 import AppKit
+import Darwin
 import Foundation
 import MudsnoteCore
 import UniformTypeIdentifiers
@@ -22,7 +23,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private var statusItem: NSStatusItem?
     private var quickCaptureController: EditorWindowController?
     private var floatingNoteController: EditorWindowController?
-    private var editorControllers: [String: EditorWindowController] = [:]
+    private var editorControllers: [UUID: EditorWindowController] = [:]
     private var libraryWindowController: LibraryWindowController?
     private var searchWindowController: SearchWindowController?
     private var preferencesWindowController: PreferencesWindowController?
@@ -32,10 +33,14 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private var hasPendingReopen = false
     private var statusMenuRefreshTask: Task<Void, Never>?
 
-    override init() {
-        let rawLaunchArguments = Array(CommandLine.arguments.dropFirst())
+    override convenience init() {
+        let arguments = Array(CommandLine.arguments.dropFirst())
+        self.init(noteStore: Self.makeNoteStore(arguments: arguments), arguments: arguments)
+    }
+
+    init(noteStore: NoteStore, arguments rawLaunchArguments: [String]) {
         self.launchArguments = Set(rawLaunchArguments)
-        self.noteStore = Self.makeNoteStore(arguments: rawLaunchArguments)
+        self.noteStore = noteStore
         self.visualQASelectedNoteURL = Self.visualQASelectedNoteURL(arguments: rawLaunchArguments)
         self.usesCanonicalVisualQAWindowSize = Self.usesCanonicalVisualQAWindowSize(arguments: rawLaunchArguments)
         self.prefersExternalVisualQAScreen = Self.prefersExternalVisualQAScreen(arguments: rawLaunchArguments)
@@ -114,6 +119,23 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
                 self?.showFloatingNote()
             }
         }
+    }
+
+    /// Return false until launch-time preparation and alerts have finished, so
+    /// the sender keeps its request queued instead of losing startup intents.
+    func receiveInstanceRequest(_ request: InstanceRequest) -> Bool {
+        guard hasFinishedLaunching else { return false }
+        let flags = Set(request.arguments)
+        let urls = Self.markdownFileURLs(from: request.files)
+        if !urls.isEmpty { openExternalMarkdownFiles(urls) }
+        if flags.contains("--quick-capture") { showQuickCapture() }
+        if flags.contains("--search") { showSearchWindow() }
+        if flags.contains("--preferences") { showPreferences() }
+        if flags.contains("--floating-note") { showFloatingNote() }
+        if flags.contains("--library") || (urls.isEmpty && flags.isDisjoint(with: Self.explicitLaunchWindowArguments)) {
+            showLibraryWindow()
+        }
+        return true
     }
 
     func applicationShouldTerminateAfterLastWindowClosed(_ sender: NSApplication) -> Bool {
@@ -556,6 +578,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     private func registerHotKeysIfNeeded() {
+        guard !launchArguments.contains("--visual-qa-notes-dir") else { return }
         let quickCaptureRegistered: Bool
         if let quickCaptureSpec = HotKeySpec.parse(noteStore.hotKeyString) {
             quickCaptureRegistered = hotKeyManager.register(quickCaptureSpec, id: 1) { [weak self] in
@@ -606,7 +629,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     @objc
-    private func showFloatingNote() {
+    func showFloatingNote() {
         cleanupClosedWindows()
 
         if let controller = floatingNoteController, !controller.isWindowClosed {
@@ -641,22 +664,30 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         }
     }
 
-    private func openEditor(for url: URL) {
+    static func sameNote(_ lhs: URL, _ rhs: URL) -> Bool {
+        if lhs.resolvingSymlinksInPath().standardizedFileURL == rhs.resolvingSymlinksInPath().standardizedFileURL { return true }
+        var left = stat()
+        var right = stat()
+        return stat(lhs.path, &left) == 0 && stat(rhs.path, &right) == 0
+            && left.st_dev == right.st_dev && left.st_ino == right.st_ino
+    }
+
+    func existingFloatingController(for url: URL) -> EditorWindowController? {
+        ([floatingNoteController] + Array(editorControllers.values)).compactMap { $0 }.first { controller in
+            guard !controller.isWindowClosed, controller.window != nil,
+                  let activeURL = controller.activeFloatingNoteURL ?? controller.fileURL else { return false }
+            return Self.sameNote(activeURL, url)
+        }
+    }
+
+    func openEditor(for url: URL) {
         cleanupClosedWindows()
-        let key = url.standardizedFileURL.path
-        if let primary = floatingNoteController, !primary.isWindowClosed,
-           primary.activeFloatingNoteURL?.standardizedFileURL.path == key {
-            primary.showWindowAndFocus()
+        if let controller = existingFloatingController(for: url) {
+            showFloatingWindowWithoutRevealingOtherWindows(controller)
             return
         }
-
-        if let controller = editorControllers[key], !controller.isWindowClosed {
-            controller.showWindowAndFocus()
-            return
-        }
-
         let controller = makeEditorWindowController(fileURL: url, usesFloatingNoteStyle: true)
-        editorControllers[key] = controller
+        editorControllers[controller.floatingWindowID] = controller
         controller.window?.alphaValue = windowAlphaValue(for: noteStore.panelOpacity)
         controller.showWindowAndFocus()
         refreshFloatingNoteBrowsers()
@@ -1176,15 +1207,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
                    controller === self.floatingNoteController {
                     self.noteStore.primaryFloatingNoteURL = savedURL
                 }
-                if let self, let controller = controllerReference,
-                   self.editorControllers.values.contains(where: { $0 === controller }) {
-                    let savedPath = savedURL.standardizedFileURL.path
-                    let previousKeys = self.editorControllers.compactMap { key, value in
-                        value === controller && key != savedPath ? key : nil
-                    }
-                    for key in previousKeys { self.editorControllers.removeValue(forKey: key) }
-                    self.editorControllers[savedPath] = controller
-                }
                 self?.didSaveNote(at: savedURL)
             },
             onClose: { [weak self] in
@@ -1219,15 +1241,19 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         return controller
     }
 
-    private func openFloatingNote(_ url: URL, requestedBy source: EditorWindowController?) {
-        let key = url.standardizedFileURL.path
+    func openFloatingNote(_ url: URL, requestedBy source: EditorWindowController?) {
+        cleanupClosedWindows()
+        if let existing = existingFloatingController(for: url) {
+            showFloatingWindowWithoutRevealingOtherWindows(existing)
+            return
+        }
         if let source,
            source === floatingNoteController,
-           source.activeFloatingNoteURL == nil,
-           editorControllers[key] == nil {
+           source.activeFloatingNoteURL == nil {
             source.loadFloatingNote(at: url)
+            guard let loadedURL = source.activeFloatingNoteURL, Self.sameNote(loadedURL, url) else { return }
             floatingNoteController = nil
-            editorControllers[key] = source
+            editorControllers[source.floatingWindowID] = source
             source.showWindowAndFocus()
             refreshFloatingNoteBrowsers()
             return
@@ -1237,8 +1263,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
     private func makeFloatingNoteWindowController() throws -> EditorWindowController {
         let url = try noteStore.preparePrimaryFloatingNote()
-        let key = url.standardizedFileURL.path
-        if let existing = editorControllers.removeValue(forKey: key), !existing.isWindowClosed {
+        if let existing = existingFloatingController(for: url) {
+            editorControllers = editorControllers.filter { $0.value !== existing }
             return existing
         }
         return makeEditorWindowController(fileURL: url, usesFloatingNoteStyle: true)

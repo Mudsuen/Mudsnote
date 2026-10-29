@@ -11,6 +11,16 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-10-28 — One owner for floating notes
+
+- Problem: launching installed and development copies could create separate
+  floating windows and competing shortcuts; file aliases could also bypass reuse.
+- Fix: acquire a process lifetime lock before stores and shortcuts, hand launch
+  requests to the existing app, and reuse floating windows by their current file
+  identity, including hidden windows and aliases.
+- Lesson: window identity must be enforced across processes as well as within
+  the app; disposable verification needs its own complete storage namespace.
+
 ## 2026-10-28 — Tag input and editor focus
 
 - Problem: Chinese tag composition could be interrupted, confirming tags moved

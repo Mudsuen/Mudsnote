@@ -43,6 +43,12 @@ AppKit views/controllers -> MudsnoteCore -> filesystem/UserDefaults
 coordinate UI and asynchronous work, but filesystem enumeration and document
 semantics belong in stores, projections, or focused services.
 
+macOS startup acquires `SingleInstanceCoordinator` before stores or shortcuts.
+Secondary launches queue acknowledged requests; legacy bundles receive standard
+reopen/document events. Visual QA requires isolated notes, defaults and support,
+with separate locking and no global shortcuts. Floating-window reuse follows
+current file identity rather than original dictionary keys.
+
 ### iOS
 
 `iOS/MudsnoteCompanion.xcodeproj` builds the SwiftUI app and widget. Its main
