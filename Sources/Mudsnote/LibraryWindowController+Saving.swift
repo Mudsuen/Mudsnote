@@ -219,6 +219,7 @@ extension LibraryWindowController {
             return
         }
 
+        remapOverviewAfterSave(previousURL: snapshot.previousURL, savedURL: success.savedURL)
         setSelectedURLForLibrary(success.savedURL)
         activeDocumentTab.url = success.savedURL
         activeDocumentTab.title = snapshot.title.isEmpty
@@ -434,6 +435,7 @@ extension LibraryWindowController {
 
         let changedURLs = [previousURL, savedURL].compactMap { $0 }
         recordInternalFileSystemChanges(for: changedURLs)
+        remapOverviewAfterSave(previousURL: previousURL, savedURL: savedURL)
         setSelectedURLForLibrary(savedURL)
         activeDocumentTab.url = savedURL
         activeDocumentTab.title = title.isEmpty

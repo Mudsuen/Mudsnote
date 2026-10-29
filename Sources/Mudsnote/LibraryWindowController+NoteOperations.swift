@@ -362,6 +362,7 @@ extension LibraryWindowController {
 
         externallyOpenedDocumentsByPath[standardizedURL.path] = note
         sourceCountSnapshot = includingExternallyOpenedDocuments(in: sourceCountSnapshot)
+        if isShowingOverview { openOverviewNote(note); return }
         selectedScope = .folder(standardizedURL.deletingLastPathComponent())
         searchField.stringValue = ""
         activeSearchSession = nil

@@ -732,6 +732,7 @@ extension LibraryWindowController {
     }
 
     @objc func newDocumentTabPressed() {
+        if isShowingOverview { createNoteFromOverviewRail(); return }
         do {
             drainBackgroundAutosaves()
             try saveCurrentNoteIfNeeded()

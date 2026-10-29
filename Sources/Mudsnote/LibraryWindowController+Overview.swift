@@ -9,7 +9,7 @@ import MudsnoteCore
     override func layout() {
         super.layout()
         guard let owner else { return }
-        if owner.isShowingOverview { owner.overviewView?.frame = bounds }
+        if owner.isShowingOverview { owner.overviewView?.frame = NSRect(x: 0, y: safeAreaInsets.top, width: bounds.width, height: max(0, bounds.height - safeAreaInsets.top)) }
         else { owner.regularEditorView?.frame = bounds }
     }
 }
@@ -87,6 +87,7 @@ extension LibraryWindowController {
             overviewView = overview
             host.addSubview(overview)
         }
+        let entering = !isShowingOverview
         isShowingOverview = true
         _ = setSourceListVisibleForLibrary(true)
         overviewView?.isHidden = false
@@ -95,15 +96,19 @@ extension LibraryWindowController {
         selectedScope = .all
         lastListScope = .all
         reloadNotes(loadFirstIfNeeded: false, refreshCounts: false)
-        if overviewState?.cards.isEmpty == true, !sourceCountSnapshot.isEmpty {
+        if overviewState?.seeded != true, !sourceCountSnapshot.isEmpty {
             _ = changeOverview { state in
-                for note in sourceCountSnapshot.sorted(by: { $0.modifiedAt > $1.modifiedAt }).prefix(4) {
-                    _ = state.add(note.url, areaID: state.areas.first(where: { note.tags.contains($0.title) || note.url.deletingLastPathComponent().lastPathComponent == $0.title })?.id)
+                if state.cards.isEmpty {
+                    for note in sourceCountSnapshot.sorted(by: { $0.modifiedAt > $1.modifiedAt }).prefix(4) {
+                        _ = state.add(note.url, areaID: state.areas.first(where: { note.tags.contains($0.title) || note.url.deletingLastPathComponent().lastPathComponent == $0.title })?.id)
+                    }
                 }
+                state.seeded = true
             }
         }
         refreshOverview()
         overviewHost?.needsLayout = true
+        if entering { overviewView?.scroll.contentView.scroll(to: .zero) }
     }
 
     @discardableResult func commitOverviewEditor() -> Bool {

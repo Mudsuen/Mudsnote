@@ -49,6 +49,10 @@ reopen/document events. Visual QA requires isolated notes, defaults and support,
 with separate locking and no global shortcuts. Floating-window reuse follows
 current file identity rather than original dictionary keys.
 
+`NoteOverview` persists area/card/link metadata separately from note text.
+`LibraryOverviewView` embeds the shared library editor in the selected card;
+normal save and conflict handling remain authoritative.
+
 ### iOS
 
 `iOS/MudsnoteCompanion.xcodeproj` builds the SwiftUI app and widget. Its main

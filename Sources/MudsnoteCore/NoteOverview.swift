@@ -18,6 +18,7 @@ public struct NoteOverview: Codable, Equatable, Sendable {
         public var to: UUID
         public init(from: UUID, to: UUID) { self.from = from; self.to = to }
     }
+    public var seeded: Bool?
     public var principles = "AI Native · 长期主义 · 身体优先"
     public var areas = [Area(title: "搞钱"), Area(title: "健康"), Area(title: "关系"), Area(title: "内在世界")]
     public var cards: [Card] = []

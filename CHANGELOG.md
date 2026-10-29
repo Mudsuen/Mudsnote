@@ -11,6 +11,17 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-10-29 — Connected overview with in-place note editing
+
+- Problem: the library only showed individual notes; principles, life areas and
+  related plans could not be explored together without leaving the current page.
+- Fix: add a persistent overview, editable principles, areas and subareas, linked
+  note cards with body previews, and a compact navigation rail. Clicking a note
+  expands the existing editor inside its card. Collapse and navigation preserve
+  the normal autosave, rename and conflict protection; removing a card keeps its file.
+- Lesson: an overview should organize existing documents, not introduce a second
+  copy or a second independent save path for the same text.
+
 ## 2026-10-28 — One owner for floating notes
 
 - Problem: launching installed and development copies could create separate

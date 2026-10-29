@@ -49,7 +49,7 @@ extension LibraryWindowController {
         synchronizeGallerySelectionFromTable()
         stabilizeVisualQASelectionIfNeeded()
 
-        if loadFirstIfNeeded, let noteToLoad {
+        if loadFirstIfNeeded, !isShowingOverview, let noteToLoad {
             load(note: noteToLoad)
         }
         if refreshCounts {
