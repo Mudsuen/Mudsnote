@@ -501,6 +501,7 @@ extension LibraryWindowController {
         hasAttachments: Bool,
         thumbnailURL: URL?
     ) -> Bool {
+        remapOverviewAfterSave(previousURL: previousURL, savedURL: savedURL)
         let previousPath = previousURL?.path
         let savedPath = savedURL.path
         let previousNote = sourceCountSnapshot.first {

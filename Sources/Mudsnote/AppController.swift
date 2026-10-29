@@ -824,6 +824,9 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         refreshFloatingNoteClassification()
         controller.showWindowAndFocus()
         selectVisualQANoteIfNeeded(in: controller)
+        if visualQASelectedNoteURL == nil && (!launchArguments.contains("--visual-qa-notes-dir") || launchArguments.contains("--overview")) {
+            controller.showOverview()
+        }
     }
 
     @objc

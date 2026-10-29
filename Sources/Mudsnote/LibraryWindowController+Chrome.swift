@@ -15,7 +15,7 @@ extension LibraryWindowController {
         let sourceController = NSViewController()
         sourceController.view = navigation
         let editorController = NSViewController()
-        editorController.view = editor
+        editorController.view = buildOverviewHost(editor: editor)
 
         let sourceItem = NSSplitViewItem(sidebarWithViewController: sourceController)
         sourceItem.minimumThickness = LibraryNotesLayout.sourceColumnMinimumWidth
@@ -87,6 +87,15 @@ extension LibraryWindowController {
         container.addSubview(sidebarHeaderView)
         sidebarHeaderView.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(modeContainer)
+        let rail = buildOverviewRail()
+        container.addSubview(rail)
+        rail.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            rail.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            rail.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
+            rail.bottomAnchor.constraint(equalTo: container.bottomAnchor),
+            rail.widthAnchor.constraint(equalToConstant: 52)
+        ])
         modeContainer.addSubview(tree)
         modeContainer.addSubview(list)
 
@@ -100,9 +109,9 @@ extension LibraryWindowController {
             tint.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
             tint.topAnchor.constraint(equalTo: surface.topAnchor),
             tint.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
-            modeContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            modeContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 52),
             modeContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            sidebarHeaderView.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            sidebarHeaderView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 52),
             sidebarHeaderView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             sidebarHeaderView.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 6),
             modeContainer.topAnchor.constraint(equalTo: sidebarHeaderView.bottomAnchor),

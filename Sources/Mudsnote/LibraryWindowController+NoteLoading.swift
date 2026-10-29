@@ -15,6 +15,7 @@ extension LibraryWindowController {
     }
 
     func load(note: NoteSearchResult) {
+        if isShowingOverview { openOverviewNote(note); return }
         if selectedScope == .trash, !isTrashURL(note.url) {
             selectedScope = .folder(note.url.deletingLastPathComponent())
             lastTreeScope = selectedScope

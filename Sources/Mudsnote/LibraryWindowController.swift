@@ -24,6 +24,12 @@ final class LibraryWindowController: NSWindowController,
     WindowOpacityAdjusting
 {
     let noteStore: NoteStore
+    var overviewState: NoteOverview?
+    var overviewView: LibraryOverviewView?
+    var overviewHost: OverviewContentHost?
+    var regularEditorView: NSView?
+    var isShowingOverview = false
+
 
     var floatingNotePaths: Set<String> = []
 
@@ -67,6 +73,8 @@ final class LibraryWindowController: NSWindowController,
     var attachmentManagerWindowController: LibraryAttachmentManagerWindowController?
 
     var knowledgeGraphWindowController: KnowledgeGraphWindowController?
+
+    static let homeOverviewToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.home")
 
     static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
 
@@ -166,7 +174,7 @@ final class LibraryWindowController: NSWindowController,
     var noteListViewMode: LibraryNoteViewMode = .list
 
     var sourceCountSnapshot: [NoteSearchResult] = [] {
-        didSet { noteRelationsCache.removeAll() }
+        didSet { noteRelationsCache.removeAll(); refreshOverview() }
     }
 
     var trashedNotesSnapshot: [NoteSearchResult] = []

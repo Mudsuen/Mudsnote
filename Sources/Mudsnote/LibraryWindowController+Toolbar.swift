@@ -72,6 +72,7 @@ extension LibraryWindowController {
             Self.toggleSidebarToolbarItemIdentifier,
             Self.sourceTrackingSeparatorToolbarItemIdentifier,
             Self.sidebarPresentationToolbarItemIdentifier,
+            Self.homeOverviewToolbarItemIdentifier,
             Self.documentTabsToolbarItemIdentifier,
             .flexibleSpace,
             Self.searchToolbarItemIdentifier
@@ -104,6 +105,8 @@ extension LibraryWindowController {
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
         switch itemIdentifier {
+        case Self.homeOverviewToolbarItemIdentifier:
+            return toolbarButtonItem(identifier: itemIdentifier, label: "首页", symbolName: "house", action: #selector(showOverview))
         case Self.sourceTrackingSeparatorToolbarItemIdentifier:
             return toolbarTrackingSeparatorItem(identifier: itemIdentifier, dividerIndex: 0)
         case Self.noteTrackingSeparatorToolbarItemIdentifier:
