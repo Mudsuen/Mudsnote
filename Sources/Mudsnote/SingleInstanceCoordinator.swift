@@ -145,24 +145,29 @@ final class SingleInstanceCoordinator: NSObject, NSApplicationDelegate {
     }
 
     private func forward(arguments: [String], files: [String]) {
-        if let legacyApplication, let bundleURL = legacyApplication.bundleURL {
-            let configuration = NSWorkspace.OpenConfiguration()
-            configuration.activates = true
-            let completion: @Sendable (NSRunningApplication?, Error?) -> Void = { _, error in
-                DispatchQueue.main.async {
-                    if let error { FileHandle.standardError.write(Data("Mudsnote handoff failed: \(error)\n".utf8)) }
-                    exit(error == nil ? 0 : 1)
+        if let legacyApplication {
+            // Target the PID: bundle-ID routing can choose a disposable fixture
+            // or another installed copy. Activation alone is not a reopen event.
+            let event = NSAppleEventDescriptor(
+                eventClass: AEEventClass(kCoreEventClass),
+                eventID: AEEventID(files.isEmpty ? kAEReopenApplication : kAEOpenDocuments),
+                targetDescriptor: NSAppleEventDescriptor(processIdentifier: legacyApplication.processIdentifier),
+                returnID: AEReturnID(kAutoGenerateReturnID), transactionID: AETransactionID(kAnyTransactionID)
+            )
+            if !files.isEmpty {
+                let list = NSAppleEventDescriptor.list()
+                for (index, path) in files.enumerated() {
+                    list.insert(NSAppleEventDescriptor(fileURL: URL(fileURLWithPath: path)), at: index + 1)
                 }
+                event.setParam(list, forKeyword: AEKeyword(keyDirectObject))
             }
-            if files.isEmpty {
-                // Legacy versions understand standard reopen, but not the new launch-intent protocol.
-                NSWorkspace.shared.openApplication(at: bundleURL, configuration: configuration, completionHandler: completion)
-            } else {
-                NSWorkspace.shared.open(files.map { URL(fileURLWithPath: $0) }, withApplicationAt: bundleURL,
-                                        configuration: configuration, completionHandler: completion)
-            }
-            return
+            do {
+                _ = try event.sendEvent(options: .waitForReply, timeout: 10)
+                legacyApplication.activate()
+                exit(0)
+            } catch { fail("Mudsnote handoff failed: \(error.localizedDescription)") }
         }
+
         do {
             let url = lease.directory.appendingPathComponent(UUID().uuidString + ".json")
             try JSONEncoder().encode(InstanceRequest(arguments: arguments, files: files)).write(to: url, options: .atomic)
