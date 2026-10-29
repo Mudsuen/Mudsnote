@@ -53,6 +53,15 @@ extension MarkdownRichEditorTests {
         #expect(controller.overviewView?.selectedID == nil)
         let savedURL = try #require(controller.selectedURL)
         #expect(try store.loadNote(at: savedURL).body == "Edited in place 中文")
+        try "# First\n\nUpdated outside the card\n".write(to: savedURL, atomically: true, encoding: .utf8)
+        controller.sourceCountSnapshot = controller.sourceCountSnapshot.map { note in
+            note.url == savedURL ? NoteSearchResult(url: savedURL, title: "First", snippet: "Updated outside", modifiedAt: Date().addingTimeInterval(2)) : note
+        }
+        for _ in 0..<100 where controller.overviewView?.cards[firstID]?.preview.stringValue.contains("Updated outside") != true { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(controller.overviewView?.cards[firstID]?.preview.stringValue.contains("Updated outside") == true)
+        controller.activateDocumentTab(controller.activeDocumentTab.id)
+        for _ in 0..<100 where controller.overviewView?.selectedID != firstID { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(controller.overviewView?.selectedID == firstID)
         let secondID = try #require(controller.overviewState?.cards.first { $0.url == second }?.id)
         controller.toggleOverviewCard(secondID)
         for _ in 0..<100 where controller.overviewView?.selectedID != secondID { try await Task.sleep(for: .milliseconds(10)) }

@@ -106,6 +106,7 @@ import MudsnoteCore
     var cards: [UUID: OverviewCardView] = [:]
     var areas: [UUID: OverviewActionButton] = [:]
     var previews: [UUID: String] = [:]
+    var previewVersions: [UUID: Date] = [:]
     var previewTasks: [UUID: Task<Void, Never>] = [:]
     var selectedID: UUID?
     var state = NoteOverview()
@@ -138,6 +139,7 @@ import MudsnoteCore
             cards.removeValue(forKey: id)?.removeFromSuperview()
             previewTasks.removeValue(forKey: id)?.cancel()
             previews.removeValue(forKey: id)
+            previewVersions.removeValue(forKey: id)
         }
         let areaIDs = Set(state.areas.map(\.id))
         for id in Array(areas.keys) where !areaIDs.contains(id) { areas.removeValue(forKey: id)?.removeFromSuperview() }
@@ -168,6 +170,10 @@ import MudsnoteCore
                 canvas.addSubview(view)
             }
             let note = notes.first { $0.url.standardizedFileURL == card.url.standardizedFileURL }
+            if let note, previewVersions[card.id] != note.modifiedAt {
+                invalidatePreview(card.id)
+                previewVersions[card.id] = note.modifiedAt
+            }
             view.heading.stringValue = note?.title ?? card.url.deletingPathExtension().lastPathComponent
             view.preview.stringValue = previews[card.id] ?? note?.snippet ?? "点击打开笔记"
             if previews[card.id] == nil && previewTasks[card.id] == nil, let store = owner?.noteStore {

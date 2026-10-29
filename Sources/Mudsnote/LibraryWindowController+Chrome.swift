@@ -747,6 +747,13 @@ extension LibraryWindowController {
     }
 
     func activateDocumentTab(_ id: UUID, capturesCurrentDocument: Bool = true) {
+        if isShowingOverview, id == activeDocumentTabID,
+           let url = activeDocumentTab.url {
+            let note = sourceCountSnapshot.first { $0.url.standardizedFileURL == url.standardizedFileURL }
+                ?? NoteSearchResult(url: url, title: activeDocumentTab.title, snippet: "", modifiedAt: Date())
+            openOverviewNote(note)
+            return
+        }
         guard let tab = documentTabs.first(where: { $0.id == id }),
               activeDocumentTabID != tab.id else { return }
         if capturesCurrentDocument {
