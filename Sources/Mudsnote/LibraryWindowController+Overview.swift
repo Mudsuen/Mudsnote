@@ -248,7 +248,8 @@ extension LibraryWindowController {
         let alert = NSAlert()
         alert.messageText = connecting == nil ? "添加笔记到总览" : "关联笔记"
         let picker = NSComboBox(frame: NSRect(x: 0, y: 0, width: 440, height: 28))
-        picker.addItems(withObjectValues: candidates.map { $0.title + " — " + $0.url.deletingLastPathComponent().lastPathComponent })
+        let labels = candidates.map { $0.title + " — " + $0.url.lastPathComponent }
+        picker.addItems(withObjectValues: labels)
         picker.completes = true
         picker.numberOfVisibleItems = 14
         alert.accessoryView = picker
@@ -256,7 +257,11 @@ extension LibraryWindowController {
         alert.addButton(withTitle: "取消")
         alert.window.initialFirstResponder = picker
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        let index = picker.indexOfSelectedItem
+        let exactLabels = labels.indices.filter { labels[$0] == picker.stringValue }
+        let exactLabel = exactLabels.count == 1 ? exactLabels[0] : nil
+        let matchingTitles = candidates.indices.filter { candidates[$0].title == picker.stringValue }
+        let index = picker.indexOfSelectedItem >= 0 ? picker.indexOfSelectedItem
+            : exactLabel ?? (matchingTitles.count == 1 ? matchingTitles[0] : -1)
         guard candidates.indices.contains(index) else { presentErrorAlert(message: "请选择一篇笔记", details: "从列表中选择要关联的笔记。"); return }
         _ = changeOverview {
             let id = $0.add(candidates[index].url, areaID: area)
