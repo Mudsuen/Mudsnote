@@ -142,12 +142,12 @@ extension MarkdownRichEditorTests {
         #expect(try store.loadNote(at: url).body == "Card body")
     }
 
-    @Test func overviewPointerFeedbackDrawsAndClearsInAWindow() throws {
+    @Test(arguments: [false, true]) func overviewPointerFeedbackDrawsAndClearsInAWindow(bordered: Bool) throws {
         let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 250), styleMask: [.titled], backing: .buffered, defer: false)
         window.isReleasedWhenClosed = false
         defer { window.close() }
         let button = OverviewActionButton("", symbol: "house", action: {})
-        button.isBordered = false
+        button.isBordered = bordered
         button.frame = NSRect(x: 10, y: 10, width: 36, height: 36)
         let card = OverviewCardView(id: UUID(), open: {}, menu: {})
         card.frame = NSRect(x: 60, y: 10, width: 300, height: 180)
