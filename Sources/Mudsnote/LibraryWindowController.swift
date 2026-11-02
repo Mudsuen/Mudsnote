@@ -86,7 +86,7 @@ final class LibraryWindowController: NSWindowController,
 
     static let navigationGroupToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.navigation")
     static let pageTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.page-title")
-    let toolbarPageTitle = NSTextField(labelWithString: "总览")
+    let toolbarPageTitle = ToolbarPageTitleView(text: "总览")
 
     static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
 

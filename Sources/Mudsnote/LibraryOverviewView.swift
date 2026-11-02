@@ -1,18 +1,6 @@
 import AppKit
 import MudsnoteCore
 
-@MainActor final class SidebarActionCell: NSButtonCell {
-    override func imageRect(forBounds rect: NSRect) -> NSRect {
-        let size = super.imageRect(forBounds: rect).size
-        return NSRect(x: rect.minX + 8, y: rect.midY - size.height / 2, width: size.width, height: size.height)
-    }
-    override func titleRect(forBounds rect: NSRect) -> NSRect {
-        var title = super.titleRect(forBounds: rect)
-        title.origin.x = rect.minX + 34; title.size.width = max(0, rect.width - 42)
-        return title
-    }
-}
-
 @MainActor final class OverviewActionButton: NSButton {
     var invoke: (() -> Void)?
     private var hoverTrackingArea: NSTrackingArea?
@@ -36,9 +24,8 @@ import MudsnoteCore
         }
         super.draw(dirtyRect)
     }
-    init(_ title: String, symbol: String? = nil, leading: Bool = false, action: @escaping () -> Void) {
+    init(_ title: String, symbol: String? = nil, action: @escaping () -> Void) {
         super.init(frame: .zero)
-        if leading { cell = SidebarActionCell(textCell: "") }
         self.title = title
         self.invoke = action
         bezelStyle = .rounded

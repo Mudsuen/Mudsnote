@@ -106,18 +106,21 @@ extension LibraryWindowController {
         heading.orientation = .horizontal; heading.spacing = 4
         heading.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 12)
         heading.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        let newNote = OverviewActionButton("新建笔记", symbol: "square.and.pencil", leading: true) { [weak self] in self?.createNewNoteForLibrary() }
+        let newNote = SidebarNewNoteButton { [weak self] in self?.createNewNoteForLibrary() }
         newNote.identifier = NSUserInterfaceItemIdentifier("OverviewRail-square.and.pencil")
-        newNote.toolTip = "新建笔记"
-        newNote.isBordered = false; newNote.alignment = .left
-        newNote.font = .systemFont(ofSize: 14)
-        newNote.image = newNote.image?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
-        newNote.heightAnchor.constraint(equalToConstant: 32).isActive = true
-        let newRow = NSStackView(views: [newNote])
-        newRow.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
-        newNote.widthAnchor.constraint(equalTo: newRow.widthAnchor, constant: -24).isActive = true
+        let newRow = NSView()
+        newRow.addSubview(newNote)
+        newNote.translatesAutoresizingMaskIntoConstraints = false
+        newRow.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        NSLayoutConstraint.activate([
+            newNote.leadingAnchor.constraint(equalTo: newRow.leadingAnchor, constant: 12),
+            newNote.trailingAnchor.constraint(equalTo: newRow.trailingAnchor, constant: -12),
+            newNote.topAnchor.constraint(equalTo: newRow.topAnchor),
+            newNote.bottomAnchor.constraint(equalTo: newRow.bottomAnchor)
+        ])
         let sidebarChrome = NSStackView(views: [heading, newRow, sidebarHeaderView])
         sidebarChrome.orientation = .vertical; sidebarChrome.alignment = .width; sidebarChrome.spacing = 4
+        newRow.widthAnchor.constraint(equalTo: sidebarChrome.widthAnchor).isActive = true
         container.addSubview(sidebarChrome)
         sidebarChrome.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(modeContainer)

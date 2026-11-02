@@ -119,19 +119,15 @@ extension LibraryWindowController {
             return item
         case Self.pageTitleToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            toolbarPageTitle.font = .systemFont(ofSize: 16, weight: .medium)
-            toolbarPageTitle.textColor = .labelColor
-            let host = NSView(frame: NSRect(x: 0, y: 0, width: 160, height: 28))
-            host.addSubview(toolbarPageTitle)
-            toolbarPageTitle.translatesAutoresizingMaskIntoConstraints = false
-            NSLayoutConstraint.activate([
-                toolbarPageTitle.leadingAnchor.constraint(equalTo: host.leadingAnchor),
-                toolbarPageTitle.centerYAnchor.constraint(equalTo: host.centerYAnchor),
-                toolbarPageTitle.trailingAnchor.constraint(lessThanOrEqualTo: host.trailingAnchor)
-            ])
+            item.isBordered = false
             item.autovalidates = false
             item.isEnabled = true
-            item.view = host
+            toolbarPageTitle.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                toolbarPageTitle.widthAnchor.constraint(equalToConstant: 160),
+                toolbarPageTitle.heightAnchor.constraint(equalToConstant: 28)
+            ])
+            item.view = toolbarPageTitle
             item.visibilityPriority = .high
             return item
         case Self.homeOverviewToolbarItemIdentifier:

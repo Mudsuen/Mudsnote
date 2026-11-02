@@ -234,3 +234,67 @@ extension MarkdownRichEditorTests {
         #expect(cell.titleLabel.isHidden == false && cell.snippetLabel.isHidden)
     }
 }
+
+extension MarkdownRichEditorTests {
+    @Test func codexShellCriticalControlsStaySingleLineAndUnbordered() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.shell-controls." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        _ = try store.saveNewNote(title: "Fixture", body: "Synthetic only")
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus(); controller.showOverview()
+        let window = try #require(controller.window)
+        let button = try #require(window.contentView?.allSubviews.compactMap { $0 as? SidebarNewNoteButton }.first)
+        for size in [NSSize(width: 896, height: 580), NSSize(width: 979, height: 728)] {
+            window.setFrame(NSRect(origin: .zero, size: size), display: true)
+            window.contentView?.layoutSubtreeIfNeeded()
+            button.layoutSubtreeIfNeeded()
+            #expect(button.bounds.width >= 180)
+            #expect(button.label.frame.width >= button.label.intrinsicContentSize.width)
+            #expect(button.label.maximumNumberOfLines == 1)
+            #expect(button.label.cell?.wraps == false)
+            #expect(button.glyph.frame.maxX < button.label.frame.minX)
+            let point = button.convert(NSPoint(x: button.label.frame.midX, y: button.label.frame.midY), to: button.superview)
+            #expect(button.hitTest(point) === button)
+        }
+        #expect(button.accessibilityLabel() == "新建笔记")
+        let titleItem = try #require(window.toolbar?.items.first { $0.itemIdentifier == LibraryWindowController.pageTitleToolbarItemIdentifier })
+        #expect(!titleItem.isBordered && titleItem.isEnabled && !titleItem.autovalidates)
+        #expect(titleItem.view === controller.toolbarPageTitle)
+        #expect(controller.toolbarPageTitle.bounds.width <= 160)
+        #expect(controller.toolbarPageTitle.accessibilityRole() == .staticText)
+        #expect(controller.toolbarPageTitle.accessibilityLabel() == "总览")
+    }
+
+    @Test func codexShellSidebarActionKeepsHoverAndActivation() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 238, height: 100), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        var count = 0
+        let button = SidebarNewNoteButton { count += 1 }
+        button.frame = NSRect(x: 12, y: 30, width: 214, height: 32)
+        window.contentView?.addSubview(button)
+        window.makeKeyAndOrderFront(nil); window.contentView?.layoutSubtreeIfNeeded()
+        button.performClick(nil)
+        #expect(count == 1)
+        let enter = try #require(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        let exit = try #require(NSEvent.enterExitEvent(with: .mouseExited, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1, trackingNumber: 0, userData: nil))
+        func pixels() throws -> Data {
+            window.displayIfNeeded()
+            let bitmap = try #require(button.bitmapImageRepForCachingDisplay(in: button.bounds))
+            button.cacheDisplay(in: button.bounds, to: bitmap)
+            return try #require(bitmap.representation(using: .png, properties: [:]))
+        }
+        button.mouseExited(with: exit)
+        let normal = try pixels()
+        button.mouseEntered(with: enter)
+        #expect(button.isPointerHovered)
+        #expect(try pixels() != normal)
+        button.mouseExited(with: exit)
+        #expect(!button.isPointerHovered)
+        #expect(try pixels() == normal)
+    }
+}
