@@ -67,10 +67,9 @@ extension LibraryWindowController {
         sidebarTreeView = tree
         sidebarNoteListView = list
 
-        let surface = NSVisualEffectView()
-        surface.material = .underWindowBackground
-        surface.blendingMode = .withinWindow
-        surface.state = .active
+        let surface = NSView()
+        surface.wantsLayer = true
+        surface.layer?.backgroundColor = LibraryNotesPalette.sidebarBackground.cgColor
         // The native sidebar host already supplies the rounded outer boundary.
         surface.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(surface)
@@ -78,7 +77,7 @@ extension LibraryWindowController {
         let tint = LibraryPassthroughTintView()
         tint.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSidebarTint")
         tint.wantsLayer = true
-        tint.layer?.backgroundColor = LibraryNotesPalette.sidebarMaterialTint.cgColor
+        tint.layer?.backgroundColor = NSColor.clear.cgColor
         let modeContainer = NSView()
         modeContainer.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarModeContent")
 

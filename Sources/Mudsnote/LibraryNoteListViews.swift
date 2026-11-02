@@ -122,26 +122,45 @@ final class LibraryNoteCellView: NSTableCellView {
         thumbnailImageView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
         thumbnailImageView.isHidden = true
 
-        // Keep metadata available to accessibility/tooltips without making every
-        // sidebar row a three-line card. Attachments remain a small trailing cue.
-        snippetLabel.isHidden = true; metaLabel.isHidden = true; folderImageView.isHidden = true
-        addSubview(titleLabel); addSubview(attachmentImageView); addSubview(thumbnailImageView)
-        titleLabel.translatesAutoresizingMaskIntoConstraints = false
-        attachmentImageView.translatesAutoresizingMaskIntoConstraints = false
-        thumbnailImageView.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
-            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -28),
-            attachmentImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            attachmentImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            attachmentImageView.widthAnchor.constraint(equalToConstant: 12),
-            attachmentImageView.heightAnchor.constraint(equalToConstant: 12),
-            thumbnailImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
-            thumbnailImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
-            thumbnailImageView.widthAnchor.constraint(equalToConstant: 18),
-            thumbnailImageView.heightAnchor.constraint(equalToConstant: 18)
-        ])
+        let metaRow = NSStackView(views: [folderImageView, metaLabel, attachmentImageView])
+        metaRow.orientation = .horizontal
+        metaRow.alignment = .centerY
+        metaRow.spacing = 4
+
+        let textStack = NSStackView(views: [titleLabel, snippetLabel, metaRow])
+        textStack.orientation = .vertical
+        textStack.alignment = .leading
+        textStack.spacing = Self.textRowSpacing
+        textStack.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
+        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        for label in [titleLabel, snippetLabel, metaLabel] {
+            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        }
+
+        let stack = NSStackView(views: [textStack, thumbnailImageView])
+        stack.orientation = .horizontal
+        stack.alignment = .centerY
+        stack.distribution = .fill
+        stack.spacing = 8
+        stack.edgeInsets = NSEdgeInsets(
+            top: Self.contentTopInset,
+            left: Self.contentLeadingInset,
+            bottom: Self.contentBottomInset,
+            right: Self.contentTrailingInset
+        )
+        addSubview(stack)
+        pin(stack, to: self)
+        for label in [titleLabel, snippetLabel] {
+            label.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
+        }
+        textStack.widthAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumTextWidth).isActive = true
+        metaRow.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
+        folderImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
+        folderImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
+        attachmentImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
+        attachmentImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
+        thumbnailImageView.widthAnchor.constraint(equalToConstant: 44).isActive = true
+        thumbnailImageView.heightAnchor.constraint(equalToConstant: 44).isActive = true
     }
 
     @available(*, unavailable)
@@ -154,15 +173,15 @@ final class LibraryNoteCellView: NSTableCellView {
 final class LibraryNoteRowView: NSTableRowView {
     static let selectionLeadingInset: CGFloat = 6
     static let selectionTrailingInset: CGFloat = 6
-    static let selectionTopInset: CGFloat = 2
-    static let selectionBottomInset: CGFloat = 2
+    static let selectionTopInset: CGFloat = 4
+    static let selectionBottomInset: CGFloat = 4
     static let selectionCornerRadius: CGFloat = 8
-    static var selectionFillColor = NSColor.labelColor.withAlphaComponent(0.10)
+    static var selectionFillColor = NSColor.labelColor.withAlphaComponent(0.14)
     static let hoverLeadingInset: CGFloat = selectionLeadingInset
     static let hoverTrailingInset: CGFloat = selectionTrailingInset
-    static let hoverVerticalInset: CGFloat = 2
+    static let hoverVerticalInset: CGFloat = 4
     static let hoverCornerRadius: CGFloat = 8
-    static var hoverFillColor: NSColor { NSColor.labelColor.withAlphaComponent(0.10) }
+    static var hoverFillColor: NSColor { NSColor.labelColor.withAlphaComponent(0.07) }
     static let separatorLeadingInset: CGFloat = 18
     static let separatorTrailingInset: CGFloat = 16
     static let separatorAlpha: CGFloat = 0.28

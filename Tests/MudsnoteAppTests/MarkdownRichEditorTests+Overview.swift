@@ -231,7 +231,7 @@ extension MarkdownRichEditorTests {
         _ = controller.setSourceListVisibleForLibrary(true)
         let cell = try #require(controller.noteCell(for: note, tableView: controller.tableView) as? LibraryNoteCellView)
         #expect(cell.toolTip?.contains("Read me") == true)
-        #expect(cell.titleLabel.isHidden == false && cell.snippetLabel.isHidden)
+        #expect(!cell.titleLabel.isHidden && !cell.snippetLabel.isHidden && !cell.metaLabel.isHidden)
     }
 }
 

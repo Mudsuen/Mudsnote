@@ -29,8 +29,10 @@ import AppKit
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeInKeyWindow, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
         addTrackingArea(area); hoverArea = area
+        hovered = window.map { !isHiddenOrHasHiddenAncestor && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
+        needsDisplay = true
     }
     override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
     override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
@@ -48,7 +50,7 @@ import AppKit
     var buttons: [(String, LibraryRailButton)] = []
     var settings: LibraryRailButton?
     override func draw(_ dirtyRect: NSRect) {
-        NSColor(calibratedWhite: 0.15, alpha: 1).setFill(); bounds.fill()
+        LibraryNotesPalette.sidebarBackground.setFill(); bounds.fill()
         NSColor.clear.setFill()
         let inset = max(44, max(safeAreaInsets.top, window.map { $0.frame.height - $0.contentLayoutRect.height } ?? 44))
         NSRect(x: bounds.maxX - 1, y: inset, width: 1, height: max(0, bounds.height - inset)).fill()
@@ -83,8 +85,8 @@ import AppKit
         content.wantsLayer = true
         content.layer?.cornerRadius = 14
         content.layer?.masksToBounds = true
-        content.layer?.borderWidth = 0.5
-        content.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.5).cgColor
+        content.layer?.borderWidth = 0
+        content.layer?.maskedCorners = [.layerMaxXMinYCorner, .layerMaxXMaxYCorner]
         let top = content.topAnchor.constraint(equalTo: topAnchor, constant: 44)
         contentTop = top
         NSLayoutConstraint.activate([

@@ -220,6 +220,7 @@ enum LibrarySourceSection: Int {
 }
 
 enum LibraryNotesPalette {
+    static let sidebarBackground = NSColor(calibratedWhite: 0.13, alpha: 1)
     static let windowBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
     static let editorBackground = NSColor(calibratedWhite: 0.095, alpha: 1)
     static let sidebarMaterialTint = NSColor.black.withAlphaComponent(0.10)

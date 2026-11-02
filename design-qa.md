@@ -9,6 +9,15 @@
 - First implementation: `candidate-979-first.png`, 1958 x 1456 pixels, native AppKit window without shadow. Synthetic notes only.
 - Combined full-view input: `comparison-01-private.png`. Both captures were downsampled to 979 x 728 and placed together with neutral labels. The source is a chat page and the implementation is a note overview; compare shared shell structure and tokens, not unrelated content. System recording indicators and native activation differences are excluded.
 
+## Latest user direction
+
+The user explicitly narrowed the target after the reference comparison: the
+middle pane must retain the original Apple Notes-style title/preview/metadata
+cards, not become a compact single-line chat list. Focus on hover, click behavior
+and icon detail; exact titlebar replication is not required. The rail and list
+must not have a white border seam. This supersedes earlier list-density fidelity
+findings, but does not waive readable controls or working navigation.
+
 ## Comparison history and findings
 
 1. Initial source inspection: repeated navigation and oversized multi-line rows in Mudsnote differed from the selected compact shell. The overview placed unassigned cards below empty areas and required horizontal scrolling. Reused only reviewed parts of the preserved layout branch; retained ordinary-versus-overview creation and hover fixes.
@@ -25,10 +34,10 @@
 
 ## Five fidelity surfaces
 
-- Fonts/typography: system SF/PingFang, 14-point regular note rows and subdued group headings; 16-point static page title. Final active-window comparison of the two corrected controls is pending.
-- Spacing/layout rhythm: independent 52-point rail, 36-point hit regions, 44-point rail rhythm, 238-point list, compact 32-point rows and a shared rounded content boundary. Targeted geometry checks cover 896 x 580, 979 x 728 and 1200 x 800; final rendered checks pending.
+- Fonts/typography: system SF/PingFang, 14-point medium note titles with 12-point preview/metadata and subdued group headings; 16-point static page title. Final active-window comparison of the two corrected controls is pending.
+- Spacing/layout rhythm: independent 52-point rail, 36-point hit regions, 44-point rail rhythm, 238-point list, retained 68-point Notes-style rows and a shared rounded content boundary. Targeted geometry checks cover 896 x 580, 979 x 728 and 1200 x 800; final rendered checks pending.
 - Colors/tokens: neutral gray hover/selection, dark content surface, restrained borders. First comparison accepted the overall hierarchy; overlay scrolling is verified; corrected title/toolbar rendering still requires a new capture.
-- Image quality: vector SF Symbols only, no generated raster assets. Note image attachments retain compact 18-point thumbnails and their original files. Reference screenshots are not product assets.
+- Image quality: vector SF Symbols only, no generated raster assets. Note image attachments retain 44-point thumbnails and their original files. Reference screenshots are not product assets.
 - Copy/content: chat/model/account controls are intentionally absent. Sidebar new note and explicit overview new card remain distinct. No personal reference titles were copied into fixtures or source.
 
 ## Interaction evidence
@@ -38,6 +47,8 @@
 - Pending actual pointer/keyboard checks on the same signed laptop candidate: back/forward boundary states, sidebar note navigation, normal new note, overview card edit/save, sidebar collapse, hover/selected/tooltip/focus, independent scrolling and ordinary-window dragging.
 
 - Narrow correction tests: `codexShellCriticalControlsStaySingleLineAndUnbordered`, `codexShellSidebarActionKeepsHoverAndActivation`, and `ordinaryNewNoteLeavesOverviewWithoutAddingCard` (four entry cases) passed. Log: `/tmp/mudsnote-two-controls-tests.log`. No full suite was run.
+
+- Latest narrowed checks: Notes-style window/list, image thumbnail, ordinary navigation versus overview, the two critical controls, and sidebar hover/activation passed (five tests, `/tmp/mudsnote-notes-list-tests.log`). No full suite was run. Shared rail/list background and zero inner border are implemented; rendered seam acceptance remains pending on the laptop.
 
 ## Remaining acceptance steps
 

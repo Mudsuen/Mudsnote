@@ -1077,19 +1077,19 @@ extension MarkdownRichEditorTests {
         #expect(controller.tableView(controller.tableView, heightOfRow: 0) == LibraryNotesLayout.noteGroupRowHeight)
         #expect(LibraryNotesLayout.noteGroupRowHeight == 30)
         #expect(controller.tableView(controller.tableView, heightOfRow: 1) == LibraryNotesLayout.noteRowHeight)
-        #expect(LibraryNotesLayout.noteRowHeight == 32)
+        #expect(LibraryNotesLayout.noteRowHeight == 68)
         let notePasteboardWriter = try #require(controller.tableView(controller.tableView, pasteboardWriterForRow: 1) as? NSURL)
         #expect(notePasteboardWriter as URL == noteURL)
         let noteRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 1) as? LibraryNoteRowView)
         #expect(!noteRowView.isGroupRow)
         #expect(LibraryNoteRowView.selectionLeadingInset == 6)
         #expect(LibraryNoteRowView.selectionTrailingInset == 6)
-        #expect(LibraryNoteRowView.selectionTopInset == 2)
-        #expect(LibraryNoteRowView.selectionBottomInset == 2)
+        #expect(LibraryNoteRowView.selectionTopInset == 4)
+        #expect(LibraryNoteRowView.selectionBottomInset == 4)
         #expect(LibraryNoteRowView.selectionCornerRadius == 8)
         #expect(
             LibraryNoteRowView.selectionFillColor
-                == NSColor.labelColor.withAlphaComponent(0.10)
+                == NSColor.labelColor.withAlphaComponent(0.14)
         )
         #expect(LibraryNoteRowView.hoverLeadingInset == LibraryNoteRowView.selectionLeadingInset)
         #expect(LibraryNoteRowView.hoverTrailingInset == LibraryNoteRowView.selectionTrailingInset)
@@ -1139,7 +1139,7 @@ extension MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.noteGroupFontSize == 12)
         #expect(LibraryNotesLayout.noteGroupFontWeight == .medium)
         #expect(LibraryNotesLayout.noteTitleFontSize == 14)
-        #expect(LibraryNotesLayout.noteTitleFontWeight == .regular)
+        #expect(LibraryNotesLayout.noteTitleFontWeight == .medium)
         #expect(LibraryNotesLayout.noteSnippetFontSize == 12)
         #expect(LibraryNotesLayout.noteSnippetFontWeight == .regular)
         #expect(LibraryNotesLayout.noteMetaFontSize == 12)
@@ -4379,10 +4379,10 @@ extension MarkdownRichEditorTests {
         #expect(!cell.thumbnailImageView.isHidden)
         #expect(cell.thumbnailImageView.image != nil)
         #expect(cell.thumbnailImageView.constraints.contains {
-            $0.firstAttribute == .width && $0.constant == 18
+            $0.firstAttribute == .width && $0.constant == 44
         })
         #expect(cell.thumbnailImageView.constraints.contains {
-            $0.firstAttribute == .height && $0.constant == 18
+            $0.firstAttribute == .height && $0.constant == 44
         })
         #expect(cell.attachmentImageView.isHidden)
         #expect(reusedThumbnailCell.thumbnailImageView.image != nil)

@@ -589,7 +589,7 @@ final class LibraryWindowController: NSWindowController,
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
-        LibraryNoteRowView.selectionFillColor = NSColor.labelColor.withAlphaComponent(0.10)
+        LibraryNoteRowView.selectionFillColor = NSColor.labelColor.withAlphaComponent(0.14)
         window.delegate = self
         buildUI()
         configureToolbar()

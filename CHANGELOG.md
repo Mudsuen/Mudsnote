@@ -11,16 +11,16 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
-## 2026-11-02 — Compact native workspace shell
+## 2026-11-02 — Notes-style workspace navigation
 
-- Problem: repeated navigation, oversized multi-line list rows, and a wide
-  overview canvas obscured useful content in ordinary windows.
-- Fix: align the native shell with the selected Codex screenshot: independent
-  navigation rail, compact list, shared content boundary and contextual titlebar.
-  Sidebar note selection uses ordinary pages; page history preserves overview
-  context and commits pending edits. Only explicit overview actions add cards.
-- Lesson: compare actual ordinary-window captures with the selected reference,
-  and record targeted verification scope honestly in bundle provenance.
+- Problem: navigation feedback and icon details were inconsistent, and separate
+  sidebar borders introduced a visible seam.
+- Fix: keep the Notes-style title/preview/metadata list and image thumbnails;
+  refine hover and selected states, make the rail/list background continuous,
+  and keep ordinary note creation separate from explicit overview card actions.
+  Header navigation remains functional without requiring a pixel-identical clone.
+- Lesson: retain the user's chosen note-list model while refining interactions
+  and shared surfaces; document targeted checks and actual rendered acceptance.
 
 ## 2026-11-02 — Separate note creation and restore pointer feedback
 
