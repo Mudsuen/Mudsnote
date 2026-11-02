@@ -103,7 +103,7 @@ extension LibraryWindowController {
 
     @objc
     func newNotePressed() {
-        if isShowingOverview { createNoteFromOverviewRail(); return }
+        guard leaveOverview() else { return }
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             if noteListViewMode == .gallery {
@@ -147,7 +147,6 @@ extension LibraryWindowController {
     }
 
     func createNewNoteForLibrary() {
-        if isShowingOverview { createNoteFromOverviewRail(); return }
         newNotePressed()
     }
 

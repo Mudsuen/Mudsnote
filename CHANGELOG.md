@@ -11,6 +11,16 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-02 — Separate note creation and restore pointer feedback
+
+- Problem: opening the overview redirected ordinary sidebar, toolbar and menu
+  new-note actions into cards, and new overview controls lacked hover feedback.
+- Fix: keep ordinary creation in the full editor and add a dedicated new-note
+  action inside the overview. Restore visible pointer feedback for overview
+  controls/cards and use appearance-aware hover fills in sidebar note rows.
+- Lesson: creation behavior belongs to the invoked control, not whichever page
+  happens to be visible; custom borderless controls need explicit hover drawing.
+
 ## 2026-10-29 — Connected overview with in-place note editing
 
 - Problem: the library only showed individual notes; principles, life areas and

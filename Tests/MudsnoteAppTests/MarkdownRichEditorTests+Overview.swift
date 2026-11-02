@@ -72,3 +72,111 @@ extension MarkdownRichEditorTests {
         #expect(try store.loadOverview().cards.contains(where: { $0.id == firstID }))
     }
 }
+
+extension MarkdownRichEditorTests {
+    @Test(arguments: ["rail", "toolbar", "command", "tab"])
+    func ordinaryNewNoteLeavesOverviewWithoutAddingCard(entry: String) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.creation-routing." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let original = try store.saveNewNote(title: "Original", body: "Before")
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus()
+        controller.showOverview()
+        let id = try #require(controller.overviewState?.cards.first(where: { $0.url == original })?.id)
+        controller.toggleOverviewCard(id)
+        for _ in 0..<100 where controller.overviewView?.selectedID != id { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(controller.overviewView?.selectedID == id)
+        controller.applyDocument(title: "Original", body: "Pending 中文 edits", tags: [])
+        controller.markDirty()
+        let before = try store.loadOverview()
+        switch entry {
+        case "rail":
+            let button = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "OverviewRail-square.and.pencil" })
+            button.performClick(nil)
+        case "toolbar": controller.newNotePressed()
+        case "tab": controller.newDocumentTabPressed()
+        default: controller.createNewNoteForLibrary()
+        }
+        #expect(!controller.isShowingOverview)
+        #expect(controller.overviewView?.selectedID == nil)
+        #expect(controller.regularEditorView?.superview === controller.overviewHost)
+        #expect(controller.regularEditorView?.isHidden == false)
+        #expect(controller.editorTextView.string.isEmpty)
+        #expect(try store.loadNote(at: original).body == "Pending 中文 edits")
+        #expect(try store.loadOverview() == before)
+        controller.applyDocument(title: "Ordinary", body: "Full editor body", tags: [])
+        controller.markDirty()
+        let saved = try #require(try controller.saveCurrentNoteForLibrary())
+        #expect(saved != original)
+        #expect(try store.loadNote(at: saved).body == "Full editor body")
+        #expect(try store.loadOverview() == before)
+    }
+
+    @Test func overviewNewNoteButtonCreatesOnlyAnInlineCard() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.overview-new." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        _ = try store.saveNewNote(title: "Seed", body: "Unchanged")
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus()
+        controller.showOverview()
+        let before = try store.loadOverview().cards.count
+        let button = try #require(controller.overviewView?.newNote)
+        button.performClick(nil)
+        for _ in 0..<100 where controller.overviewView?.selectedID == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let id = try #require(controller.overviewView?.selectedID)
+        #expect(controller.isShowingOverview)
+        #expect(controller.regularEditorView?.superview === controller.overviewView?.cards[id])
+        #expect(try store.loadOverview().cards.count == before + 1)
+        controller.applyDocument(title: "Inline", body: "Card body", tags: [])
+        controller.markDirty()
+        controller.toggleOverviewCard(id)
+        let url = try #require(controller.overviewState?.cards.first(where: { $0.id == id })?.url)
+        #expect(try store.loadNote(at: url).body == "Card body")
+    }
+
+    @Test func overviewPointerFeedbackDrawsAndClearsInAWindow() throws {
+        let window = NSWindow(contentRect: NSRect(x: 0, y: 0, width: 400, height: 250), styleMask: [.titled], backing: .buffered, defer: false)
+        window.isReleasedWhenClosed = false
+        defer { window.close() }
+        let button = OverviewActionButton("", symbol: "house", action: {})
+        button.isBordered = false
+        button.frame = NSRect(x: 10, y: 10, width: 36, height: 36)
+        let card = OverviewCardView(id: UUID(), open: {}, menu: {})
+        card.frame = NSRect(x: 60, y: 10, width: 300, height: 180)
+        window.contentView?.addSubview(button)
+        window.contentView?.addSubview(card)
+        window.makeKeyAndOrderFront(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+        button.updateTrackingAreas(); card.updateTrackingAreas()
+        let enter = try #require(NSEvent.enterExitEvent(with: .mouseEntered, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 0, trackingNumber: 0, userData: nil))
+        let exit = try #require(NSEvent.enterExitEvent(with: .mouseExited, location: .zero, modifierFlags: [], timestamp: 0, windowNumber: window.windowNumber, context: nil, eventNumber: 1, trackingNumber: 0, userData: nil))
+        func pixels() throws -> Data {
+            window.displayIfNeeded()
+            let bitmap = try #require(button.bitmapImageRepForCachingDisplay(in: button.bounds))
+            button.cacheDisplay(in: button.bounds, to: bitmap)
+            return try #require(bitmap.representation(using: .png, properties: [:]))
+        }
+        button.mouseExited(with: exit); card.mouseExited(with: exit)
+        let normal = try pixels()
+        card.updateLayer()
+        let cardNormal = card.layer?.backgroundColor
+        button.mouseEntered(with: enter); card.mouseEntered(with: enter)
+        #expect(button.isPointerHovered && card.isPointerHovered)
+        #expect(try pixels() != normal)
+        card.updateLayer()
+        #expect(card.layer?.backgroundColor != cardNormal)
+        button.mouseExited(with: exit); card.mouseExited(with: exit)
+        #expect(!button.isPointerHovered && !card.isPointerHovered)
+        #expect(try pixels() == normal)
+        card.updateLayer()
+        #expect(card.layer?.backgroundColor == cardNormal)
+    }
+}

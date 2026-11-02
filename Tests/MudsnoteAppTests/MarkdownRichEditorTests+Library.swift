@@ -1375,7 +1375,7 @@ extension MarkdownRichEditorTests {
         #expect(LibrarySourceOutlineRowView.leadingInset == LibraryNotesLayout.sourceRowHighlightLeadingInset)
         #expect(LibrarySourceOutlineRowView.trailingInset == LibraryNotesLayout.sourceRowHighlightTrailingInset)
         #expect(LibrarySourceOutlineRowView.verticalInset == LibraryNotesLayout.sourceRowHighlightVerticalInset)
-        #expect(LibrarySourceOutlineRowView.hoverColor.alphaComponent == 0.52)
+        #expect(LibrarySourceOutlineRowView.hoverColor.alphaComponent == 0.10)
         #expect(LibrarySourceOutlineRowView.dropTargetColor.alphaComponent > 0.2)
         #expect(
             LibrarySourceOutlineRowView.dropTargetBorderColor.alphaComponent
@@ -2903,7 +2903,7 @@ extension MarkdownRichEditorTests {
         #expect(rootCell.accessibilityPerformPress())
         #expect(rootCell.textField?.textColor == MudsnoteThemeColor.violet.foregroundColor)
         let originalSourceBackground = NSColor(calibratedWhite: 0.20, alpha: 0.86)
-        let originalSourceHover = NSColor(calibratedWhite: 0.20, alpha: 0.52)
+        let originalSourceHover = NSColor.labelColor.withAlphaComponent(0.10)
         let originalCountColor = NSColor.labelColor.withAlphaComponent(0.42)
         store.themeColorIdentifier = MudsnoteThemeColor.teal.rawValue
         controller.refreshThemeColorForLibrary()

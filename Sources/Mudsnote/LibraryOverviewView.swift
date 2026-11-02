@@ -3,6 +3,27 @@ import MudsnoteCore
 
 @MainActor final class OverviewActionButton: NSButton {
     var invoke: (() -> Void)?
+    private var hoverTrackingArea: NSTrackingArea?
+    private(set) var isPointerHovered = false
+
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+        isPointerHovered = window.map { !isHiddenOrHasHiddenAncestor && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
+        needsDisplay = true
+    }
+    override func mouseEntered(with event: NSEvent) { isPointerHovered = true; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { isPointerHovered = false; needsDisplay = true }
+    override func draw(_ dirtyRect: NSRect) {
+        if isEnabled && isPointerHovered {
+            NSColor.labelColor.withAlphaComponent(0.10).setFill()
+            NSBezierPath(roundedRect: bounds.insetBy(dx: 1, dy: 1), xRadius: 7, yRadius: 7).fill()
+        }
+        super.draw(dirtyRect)
+    }
     init(_ title: String, symbol: String? = nil, action: @escaping () -> Void) {
         super.init(frame: .zero)
         self.title = title
@@ -25,6 +46,20 @@ import MudsnoteCore
     let expand: OverviewActionButton
     let more: OverviewActionButton
     var editor: NSView?
+    private var hoverTrackingArea: NSTrackingArea?
+    private(set) var isPointerHovered = false
+    override var wantsUpdateLayer: Bool { true }
+    override func updateTrackingAreas() {
+        super.updateTrackingAreas()
+        if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
+        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        addTrackingArea(area)
+        hoverTrackingArea = area
+        isPointerHovered = window.map { !isHiddenOrHasHiddenAncestor && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
+        needsDisplay = true
+    }
+    override func mouseEntered(with event: NSEvent) { isPointerHovered = true; needsDisplay = true }
+    override func mouseExited(with event: NSEvent) { isPointerHovered = false; needsDisplay = true }
     override var isFlipped: Bool { true }
     init(id: UUID, open: @escaping () -> Void, menu: @escaping () -> Void) {
         cardID = id
@@ -47,7 +82,9 @@ import MudsnoteCore
     }
     required init?(coder: NSCoder) { fatalError() }
     override func updateLayer() {
-        layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
+        layer?.backgroundColor = (isPointerHovered
+            ? NSColor.controlBackgroundColor.blended(withFraction: 0.08, of: .labelColor) ?? .controlBackgroundColor
+            : NSColor.controlBackgroundColor).cgColor
         layer?.borderColor = (editor == nil ? NSColor.separatorColor : NSColor.systemGreen.withAlphaComponent(0.6)).cgColor
     }
     override func layout() {
@@ -100,6 +137,7 @@ import MudsnoteCore
     let canvas = OverviewCanvas()
     let title = NSTextField(labelWithString: "我的总览")
     let principles = OverviewActionButton("", action: {})
+    let newNote = OverviewActionButton("新建笔记", symbol: "square.and.pencil", action: {})
     let add = OverviewActionButton("添加笔记", symbol: "plus", action: {})
     let addArea = OverviewActionButton("添加领域", symbol: "square.grid.2x2", action: {})
     let root = NSTextField(labelWithString: "我的生活")
@@ -125,8 +163,10 @@ import MudsnoteCore
         scroll.drawsBackground = false
         scroll.documentView = canvas
         addSubview(scroll)
-        [title, principles, add, addArea, root].forEach(canvas.addSubview)
+        [title, principles, newNote, add, addArea, root].forEach(canvas.addSubview)
         principles.invoke = { [weak owner] in owner?.editOverviewPrinciples() }
+        newNote.identifier = NSUserInterfaceItemIdentifier("OverviewNewNote")
+        newNote.invoke = { [weak owner] in owner?.createNoteInOverview() }
         add.invoke = { [weak owner] in owner?.pickOverviewNote(area: nil, connecting: nil) }
         addArea.invoke = { [weak owner] in owner?.editOverviewArea(nil) }
     }
@@ -197,10 +237,11 @@ import MudsnoteCore
         scroll.frame = bounds
         let width = max(660, bounds.width)
         let cardWidth: CGFloat = min(390, (width - 280) / 2)
-        title.frame = NSRect(x: 30, y: 24, width: 230, height: 42)
+        title.frame = NSRect(x: 30, y: 24, width: max(1, width - 420), height: 42)
         principles.frame = NSRect(x: 30, y: 80, width: width - 60, height: 38)
         add.frame = NSRect(x: width - 138, y: 28, width: 108, height: 30)
-        addArea.frame = NSRect(x: width - 258, y: 28, width: 110, height: 30)
+        newNote.frame = NSRect(x: width - 258, y: 28, width: 110, height: 30)
+        addArea.frame = NSRect(x: width - 378, y: 28, width: 110, height: 30)
         var leftY: CGFloat = 160
         var rightY: CGFloat = 160
         canvas.lines = []

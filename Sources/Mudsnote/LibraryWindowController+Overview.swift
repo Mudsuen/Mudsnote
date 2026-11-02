@@ -44,7 +44,7 @@ extension LibraryWindowController {
         rail.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationRail")
         let actions: [(String, String, () -> Void)] = [
             ("首页", "house", { [weak self] in self?.showOverview() }),
-            ("新建笔记", "square.and.pencil", { [weak self] in self?.createNoteFromOverviewRail() }),
+            ("新建笔记", "square.and.pencil", { [weak self] in self?.createNewNoteForLibrary() }),
             ("搜索", "magnifyingglass", { [weak self] in self?.window?.makeFirstResponder(self?.searchField) }),
             ("资料库", "folder", { [weak self] in
                 guard let self, self.leaveOverview() else { return }
@@ -209,8 +209,8 @@ extension LibraryWindowController {
         }
     }
 
-    func createNoteFromOverviewRail() {
-        guard isShowingOverview else { createNewNoteForLibrary(); return }
+    func createNoteInOverview() {
+        guard isShowingOverview else { return }
         guard commitOverviewEditor() else { return }
         do {
             let url = try noteStore.saveNewNote(title: "", body: "", in: noteStore.notesDirectory)

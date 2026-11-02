@@ -227,7 +227,7 @@ final class LibrarySourceOutlineCellView: NSTableCellView {
 
 @MainActor
 final class LibrarySourceOutlineRowView: NSTableRowView {
-    static let hoverColor = NSColor(calibratedWhite: 0.20, alpha: 0.52)
+    static var hoverColor: NSColor { NSColor.labelColor.withAlphaComponent(0.10) }
     static let dropTargetColor = NSColor.systemYellow.withAlphaComponent(0.24)
     static let dropTargetBorderColor = NSColor.systemYellow.withAlphaComponent(0.88)
     static let leadingInset: CGFloat = LibraryNotesLayout.sourceRowHighlightLeadingInset

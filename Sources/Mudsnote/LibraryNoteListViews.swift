@@ -181,7 +181,7 @@ final class LibraryNoteRowView: NSTableRowView {
     static let hoverTrailingInset: CGFloat = selectionTrailingInset
     static let hoverVerticalInset: CGFloat = 3
     static let hoverCornerRadius: CGFloat = 8
-    static let hoverFillColor = NSColor(calibratedWhite: 0.22, alpha: 0.24)
+    static var hoverFillColor: NSColor { NSColor.labelColor.withAlphaComponent(0.10) }
     static let separatorLeadingInset: CGFloat = 18
     static let separatorTrailingInset: CGFloat = 16
     static let separatorAlpha: CGFloat = 0.28
