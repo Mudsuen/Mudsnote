@@ -103,7 +103,7 @@ extension LibraryWindowController {
 
     @objc
     func newNotePressed() {
-        guard leaveOverview() else { return }
+        guard beginLibraryPageNavigation(), leaveOverview() else { return }
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             if noteListViewMode == .gallery {

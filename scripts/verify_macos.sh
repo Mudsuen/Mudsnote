@@ -23,6 +23,10 @@ run_macos_tests() {
 PERFORMANCE_TESTS='StaysInteractiveAtSnapshotLimit|richMarkdownSerializationStaysInteractiveForDenseFormatting|cachedNoteVersionValidationDoesNotBlockKeyboardNavigation'
 
 case "$MODE" in
+  ui)
+    echo "Scoped UI verification: overview, ordinary creation, navigation, selection and pointer feedback"
+    run_macos_tests debug --filter 'overview|ordinaryNewNote|codexShell|librarySearchFieldKeyboardNavigates|libraryWindowNoteListKeyboardOpens|librarySelectionChangeCreatesOneConflictCopy|libraryNavigationUsesCachedSnapshot'
+    ;;
   pr)
     python3 scripts/test_macos_update.py
     run_macos_tests debug --skip "$PERFORMANCE_TESTS"
@@ -44,7 +48,7 @@ case "$MODE" in
     ./scripts/package_app.sh
     ;;
   *)
-    echo "Usage: ./scripts/verify_macos.sh {pr|full|live}" >&2
+    echo "Usage: ./scripts/verify_macos.sh {pr|full|live|ui}" >&2
     exit 2
     ;;
 esac

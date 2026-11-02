@@ -343,6 +343,7 @@ extension LibraryWindowController {
     }
 
     func openMarkdownDocumentForLibrary(at url: URL) throws {
+        guard beginLibraryPageNavigation(), leaveOverview() else { throw CocoaError(.userCancelled) }
         try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
         cancelActiveNoteLoad()
         isLoadingInitialNote = false
@@ -362,7 +363,6 @@ extension LibraryWindowController {
 
         externallyOpenedDocumentsByPath[standardizedURL.path] = note
         sourceCountSnapshot = includingExternallyOpenedDocuments(in: sourceCountSnapshot)
-        if isShowingOverview { openOverviewNote(note); return }
         selectedScope = .folder(standardizedURL.deletingLastPathComponent())
         searchField.stringValue = ""
         activeSearchSession = nil

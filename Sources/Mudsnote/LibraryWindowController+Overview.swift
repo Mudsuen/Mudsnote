@@ -10,7 +10,7 @@ import MudsnoteCore
         super.layout()
         guard let owner else { return }
         if owner.isShowingOverview {
-            let inset = max(safeAreaInsets.top, window.map { max(0, $0.frame.height - $0.contentLayoutRect.height) } ?? 52)
+            let inset = safeAreaInsets.top
             owner.overviewView?.frame = NSRect(x: 0, y: inset, width: bounds.width, height: max(0, bounds.height - inset))
         }
         else { owner.regularEditorView?.frame = bounds }
@@ -40,46 +40,44 @@ extension LibraryWindowController {
     }
 
     func buildOverviewRail() -> NSView {
-        let rail = OverviewRailView()
+        let rail = LibraryNavigationRail()
         rail.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationRail")
+        navigationRail = rail
         let actions: [(String, String, () -> Void)] = [
             ("首页", "house", { [weak self] in self?.showOverview() }),
-            ("新建笔记", "square.and.pencil", { [weak self] in self?.createNewNoteForLibrary() }),
-            ("搜索", "magnifyingglass", { [weak self] in self?.window?.makeFirstResponder(self?.searchField) }),
             ("资料库", "folder", { [weak self] in
                 guard let self, self.leaveOverview() else { return }
+                _ = self.setSourceListVisibleForLibrary(true)
                 self.setSidebarPresentation(.tree, animated: false)
                 _ = self.activateSourceScope(.all)
+                self.navigationRail?.select("资料库")
+            }),
+            ("最近笔记", "clock", { [weak self] in
+                guard let self, self.leaveOverview() else { return }; _ = self.setSourceListVisibleForLibrary(true); _ = self.activateSourceScope(.recent); self.navigationRail?.select("最近笔记")
             }),
             ("收藏", "star", { [weak self] in
                 guard let self, self.leaveOverview() else { return }
+                _ = self.setSourceListVisibleForLibrary(true)
                 _ = self.activateSourceScope(.favorites)
+                self.navigationRail?.select("收藏")
             })
         ]
-        for (index, item) in actions.enumerated() {
-            let button = OverviewActionButton("", symbol: item.1, action: item.2)
-            button.toolTip = item.0
-            button.setAccessibilityLabel(item.0)
+        for item in actions {
+            let button = LibraryRailButton(title: item.0, symbol: item.1, action: item.2)
             button.identifier = NSUserInterfaceItemIdentifier("OverviewRail-" + item.1)
-            button.isBordered = false
-            button.frame = NSRect(x: 8, y: CGFloat(14 + index * 48), width: 36, height: 36)
-            rail.addSubview(button)
+            rail.buttons.append((item.0, button)); rail.addSubview(button)
         }
-        let settings = OverviewActionButton("", symbol: "gearshape") {
-            if let action = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.title.hasPrefix("设置") }) {
-                if let selector = action.action { NSApp.sendAction(selector, to: action.target, from: action) }
+        let settings = LibraryRailButton(title: "设置", symbol: "gearshape") {
+            if let item = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.title.hasPrefix("设置") }), let selector = item.action {
+                NSApp.sendAction(selector, to: item.target, from: item)
             }
         }
-        settings.setAccessibilityLabel("设置")
-        settings.toolTip = "设置"
-        settings.isBordered = false
-        rail.addSubview(settings)
-        settings.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([settings.leadingAnchor.constraint(equalTo: rail.leadingAnchor, constant: 8), settings.bottomAnchor.constraint(equalTo: rail.bottomAnchor, constant: -16), settings.widthAnchor.constraint(equalToConstant: 36), settings.heightAnchor.constraint(equalToConstant: 36)])
+        rail.settings = settings; rail.addSubview(settings)
         return rail
     }
 
     @objc func showOverview() {
+        if !isShowingOverview, !beginLibraryPageNavigation() { return }
         guard commitOverviewEditor() else { return }
         if overviewState == nil {
             do { overviewState = try noteStore.loadOverview() }
@@ -95,6 +93,8 @@ extension LibraryWindowController {
         overviewView?.selectedID = nil
         if let editor = regularEditorView { overviewHost?.addSubview(editor) }
         isShowingOverview = true
+        navigationRail?.select("首页")
+        updateDocumentTabBar()
         _ = setSourceListVisibleForLibrary(true)
         overviewView?.isHidden = false
         if overviewView?.selectedID == nil { regularEditorView?.isHidden = true }
@@ -138,6 +138,8 @@ extension LibraryWindowController {
         if let id = overviewView?.selectedID { overviewView?.cards[id]?.embed(nil) }
         overviewView?.selectedID = nil
         isShowingOverview = false
+        navigationRail?.select(selectedScope == .favorites ? "收藏" : "资料库")
+        updateDocumentTabBar()
         overviewView?.isHidden = true
         if let editor = regularEditorView, let host = overviewHost {
             editor.removeFromSuperview(); host.addSubview(editor); editor.isHidden = false
@@ -167,6 +169,7 @@ extension LibraryWindowController {
             guard commitOverviewEditor() else { return }
             overviewView?.cards[id]?.embed(nil)
             overviewView?.selectedID = nil
+            updateDocumentTabBar()
             regularEditorView?.isHidden = true
             if let editor = regularEditorView { overviewHost?.addSubview(editor) }
             overviewView?.invalidatePreview(id)
@@ -179,7 +182,7 @@ extension LibraryWindowController {
     }
 
     func openOverviewNote(_ note: NoteSearchResult) {
-        guard commitOverviewEditor(), let editor = regularEditorView else { return }
+        guard commitOverviewEditor(), regularEditorView != nil else { return }
         cancelActiveNoteLoad()
         let generation = noteLoadGeneration
         let revision = editorContentRevision
@@ -190,23 +193,27 @@ extension LibraryWindowController {
             self.noteLoadTask = nil
             switch result {
             case .failure(let error): self.presentErrorAlert(message: "无法打开笔记", details: error.localizedDescription)
-            case .success(let loaded):
-                // A failed read never changes the displayed card or editor contents.
-                guard self.changeOverview({ _ = $0.add(note.url) }),
-                      let id = self.overviewState?.cards.first(where: { $0.url.standardizedFileURL == note.url.standardizedFileURL })?.id else { return }
-                if let old = self.overviewView?.selectedID { self.overviewView?.cards[old]?.embed(nil) }
-                self.isLoadingInitialNote = false
-                self.isCreatingNewNote = false
-                self.applyLoadedNoteResult(.success(loaded), for: note)
-                self.overviewView?.selectedID = id
-                editor.isHidden = false
-                self.overviewView?.cards[id]?.embed(editor)
-                self.overviewView?.needsLayout = true
-                self.overviewView?.layoutSubtreeIfNeeded()
-                self.overviewView?.cards[id]?.scrollToVisible(self.overviewView?.cards[id]?.bounds ?? .zero)
-                self.window?.makeFirstResponder(self.editorTextView)
+            case .success(let loaded): _ = self.finishOpeningOverviewNote(note, loaded: loaded)
             }
         }
+    }
+
+    @discardableResult func finishOpeningOverviewNote(_ note: NoteSearchResult, loaded: LoadedLibraryNote) -> Bool {
+        guard let editor = regularEditorView,
+              changeOverview({ _ = $0.add(note.url) }),
+              let id = overviewState?.cards.first(where: { $0.url.standardizedFileURL == note.url.standardizedFileURL })?.id else { return false }
+        if let old = overviewView?.selectedID { overviewView?.cards[old]?.embed(nil) }
+        isLoadingInitialNote = false; isCreatingNewNote = false
+        applyLoadedNoteResult(.success(loaded), for: note)
+        overviewView?.selectedID = id
+        updateDocumentTabBar()
+        editor.isHidden = false
+        overviewView?.cards[id]?.embed(editor)
+        overviewView?.needsLayout = true
+        overviewView?.layoutSubtreeIfNeeded()
+        overviewView?.cards[id]?.scrollToVisible(overviewView?.cards[id]?.bounds ?? .zero)
+        window?.makeFirstResponder(editorTextView)
+        return true
     }
 
     func createNoteInOverview() {

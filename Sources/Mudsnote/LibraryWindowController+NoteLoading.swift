@@ -15,7 +15,9 @@ extension LibraryWindowController {
     }
 
     func load(note: NoteSearchResult) {
-        if isShowingOverview { openOverviewNote(note); return }
+        if isShowingOverview || selectedURL?.standardizedFileURL != note.url.standardizedFileURL {
+            guard beginLibraryPageNavigation(), leaveOverview() else { return }
+        }
         if selectedScope == .trash, !isTrashURL(note.url) {
             selectedScope = .folder(note.url.deletingLastPathComponent())
             lastTreeScope = selectedScope

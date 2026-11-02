@@ -503,6 +503,7 @@ extension LibraryWindowController {
         hasAttachments: Bool,
         thumbnailURL: URL?
     ) -> Bool {
+        remapLibraryPageHistory(from: previousURL, to: savedURL)
         remapOverviewAfterSave(previousURL: previousURL, savedURL: savedURL)
         let previousPath = previousURL?.path
         let savedPath = savedURL.path

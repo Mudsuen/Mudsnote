@@ -14,7 +14,11 @@ extension LibraryWindowController {
             let preferredScreen = prefersExternalScreen ? Self.externalScreen() : nil
             let visibleFrame = (preferredScreen ?? NSScreen.main ?? NSScreen.screens.first)?.visibleFrame
                 ?? NSRect(x: 0, y: 0, width: 1200, height: 820)
-            if !usesCanonicalWindowSize, let storedFrame = noteStore.libraryWindowFrame {
+            if let fixtureWindowSize {
+                let size = NSSize(width: min(fixtureWindowSize.width, visibleFrame.width), height: min(fixtureWindowSize.height, visibleFrame.height))
+                window.setFrame(NSRect(x: visibleFrame.midX - size.width / 2, y: visibleFrame.midY - size.height / 2, width: size.width, height: size.height), display: true)
+                print("visual-qa-window-size=\(Int(window.frame.width))x\(Int(window.frame.height))")
+            } else if !usesCanonicalWindowSize, let storedFrame = noteStore.libraryWindowFrame {
                 let restoredFrame = clampedPanelFrame(
                     NSRect(
                         x: storedFrame.x,

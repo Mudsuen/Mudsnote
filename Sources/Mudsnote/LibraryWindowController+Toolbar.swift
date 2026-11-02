@@ -66,21 +66,18 @@ extension LibraryWindowController {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [
-            .flexibleSpace,
-            Self.newNoteToolbarItemIdentifier,
-            Self.toggleSidebarToolbarItemIdentifier,
-            Self.sourceTrackingSeparatorToolbarItemIdentifier,
-            Self.sidebarPresentationToolbarItemIdentifier,
-            Self.homeOverviewToolbarItemIdentifier,
-            Self.documentTabsToolbarItemIdentifier,
-            .flexibleSpace,
-            Self.searchToolbarItemIdentifier
-        ]
+        [Self.navigationBackToolbarItemIdentifier, Self.navigationForwardToolbarItemIdentifier,
+         Self.toggleSidebarToolbarItemIdentifier, Self.sourceTrackingSeparatorToolbarItemIdentifier,
+         Self.pageTitleToolbarItemIdentifier, Self.documentTabsToolbarItemIdentifier,
+         .flexibleSpace, Self.moreToolbarItemIdentifier]
     }
 
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
         toolbarDefaultItemIdentifiers(toolbar) + [
+            Self.newNoteToolbarItemIdentifier,
+            Self.toggleSidebarToolbarItemIdentifier,
+            Self.sidebarPresentationToolbarItemIdentifier,
+            Self.homeOverviewToolbarItemIdentifier,
             Self.navigationBackToolbarItemIdentifier,
             Self.navigationForwardToolbarItemIdentifier,
             Self.editorToolsToolbarItemIdentifier,
@@ -105,6 +102,12 @@ extension LibraryWindowController {
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
         switch itemIdentifier {
+        case Self.pageTitleToolbarItemIdentifier:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            toolbarPageTitle.font = .systemFont(ofSize: 14, weight: .medium)
+            item.view = toolbarPageTitle
+            item.visibilityPriority = .high
+            return item
         case Self.homeOverviewToolbarItemIdentifier:
             return toolbarButtonItem(identifier: itemIdentifier, label: "首页", symbolName: "house", action: #selector(showOverview))
         case Self.sourceTrackingSeparatorToolbarItemIdentifier:
@@ -148,14 +151,14 @@ extension LibraryWindowController {
                 identifier: itemIdentifier,
                 label: "后退",
                 symbolName: "chevron.left",
-                action: #selector(goBackInKnowledgeRelations)
+                action: #selector(navigateLibraryBack)
             )
         case Self.navigationForwardToolbarItemIdentifier:
             return toolbarButtonItem(
                 identifier: itemIdentifier,
                 label: "前进",
                 symbolName: "chevron.right",
-                action: #selector(goForwardInKnowledgeRelations)
+                action: #selector(navigateLibraryForward)
             )
         case Self.newNoteToolbarItemIdentifier:
             return toolbarNewNoteButtonItem(
@@ -335,9 +338,9 @@ extension LibraryWindowController {
     func validateToolbarItem(_ item: NSToolbarItem) -> Bool {
         switch item.itemIdentifier {
         case Self.navigationBackToolbarItemIdentifier:
-            return !knowledgeBackStack.isEmpty
+            return !pageBackStack.isEmpty
         case Self.navigationForwardToolbarItemIdentifier:
-            return !knowledgeForwardStack.isEmpty
+            return !pageForwardStack.isEmpty
         case Self.moreToolbarItemIdentifier:
             return canShowMoreActions
         case Self.openSeparateToolbarItemIdentifier:

@@ -43,6 +43,7 @@ import MudsnoteCore
     let cardID: UUID
     let heading = NSTextField(labelWithString: "")
     let preview = NSTextField(wrappingLabelWithString: "")
+    let association = NSTextField(labelWithString: "未归属")
     let expand: OverviewActionButton
     let more: OverviewActionButton
     var editor: NSView?
@@ -69,6 +70,7 @@ import MudsnoteCore
         more.toolTip = "关联与归属"
         super.init(frame: .zero)
         wantsLayer = true
+        clipsToBounds = true
         layer?.cornerRadius = 12
         layer?.borderWidth = 1
         heading.font = .systemFont(ofSize: 15, weight: .semibold)
@@ -77,7 +79,10 @@ import MudsnoteCore
         preview.textColor = .secondaryLabelColor
         preview.maximumNumberOfLines = 4
         preview.lineBreakMode = .byTruncatingTail
-        [heading, preview, expand, more].forEach(addSubview)
+        association.font = .systemFont(ofSize: 11)
+        association.textColor = .tertiaryLabelColor
+        association.lineBreakMode = .byTruncatingTail
+        [heading, preview, expand, more, association].forEach(addSubview)
         setAccessibilityIdentifier("OverviewCard-" + id.uuidString)
     }
     required init?(coder: NSCoder) { fatalError() }
@@ -93,13 +98,15 @@ import MudsnoteCore
         preview.frame = NSRect(x: 16, y: 46, width: bounds.width - 32, height: bounds.height - 92)
         expand.frame = NSRect(x: 12, y: bounds.height - 36, width: 80, height: 26)
         more.frame = NSRect(x: bounds.width - 44, y: bounds.height - 36, width: 32, height: 26)
-        editor?.frame = NSRect(x: 4, y: 42, width: bounds.width - 8, height: bounds.height - 84)
+        association.frame = NSRect(x: 100, y: bounds.height - 32, width: max(0, bounds.width - 150), height: 18)
+        editor?.frame = NSRect(x: 4, y: 10, width: bounds.width - 8, height: bounds.height - 52)
     }
     override func mouseDown(with event: NSEvent) { if editor == nil { expand.invoke?() } else { super.mouseDown(with: event) } }
     func embed(_ view: NSView?) {
         editor?.removeFromSuperview()
         editor = view
-        if let view { view.translatesAutoresizingMaskIntoConstraints = true; view.autoresizingMask = []; addSubview(view) }
+        if let view { view.translatesAutoresizingMaskIntoConstraints = true; view.autoresizingMask = []; view.clipsToBounds = true; addSubview(view) }
+        heading.isHidden = view != nil
         preview.isHidden = view != nil
         expand.title = view == nil ? "编辑" : "收起"
         expand.setAccessibilityLabel(view == nil ? "展开编辑" : "收起")
@@ -110,21 +117,17 @@ import MudsnoteCore
 
 @MainActor final class OverviewCanvas: NSView {
     override var isFlipped: Bool { true }
-    var lines: [(NSPoint, NSPoint, Bool)] = []
+    var lines: [([NSPoint], Bool)] = []
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
-        for (start, end, isCardLink) in lines {
-            (isCardLink ? NSColor.systemGreen.withAlphaComponent(0.45) : NSColor.secondaryLabelColor.withAlphaComponent(0.35)).setStroke()
+        for (points, accent) in lines {
+            guard let first = points.first else { continue }
+            NSColor.secondaryLabelColor.withAlphaComponent(accent ? 0.65 : 0.22).setStroke()
             let path = NSBezierPath()
-            path.move(to: start)
-            let offset = max(30, abs(end.x - start.x) * 0.45)
-            let sign: CGFloat = end.x > start.x ? 1 : -1
-            if isCardLink && abs(start.x - end.x) < 1 {
-                path.curve(to: end, controlPoint1: NSPoint(x: start.x + 28, y: start.y), controlPoint2: NSPoint(x: end.x + 28, y: end.y))
-            } else {
-                path.curve(to: end, controlPoint1: NSPoint(x: start.x + sign * offset, y: start.y), controlPoint2: NSPoint(x: end.x - sign * offset, y: end.y))
-            }
-            path.lineWidth = isCardLink ? 1.5 : 1
+            path.move(to: first)
+            for point in points.dropFirst() { path.line(to: point) }
+            path.lineWidth = accent ? 1.25 : 1
+            path.lineJoinStyle = .round
             path.stroke()
         }
     }
@@ -153,11 +156,18 @@ import MudsnoteCore
         self.owner = owner
         super.init(frame: .zero)
         identifier = NSUserInterfaceItemIdentifier("LibraryHomeOverview")
-        title.font = .systemFont(ofSize: 25, weight: .bold)
-        root.font = .systemFont(ofSize: 16, weight: .semibold)
+        principles.isBordered = false
+        principles.alignment = .left
+        principles.font = .systemFont(ofSize: 12)
+        principles.lineBreakMode = .byTruncatingTail
+        addArea.title = "领域"
+        title.font = .systemFont(ofSize: 18, weight: .medium)
+        root.font = .systemFont(ofSize: 12, weight: .medium)
+        root.textColor = .secondaryLabelColor
         root.alignment = .center
         scroll.hasVerticalScroller = true
-        scroll.hasHorizontalScroller = true
+        scroll.hasHorizontalScroller = false
+        scroll.horizontalScrollElasticity = .none
         scroll.autohidesScrollers = true
         scroll.automaticallyAdjustsContentInsets = false
         scroll.drawsBackground = false
@@ -186,16 +196,17 @@ import MudsnoteCore
         for area in state.areas {
             if areas[area.id] == nil {
                 let button = OverviewActionButton(area.title) { [weak owner] in owner?.overviewAreaMenu(area.id) }
-                button.font = .systemFont(ofSize: 14, weight: .semibold)
+                button.font = .systemFont(ofSize: 12, weight: .medium)
                 button.isBordered = false
                 button.wantsLayer = true
-                button.layer?.cornerRadius = 12
+                button.layer?.cornerRadius = 8
                 button.layer?.borderWidth = 1
                 button.layer?.borderColor = NSColor.separatorColor.cgColor
                 button.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
                 let symbols = ["搞钱": "chart.bar", "健康": "heart", "关系": "person.2", "内在世界": "leaf"]
                 button.image = NSImage(systemSymbolName: symbols[area.title] ?? "square.grid.2x2", accessibilityDescription: nil)
-                button.imagePosition = .imageAbove
+                button.imagePosition = .imageLeading
+                button.image = button.image?.withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
                 areas[area.id] = button
                 canvas.addSubview(button)
             }
@@ -214,6 +225,7 @@ import MudsnoteCore
                 invalidatePreview(card.id)
                 previewVersions[card.id] = note.modifiedAt
             }
+            view.association.stringValue = state.areas.first(where: { $0.id == card.areaID })?.title ?? "未归属"
             view.heading.stringValue = note?.title ?? card.url.deletingPathExtension().lastPathComponent
             view.preview.stringValue = previews[card.id] ?? note?.snippet ?? "点击打开笔记"
             if previews[card.id] == nil && previewTasks[card.id] == nil, let store = owner?.noteStore {
@@ -235,58 +247,62 @@ import MudsnoteCore
     override func layout() {
         super.layout()
         scroll.frame = bounds
-        let width = max(660, bounds.width)
-        let cardWidth: CGFloat = min(390, (width - 280) / 2)
-        title.frame = NSRect(x: 30, y: 24, width: max(1, width - 420), height: 42)
-        principles.frame = NSRect(x: 30, y: 80, width: width - 60, height: 38)
-        add.frame = NSRect(x: width - 138, y: 28, width: 108, height: 30)
-        newNote.frame = NSRect(x: width - 258, y: 28, width: 110, height: 30)
-        addArea.frame = NSRect(x: width - 378, y: 28, width: 110, height: 30)
-        var leftY: CGFloat = 160
-        var rightY: CGFloat = 160
+        let width = max(1, scroll.contentSize.width)
+        let plan = OverviewLayout.make(width: width, height: bounds.height, state: state, selected: selectedID)
+        title.frame = NSRect(x: 20, y: 12, width: max(1, width - 316), height: 32)
+        principles.frame = NSRect(x: 20, y: 50, width: max(1, width - 40), height: 26)
+        add.frame = NSRect(x: width - 118, y: 14, width: 98, height: 28)
+        newNote.frame = NSRect(x: width - 228, y: 14, width: 102, height: 28)
+        addArea.frame = NSRect(x: width - 310, y: 14, width: 74, height: 28)
+        root.frame = plan.root
+        for (id, frame) in plan.areas { areas[id]?.frame = frame }
+        for (id, frame) in plan.cards { cards[id]?.frame = frame }
         canvas.lines = []
-        var centers: [UUID: NSPoint] = [:]
-        for (index, area) in state.areas.enumerated() {
-            let left = index % 2 == 0
-            let startY = left ? leftY : rightY
-            let group = state.cards.filter { $0.areaID == area.id }
-            var y = startY
-            for card in group {
-                let height: CGFloat = selectedID == card.id ? 380 : 154
-                let x: CGFloat = left ? 28 : width - cardWidth - 28
-                cards[card.id]?.frame = NSRect(x: x, y: y, width: selectedID == card.id ? max(300, cardWidth) : cardWidth, height: height)
-                y += height + 18
-            }
-            let centerY = startY + max(90, y - startY) / 2
-            let groupWidth = group.contains(where: { $0.id == selectedID }) ? max(300, cardWidth) : cardWidth
-            let x: CGFloat = left ? groupWidth + 42 : width - cardWidth - 134
-            areas[area.id]?.frame = NSRect(x: x, y: centerY - 35, width: 92, height: 70)
-            centers[area.id] = NSPoint(x: x + 46, y: centerY)
-            for card in group {
-                guard let frame = cards[card.id]?.frame else { continue }
-                canvas.lines.append((NSPoint(x: left ? frame.maxX : frame.minX, y: frame.midY), NSPoint(x: left ? x : x + 92, y: centerY), false))
-            }
-            if left { leftY = max(y, startY + 170) + 50 } else { rightY = max(y, startY + 170) + 50 }
-        }
-        let centerY = max(270, min(leftY, rightY) / 2 + 26)
-        root.frame = NSRect(x: width / 2 - 44, y: centerY, width: 88, height: 36)
         for area in state.areas {
-            guard let center = centers[area.id] else { continue }
-            let parent = area.parentID.flatMap { centers[$0] } ?? NSPoint(x: root.frame.midX, y: root.frame.midY)
-            canvas.lines.append((parent, center, false))
+            guard let rect = plan.areas[area.id] else { continue }
+            let parent = area.parentID.flatMap { plan.areas[$0] } ?? plan.root
+            let start = NSPoint(x: parent.midX, y: parent.maxY)
+            let end = NSPoint(x: rect.midX, y: rect.minY)
+            let midY = (start.y + end.y) / 2
+            canvas.lines.append(([start, NSPoint(x: start.x, y: midY), NSPoint(x: end.x, y: midY), end], false))
         }
-        var looseY = max(leftY, rightY) + 16
-        for card in state.cards where card.areaID == nil || !state.areas.contains(where: { $0.id == card.areaID }) {
-            let height: CGFloat = selectedID == card.id ? 380 : 154
-            cards[card.id]?.frame = NSRect(x: 28, y: looseY, width: selectedID == card.id ? max(300, cardWidth) : cardWidth, height: height)
-            looseY += height + 18
+        // Focus reveals ownership without drawing long lines across unrelated
+        // text. Each card always exposes its area label, including unassigned.
+        if let selectedID, let card = state.cards.first(where: { $0.id == selectedID }),
+           let areaID = card.areaID, let source = plan.areas[areaID], let rect = plan.cards[selectedID] {
+            let left = rect.midX < width / 2
+            let gutter: CGFloat = left ? 5 : width - 5
+            let start = NSPoint(x: source.midX, y: source.maxY)
+            let end = NSPoint(x: left ? rect.minX : rect.maxX, y: rect.minY + 12)
+            let band = (plan.areas.values.map(\.maxY).max() ?? source.maxY) + 6
+            canvas.lines.append(([start, NSPoint(x: start.x, y: band), NSPoint(x: gutter, y: band), NSPoint(x: gutter, y: end.y), end], true))
         }
-        for edge in state.connections {
-            guard let a = cards[edge.from]?.frame, let b = cards[edge.to]?.frame else { continue }
-            canvas.lines.append((NSPoint(x: a.maxX, y: a.midY), NSPoint(x: abs(a.minX - b.minX) < 1 ? b.maxX : b.minX, y: b.midY), true))
+        for (index, edge) in state.connections.enumerated() {
+            guard let a = plan.cards[edge.from], let b = plan.cards[edge.to] else { continue }
+            let leftA = a.midX < width / 2
+            let leftB = b.midX < width / 2
+            let points: [NSPoint]
+            if abs(a.midY - b.midY) < 1 && leftA != leftB {
+                points = [NSPoint(x: leftA ? a.maxX : a.minX, y: a.midY), NSPoint(x: leftB ? b.maxX : b.minX, y: b.midY)]
+            } else if leftA == leftB || plan.columns == 1 {
+                let x: CGFloat = leftA ? 9 : width - 9
+                let start = NSPoint(x: leftA ? a.minX : a.maxX, y: a.midY)
+                let end = NSPoint(x: leftB ? b.minX : b.maxX, y: b.midY)
+                points = [start, NSPoint(x: x, y: start.y), NSPoint(x: x, y: end.y), end]
+            } else {
+                let x = width / 2 + CGFloat(index % 3 - 1) * 4
+                let start = NSPoint(x: leftA ? a.maxX : a.minX, y: a.midY)
+                let end = NSPoint(x: leftB ? b.maxX : b.minX, y: b.midY)
+                points = [start, NSPoint(x: x, y: start.y), NSPoint(x: x, y: end.y), end]
+            }
+            canvas.lines.append((points, selectedID == nil || selectedID == edge.from || selectedID == edge.to))
         }
-        let contentWidth = max(width, (cards.values.map { $0.frame.maxX }.max() ?? width - 28) + 28)
-        canvas.setFrameSize(NSSize(width: contentWidth, height: max(bounds.height, looseY + 32)))
+        canvas.setFrameSize(plan.size)
         canvas.needsDisplay = true
+        // Clamp a formerly wide canvas after resizing without discarding its
+        // vertical position or moving the insertion point in the inline editor.
+        if scroll.contentView.bounds.origin.x != 0 {
+            scroll.contentView.scroll(to: NSPoint(x: 0, y: scroll.contentView.bounds.origin.y))
+        }
     }
 }

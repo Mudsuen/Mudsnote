@@ -60,8 +60,10 @@ extension MarkdownRichEditorTests {
         for _ in 0..<100 where controller.overviewView?.cards[firstID]?.preview.stringValue.contains("Updated outside") != true { try await Task.sleep(for: .milliseconds(10)) }
         #expect(controller.overviewView?.cards[firstID]?.preview.stringValue.contains("Updated outside") == true)
         controller.activateDocumentTab(controller.activeDocumentTab.id)
-        for _ in 0..<100 where controller.overviewView?.selectedID != firstID { try await Task.sleep(for: .milliseconds(10)) }
-        #expect(controller.overviewView?.selectedID == firstID)
+        for _ in 0..<100 where controller.isShowingOverview { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(!controller.isShowingOverview)
+        #expect(controller.selectedURL == savedURL)
+        controller.showOverview()
         let secondID = try #require(controller.overviewState?.cards.first { $0.url == second }?.id)
         controller.toggleOverviewCard(secondID)
         for _ in 0..<100 where controller.overviewView?.selectedID != secondID { try await Task.sleep(for: .milliseconds(10)) }
@@ -178,5 +180,57 @@ extension MarkdownRichEditorTests {
         #expect(try pixels() == normal)
         card.updateLayer()
         #expect(card.layer?.backgroundColor == cardNormal)
+    }
+}
+
+
+extension MarkdownRichEditorTests {
+    @Test func codexShellNavigationKeepsOrdinaryPagesAndRestoresOverview() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.codex-shell." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let first = try store.saveNewNote(title: "Plan", body: "Original")
+        let second = try store.saveNewNote(title: "Second", body: "Read me")
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus(); controller.showOverview()
+        let id = try #require(controller.overviewState?.cards.first(where: { $0.url == first })?.id)
+        controller.toggleOverviewCard(id)
+        for _ in 0..<100 where controller.overviewView?.selectedID != id { try await Task.sleep(for: .milliseconds(10)) }
+        controller.pageBackStack.removeAll(); controller.pageForwardStack.removeAll()
+        let before = try store.loadOverview()
+        controller.applyDocument(title: "Plan", body: "Pending 中文", tags: []); controller.markDirty()
+        let note = try #require(controller.sourceCountSnapshot.first(where: { $0.url == second }))
+        controller.load(note: note)
+        for _ in 0..<100 where controller.isLoadingInitialNote || controller.selectedURL != second { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(!controller.isShowingOverview)
+        #expect(try store.loadNote(at: first).body == "Pending 中文")
+        #expect(try store.loadOverview() == before)
+        controller.navigateLibraryBack()
+        #expect(controller.isShowingOverview)
+        #expect(controller.overviewView?.selectedID == id)
+        controller.navigateLibraryForward()
+        #expect(!controller.isShowingOverview)
+        #expect(controller.selectedURL == second)
+        #expect(controller.pageForwardStack.isEmpty)
+        controller.showOverview()
+        for size in [NSSize(width: 896, height: 580), NSSize(width: 979, height: 728), NSSize(width: 1200, height: 800)] {
+            controller.window?.setFrame(NSRect(origin: .zero, size: size), display: true)
+            controller.window?.contentView?.layoutSubtreeIfNeeded()
+            controller.overviewView?.layoutSubtreeIfNeeded()
+            let overview = try #require(controller.overviewView)
+            #expect(overview.canvas.bounds.width <= overview.bounds.width + 1)
+            #expect(overview.cards.values.allSatisfy { $0.frame.maxX <= overview.canvas.bounds.width + 1 })
+        }
+        _ = controller.setSourceListVisibleForLibrary(false)
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+        #expect(controller.navigationRail?.isHiddenOrHasHiddenAncestor == false)
+        #expect(controller.sourceListView?.isHiddenOrHasHiddenAncestor == true)
+        _ = controller.setSourceListVisibleForLibrary(true)
+        let cell = try #require(controller.noteCell(for: note, tableView: controller.tableView) as? LibraryNoteCellView)
+        #expect(cell.toolTip?.contains("Read me") == true)
+        #expect(cell.titleLabel.isHidden == false && cell.snippetLabel.isHidden)
     }
 }

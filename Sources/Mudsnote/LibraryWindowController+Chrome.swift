@@ -17,11 +17,11 @@ extension LibraryWindowController {
         let editorController = NSViewController()
         editorController.view = buildOverviewHost(editor: editor)
 
-        let sourceItem = NSSplitViewItem(sidebarWithViewController: sourceController)
+        let sourceItem = NSSplitViewItem(viewController: sourceController)
         sourceItem.minimumThickness = LibraryNotesLayout.sourceColumnMinimumWidth
         sourceItem.maximumThickness = LibraryNotesLayout.sourceColumnMaximumWidth
         sourceItem.canCollapse = true
-        sourceItem.allowsFullHeightLayout = true
+        sourceItem.allowsFullHeightLayout = false
         sourceItem.collapseBehavior = .preferResizingSiblingsWithFixedSplitView
         sourceItem.isCollapsed = !noteStore.librarySourceListVisible
 
@@ -40,8 +40,11 @@ extension LibraryWindowController {
         sourceSplitViewItem = sourceItem
         noteListSplitViewItem = nil
         librarySplitView = splitController.splitView
-        window?.contentViewController = splitController
-        hostEditorSuggestionView(in: splitController.view)
+        let shell = NSViewController()
+        shell.addChild(splitController)
+        shell.view = LibraryShellView(rail: buildOverviewRail(), content: splitController.view)
+        window?.contentViewController = shell
+        hostEditorSuggestionView(in: shell.view)
         NotificationCenter.default.addObserver(
             self,
             selector: #selector(librarySplitViewDidResize(_:)),
@@ -84,18 +87,38 @@ extension LibraryWindowController {
         tree.translatesAutoresizingMaskIntoConstraints = false
         list.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(tint)
-        container.addSubview(sidebarHeaderView)
-        sidebarHeaderView.translatesAutoresizingMaskIntoConstraints = false
+        sidebarLibraryTitle.font = .systemFont(ofSize: 18, weight: .semibold)
+        let searchButton = OverviewActionButton("", symbol: "magnifyingglass") { [weak self] in
+            guard let self else { return }
+            self.sidebarLibraryTitle.isHidden = true
+            self.searchField.isHidden = false
+            self.window?.makeFirstResponder(self.searchField)
+        }
+        searchButton.isBordered = false
+        searchButton.toolTip = "搜索笔记"
+        searchButton.setAccessibilityLabel("搜索笔记")
+        searchButton.image = searchButton.image?.withSymbolConfiguration(.init(pointSize: 18, weight: .regular))
+        searchButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        let headingSpacer = NSView()
+        let heading = NSStackView(views: [sidebarLibraryTitle, searchField, headingSpacer, searchButton])
+        searchField.isHidden = true
+        heading.orientation = .horizontal; heading.spacing = 4
+        heading.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 12)
+        heading.heightAnchor.constraint(equalToConstant: 40).isActive = true
+        let newNote = OverviewActionButton("新建笔记", symbol: "square.and.pencil") { [weak self] in self?.createNewNoteForLibrary() }
+        newNote.identifier = NSUserInterfaceItemIdentifier("OverviewRail-square.and.pencil")
+        newNote.isBordered = false; newNote.alignment = .left
+        newNote.font = .systemFont(ofSize: 14)
+        newNote.image = newNote.image?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
+        newNote.heightAnchor.constraint(equalToConstant: 32).isActive = true
+        let newRow = NSStackView(views: [newNote])
+        newRow.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+        newNote.widthAnchor.constraint(equalTo: newRow.widthAnchor, constant: -24).isActive = true
+        let sidebarChrome = NSStackView(views: [heading, newRow, sidebarHeaderView])
+        sidebarChrome.orientation = .vertical; sidebarChrome.alignment = .width; sidebarChrome.spacing = 4
+        container.addSubview(sidebarChrome)
+        sidebarChrome.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(modeContainer)
-        let rail = buildOverviewRail()
-        container.addSubview(rail)
-        rail.translatesAutoresizingMaskIntoConstraints = false
-        NSLayoutConstraint.activate([
-            rail.leadingAnchor.constraint(equalTo: container.leadingAnchor),
-            rail.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor),
-            rail.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            rail.widthAnchor.constraint(equalToConstant: 52)
-        ])
         modeContainer.addSubview(tree)
         modeContainer.addSubview(list)
 
@@ -109,12 +132,12 @@ extension LibraryWindowController {
             tint.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
             tint.topAnchor.constraint(equalTo: surface.topAnchor),
             tint.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
-            modeContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 52),
+            modeContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             modeContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            sidebarHeaderView.leadingAnchor.constraint(equalTo: container.leadingAnchor, constant: 52),
-            sidebarHeaderView.trailingAnchor.constraint(equalTo: container.trailingAnchor),
-            sidebarHeaderView.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 6),
-            modeContainer.topAnchor.constraint(equalTo: sidebarHeaderView.bottomAnchor),
+            sidebarChrome.leadingAnchor.constraint(equalTo: container.leadingAnchor),
+            sidebarChrome.trailingAnchor.constraint(equalTo: container.trailingAnchor),
+            sidebarChrome.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 4),
+            modeContainer.topAnchor.constraint(equalTo: sidebarChrome.bottomAnchor),
             modeContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             tree.leadingAnchor.constraint(equalTo: modeContainer.leadingAnchor),
             tree.trailingAnchor.constraint(equalTo: modeContainer.trailingAnchor),
@@ -259,7 +282,7 @@ extension LibraryWindowController {
         tableView.identifier = NSUserInterfaceItemIdentifier("LibraryNoteTable")
         tableView.setAccessibilityLabel("笔记列表")
         tableView.headerView = nil
-        tableView.rowHeight = 68
+        tableView.rowHeight = LibraryNotesLayout.noteRowHeight
         tableView.intercellSpacing = NSSize(width: 0, height: 2)
         tableView.backgroundColor = .clear
         tableView.style = .plain
@@ -344,8 +367,14 @@ extension LibraryWindowController {
         sidebarAllNotesButton.setAccessibilityLabel("显示全部笔记")
         sidebarAllNotesButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
         sidebarAllNotesButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
+        let presentation = NSButton()
+        presentation.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarPresentationButton")
+        configureSidebarPresentationButton(presentation)
+        sidebarPresentationButtons.append(presentation)
+        presentation.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        presentation.heightAnchor.constraint(equalToConstant: 28).isActive = true
         let listHeader = NSStackView(views: [
-            sidebarAllNotesButton, sidebarListHeaderContent, listHeaderSpacer
+            sidebarAllNotesButton, sidebarListHeaderContent, listHeaderSpacer, presentation
         ])
         sidebarHeaderView = listHeader
         listHeader.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarListHeader")
@@ -613,7 +642,7 @@ extension LibraryWindowController {
                 constant: -LibraryNotesLayout.editorHorizontalInset
             )
         ])
-        bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 320).isActive = true
+        bodyContainer.heightAnchor.constraint(greaterThanOrEqualToConstant: 120).isActive = true
 
         editorStackView = stack
         pinnedRelationsWidthConstraint = noteLinksView.widthAnchor.constraint(
@@ -701,8 +730,14 @@ extension LibraryWindowController {
     func updateDocumentTabBar() {
         guard !documentTabs.isEmpty else { return }
         let activeID = activeDocumentTab.id
+        let home = isShowingOverview && overviewView?.selectedID == nil
+        for item in window?.toolbar?.items ?? [] {
+            if item.itemIdentifier == Self.pageTitleToolbarItemIdentifier { item.isHidden = !home }
+            if item.itemIdentifier == Self.documentTabsToolbarItemIdentifier { item.isHidden = home }
+        }
+        let showsActiveDocument = !isShowingOverview || overviewView?.selectedID != nil
         let signature = documentTabs.map {
-            "\($0.id):\($0.url?.path ?? ""):\($0.title):\($0.isDirty):\($0.id == activeID)"
+            "\($0.id):\($0.url?.path ?? ""):\($0.title):\($0.isDirty):\($0.id == activeID && showsActiveDocument)"
         }.joined(separator: "|")
         guard signature != documentTabBarSignature else { return }
         documentTabBarSignature = signature
@@ -718,7 +753,7 @@ extension LibraryWindowController {
             $0.removeFromSuperview()
         }
         for tab in documentTabs {
-            let tabView = LibraryDocumentTabView(tab: tab, selected: tab.id == activeID)
+            let tabView = LibraryDocumentTabView(tab: tab, selected: tab.id == activeID && showsActiveDocument)
             tabView.onSelect = { [weak self] in self?.activateDocumentTab(tab.id) }
             tabView.onClose = { [weak self] in self?.closeDocumentTab(tab.id) }
             documentTabsStack.addArrangedSubview(tabView)
@@ -732,7 +767,7 @@ extension LibraryWindowController {
     }
 
     @objc func newDocumentTabPressed() {
-        guard leaveOverview() else { return }
+        guard beginLibraryPageNavigation(), leaveOverview() else { return }
         do {
             drainBackgroundAutosaves()
             try saveCurrentNoteIfNeeded()

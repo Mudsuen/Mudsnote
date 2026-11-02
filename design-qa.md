@@ -1,54 +1,23 @@
-# Floating Window Manager Containment Design QA
+# Native workspace shell design QA
 
-## Evidence
+Source visual truth: `/tmp/codex-clipboard-78864bd5-3b52-4aa0-a302-c0cc2643b836.png`.
+Current-app reference: `/tmp/codex-clipboard-2b8d2426-5f22-41af-9fa1-a7d2b4ae4ea0.png`.
+Both are private user screenshots, local only; do not commit their pixels.
 
-- Source visual truth: `/var/folders/hs/3lbg6xjs1kdc4xftnflt94y80000gn/T/codex-clipboard-48b2da31-235f-4cdd-a965-fc361de88581.png`.
-- Rendered implementation: `/tmp/mudsnote-floating-contained-after-scroll.png`.
-- Full-view manager comparison: `/tmp/mudsnote-floating-contained-full-comparison.png`.
-- Focused row comparison: `/tmp/mudsnote-floating-contained-row-comparison.png`.
-- Viewport: native macOS floating note at 412 x 314 points, with a 300 x 116 point borderless manager fully contained inside it. Automated coverage separately constrains the parent to 300 x 314 points, matching the user's narrow-window state.
-- Pixels and density: source capture 678 x 356 pixels; implementation capture 830 x 628 pixels including the parent note and window shadow. The source and implementation manager regions were cropped to 600 x 232 pixels and compared at equal 2x density. Row regions were normalized to 568 x 66 pixels.
-- State: dark appearance, one current unsaved floating note, manager open, empty focused search field.
+Source: 1958 x 1456 pixels at 2x, equivalent to 979 x 728 points.
+Target: native AppKit, dark appearance; preserve note semantics rather than chat content.
 
-## Full-view comparison evidence
+## Findings awaiting rendered comparison
+- P1: ordinary-window content must not require horizontal scrolling.
+- P1: sidebar/toolbar navigation must not duplicate large actions or show a misleading blank document on the overview.
+- P2: list typography and density must match the compact reference.
+- P2: independent rail must retain hover, selected, tooltip and focus feedback when the list collapses.
 
-- The manager retains the supplied title, new-window action, search field, divider, compact single-line record, subtitle, and close action.
-- The implementation panel frame remains entirely inside the parent note frame. Its right edge no longer follows the inset anchor far enough to push the left edge outside a narrow parent.
-- The red current-window marker is absent, while the row gains the released leading space without disturbing title, subtitle, or action alignment.
-- Five downward wheel events over the one-row list produced byte-identical before/after screenshots (`b3cc32092917bf8df651ca9da342bacb9c14d6ee388288c5b57c0af4a38a1f43`), confirming no visible bounce or content movement.
+## Required evidence
+Capture at 896 x 580, 979 x 728, and 1200 x 800 points. Normalize @2x captures and reference into one full-view comparison and focused chrome/list comparisons. Use synthetic notes only.
+Check fonts/typography, spacing/layout rhythm, colors/tokens, image quality, and app-specific copy.
+Check navigation back/forward boundaries, ordinary versus overview creation, inline save, list selection, sidebar collapse, pointer feedback and window drag.
 
-## Focused region comparison evidence
+Verification policy: `./scripts/verify macos ui`, not the full suite. Release must record the actual scoped command and retain signature, provenance, hash and rollback gates.
 
-- The focused equal-width row comparison makes the intended delta legible: the left-hand source includes the redundant red dot, while the right-hand implementation begins directly with the note title and preserves the same single-line rhythm.
-- Native system fonts, vibrancy-aware colors, rounded geometry, and SF Symbol close action remain consistent with the existing app. No raster imagery, logos, illustrations, or generated assets are involved.
-- Copy differs only because the isolated fixture is an unnamed note; control labels and meaning are unchanged.
-
-## Findings
-
-- P0: none.
-- P1: none.
-- P2: none.
-- P3: the active implementation capture is lighter than the user's inactive/dimmed source capture because macOS vibrancy follows focus state; this is expected native behavior rather than token drift.
-
-## Comparison history
-
-### Pass 1
-
-- The supplied source showed the manager extending left of the parent note, a red current-window dot, and a short list that reacted to wheel input.
-- Fixes: clamp both axes to the parent frame, remove the current-window marker state, disable vertical elasticity without overflow, and reset the clip origin when scrolling becomes unnecessary.
-
-### Pass 2
-
-- Post-fix evidence: `/tmp/mudsnote-floating-contained-after-scroll.png`, `/tmp/mudsnote-floating-contained-full-comparison.png`, and `/tmp/mudsnote-floating-contained-row-comparison.png`.
-- The manager is contained, the marker is gone, row alignment remains compact, and repeated wheel input leaves the one-row state unchanged. No actionable P0/P1/P2 differences remain.
-
-## Implementation checklist
-
-- [x] Keep the complete manager inside its parent note at narrow and default widths.
-- [x] Remove the redundant current-window marker and state plumbing.
-- [x] Disable both the scroller and elastic response for five or fewer rows.
-- [x] Restore scrolling when results exceed five rows.
-- [x] Reset the scroll offset when results shrink below the threshold.
-- [x] Verify the rendered native state against the supplied screenshot.
-
-final result: passed
+final result: blocked

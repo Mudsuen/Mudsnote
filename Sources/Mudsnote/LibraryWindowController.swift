@@ -24,6 +24,11 @@ final class LibraryWindowController: NSWindowController,
     WindowOpacityAdjusting
 {
     let noteStore: NoteStore
+    let sidebarLibraryTitle = NSTextField(labelWithString: "笔记")
+    var navigationRail: LibraryNavigationRail?
+    var pageBackStack: [LibraryPageState] = []
+    var pageForwardStack: [LibraryPageState] = []
+    var isRestoringLibraryPage = false
     var overviewState: NoteOverview?
     var overviewView: LibraryOverviewView?
     var overviewHost: OverviewContentHost?
@@ -75,6 +80,9 @@ final class LibraryWindowController: NSWindowController,
     var knowledgeGraphWindowController: KnowledgeGraphWindowController?
 
     static let homeOverviewToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.home")
+
+    static let pageTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.page-title")
+    let toolbarPageTitle = NSTextField(labelWithString: "总览")
 
     static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
 
@@ -149,6 +157,7 @@ final class LibraryWindowController: NSWindowController,
 
     let backgroundDeletionWillPersist: @Sendable () -> Void
 
+    let fixtureWindowSize: NSSize?
     let usesCanonicalWindowSize: Bool
 
     let prefersExternalScreen: Bool
@@ -501,6 +510,7 @@ final class LibraryWindowController: NSWindowController,
     init(
         noteStore: NoteStore,
         defersInitialNoteHydration: Bool = false,
+        fixtureWindowSize: NSSize? = nil,
         usesCanonicalWindowSize: Bool = false,
         prefersExternalScreen: Bool = false,
         noteLoader: (@Sendable (URL) throws -> (title: String, body: String, tags: [String]))? = nil,
@@ -541,6 +551,7 @@ final class LibraryWindowController: NSWindowController,
         self.persistenceErrorHandler = persistenceErrorHandler
         self.backgroundSourceCountWillLoad = backgroundSourceCountWillLoad
         self.backgroundDeletionWillPersist = backgroundDeletionWillPersist
+        self.fixtureWindowSize = fixtureWindowSize
         self.usesCanonicalWindowSize = usesCanonicalWindowSize
         self.prefersExternalScreen = prefersExternalScreen
         self.onOpenInSeparateWindow = onOpenInSeparateWindow
@@ -569,11 +580,11 @@ final class LibraryWindowController: NSWindowController,
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize
-        window.toolbarStyle = .unified
+        window.toolbarStyle = .unifiedCompact
         window.isReleasedWhenClosed = false
 
         super.init(window: window)
-        LibraryNoteRowView.selectionFillColor = selectedThemeColor.noteSelectionColor
+        LibraryNoteRowView.selectionFillColor = NSColor.labelColor.withAlphaComponent(0.10)
         window.delegate = self
         buildUI()
         configureToolbar()

@@ -122,45 +122,21 @@ final class LibraryNoteCellView: NSTableCellView {
         thumbnailImageView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
         thumbnailImageView.isHidden = true
 
-        let metaRow = NSStackView(views: [folderImageView, metaLabel, attachmentImageView])
-        metaRow.orientation = .horizontal
-        metaRow.alignment = .centerY
-        metaRow.spacing = 4
-
-        let textStack = NSStackView(views: [titleLabel, snippetLabel, metaRow])
-        textStack.orientation = .vertical
-        textStack.alignment = .leading
-        textStack.spacing = Self.textRowSpacing
-        textStack.setContentHuggingPriority(.fittingSizeCompression, for: .horizontal)
-        textStack.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        for label in [titleLabel, snippetLabel, metaLabel] {
-            label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        }
-
-        let stack = NSStackView(views: [textStack, thumbnailImageView])
-        stack.orientation = .horizontal
-        stack.alignment = .centerY
-        stack.distribution = .fill
-        stack.spacing = 8
-        stack.edgeInsets = NSEdgeInsets(
-            top: Self.contentTopInset,
-            left: Self.contentLeadingInset,
-            bottom: Self.contentBottomInset,
-            right: Self.contentTrailingInset
-        )
-        addSubview(stack)
-        pin(stack, to: self)
-        for label in [titleLabel, snippetLabel] {
-            label.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
-        }
-        textStack.widthAnchor.constraint(greaterThanOrEqualToConstant: Self.minimumTextWidth).isActive = true
-        metaRow.widthAnchor.constraint(equalTo: textStack.widthAnchor).isActive = true
-        folderImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
-        folderImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
-        attachmentImageView.widthAnchor.constraint(equalToConstant: 12).isActive = true
-        attachmentImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
-        thumbnailImageView.widthAnchor.constraint(equalToConstant: 44).isActive = true
-        thumbnailImageView.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        // Keep metadata available to accessibility/tooltips without making every
+        // sidebar row a three-line card. Attachments remain a small trailing cue.
+        snippetLabel.isHidden = true; metaLabel.isHidden = true; folderImageView.isHidden = true
+        addSubview(titleLabel); addSubview(attachmentImageView)
+        titleLabel.translatesAutoresizingMaskIntoConstraints = false
+        attachmentImageView.translatesAutoresizingMaskIntoConstraints = false
+        NSLayoutConstraint.activate([
+            titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
+            titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
+            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -28),
+            attachmentImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            attachmentImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            attachmentImageView.widthAnchor.constraint(equalToConstant: 12),
+            attachmentImageView.heightAnchor.constraint(equalToConstant: 12)
+        ])
     }
 
     @available(*, unavailable)
@@ -173,10 +149,10 @@ final class LibraryNoteCellView: NSTableCellView {
 final class LibraryNoteRowView: NSTableRowView {
     static let selectionLeadingInset: CGFloat = 6
     static let selectionTrailingInset: CGFloat = 6
-    static let selectionTopInset: CGFloat = 6
-    static let selectionBottomInset: CGFloat = 4
+    static let selectionTopInset: CGFloat = 2
+    static let selectionBottomInset: CGFloat = 2
     static let selectionCornerRadius: CGFloat = 8
-    static var selectionFillColor = LibrarySourceSelectionPalette.noteBackgroundColor
+    static var selectionFillColor = NSColor.labelColor.withAlphaComponent(0.10)
     static let hoverLeadingInset: CGFloat = selectionLeadingInset
     static let hoverTrailingInset: CGFloat = selectionTrailingInset
     static let hoverVerticalInset: CGFloat = 3
@@ -238,19 +214,6 @@ final class LibraryNoteRowView: NSTableRowView {
     override func drawBackground(in dirtyRect: NSRect) {
         super.drawBackground(in: dirtyRect)
         guard !isGroupRow else { return }
-
-        if !isSelected {
-            let y = bounds.minY + 0.5
-            let path = NSBezierPath()
-            path.move(to: NSPoint(x: Self.separatorLeadingInset, y: y))
-            path.line(to: NSPoint(
-                x: max(Self.separatorLeadingInset, bounds.maxX - Self.separatorTrailingInset),
-                y: y
-            ))
-            panelSeparatorColor(alpha: Self.separatorAlpha).setStroke()
-            path.lineWidth = 1
-            path.stroke()
-        }
 
         guard isPointerHovered, !isSelected else { return }
 

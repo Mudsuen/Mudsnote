@@ -10,6 +10,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private let hotKeyManager = GlobalHotKeyManager()
     private let launchArguments: Set<String>
     private let visualQASelectedNoteURL: URL?
+    private let fixtureWindowSize: NSSize?
     private let usesCanonicalVisualQAWindowSize: Bool
     private let prefersExternalVisualQAScreen: Bool
     static let explicitLaunchWindowArguments: Set<String> = [
@@ -42,6 +43,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         self.launchArguments = Set(rawLaunchArguments)
         self.noteStore = noteStore
         self.visualQASelectedNoteURL = Self.visualQASelectedNoteURL(arguments: rawLaunchArguments)
+        self.fixtureWindowSize = Self.visualQAWindowSize(arguments: rawLaunchArguments)
         self.usesCanonicalVisualQAWindowSize = Self.usesCanonicalVisualQAWindowSize(arguments: rawLaunchArguments)
         self.prefersExternalVisualQAScreen = Self.prefersExternalVisualQAScreen(arguments: rawLaunchArguments)
         super.init()
@@ -252,6 +254,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         value(after: "--visual-qa-select-note", in: arguments).map {
             URL(fileURLWithPath: $0).standardizedFileURL
         }
+    }
+
+    static func visualQAWindowSize(arguments: [String]) -> NSSize? {
+        guard value(after: "--visual-qa-notes-dir", in: arguments) != nil,
+              value(after: "--visual-qa-defaults-suite", in: arguments) != nil,
+              value(after: "--visual-qa-app-support-dir", in: arguments) != nil,
+              let raw = value(after: "--visual-qa-window-size", in: arguments) else { return nil }
+        let parts = raw.split(separator: "x").compactMap { Double($0) }
+        guard parts.count == 2, parts[0] >= 896, parts[1] >= 560, parts[0] <= 1800, parts[1] <= 1200 else { return nil }
+        return NSSize(width: parts[0], height: parts[1])
     }
 
     static func usesCanonicalVisualQAWindowSize(arguments: [String]) -> Bool {
@@ -807,6 +819,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         let controller = LibraryWindowController(
             noteStore: noteStore,
             defersInitialNoteHydration: true,
+            fixtureWindowSize: fixtureWindowSize,
             usesCanonicalWindowSize: usesCanonicalVisualQAWindowSize,
             prefersExternalScreen: prefersExternalVisualQAScreen,
             onOpenInSeparateWindow: { [weak self] url in

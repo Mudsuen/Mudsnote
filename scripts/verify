@@ -5,7 +5,7 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT_DIR"
 
 usage() {
-  echo "Usage: ./scripts/verify [macos|ios|both] {pr|full|live}" >&2
+  echo "Usage: ./scripts/verify [macos|ios|both] {pr|full|live|ui}" >&2
 }
 
 case "${1:-}" in
@@ -14,7 +14,7 @@ case "${1:-}" in
     MODE="${2:-}"
     EXPLICIT_SCOPE=1
     ;;
-  pr|full|live)
+  pr|full|live|ui)
     MODE="$1"
     if [[ -n "${MUDSNOTE_PLATFORM_SCOPE:-}" ]]; then
       PLATFORM_SCOPE="$MUDSNOTE_PLATFORM_SCOPE"
@@ -30,7 +30,7 @@ case "${1:-}" in
     ;;
 esac
 
-if [[ "$MODE" != "pr" && "$MODE" != "full" && "$MODE" != "live" ]]; then
+if [[ "$MODE" != "pr" && "$MODE" != "full" && "$MODE" != "live" && "$MODE" != "ui" ]]; then
   usage
   exit 2
 fi
@@ -74,6 +74,10 @@ check_ci_boundary() {
   fi
 }
 
+if [[ "$MODE" == "ui" && "$PLATFORM_SCOPE" != "macos" ]]; then
+  echo "UI verification is macOS-only." >&2
+  exit 2
+fi
 check_diff
 check_ci_boundary
 ./scripts/agent_context.sh --check
