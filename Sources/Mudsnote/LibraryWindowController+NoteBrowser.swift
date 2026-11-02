@@ -52,8 +52,10 @@ extension LibraryWindowController {
             baseColor: panelSecondaryTextColor(),
             query: query
         )
-        cell.thumbnailImageView.isHidden = true
-        cell.attachmentImageView.isHidden = !note.hasAttachments
+        let thumbnail = thumbnailImage(for: note)
+        cell.thumbnailImageView.image = thumbnail
+        cell.thumbnailImageView.isHidden = thumbnail == nil
+        cell.attachmentImageView.isHidden = !note.hasAttachments || thumbnail != nil
         cell.metaLabel.stringValue = noteListFolderText(for: note)
         cell.toolTip = noteListDisplayTitle(for: note) + "\n" + noteListSnippetText(for: note) + "\n" + noteListFolderText(for: note)
         cell.setAccessibilityHelp(cell.toolTip)

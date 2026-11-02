@@ -23,6 +23,8 @@ extension LibraryWindowController {
         if pageBackStack.last != page { pageBackStack.append(page) }
         if pageBackStack.count > 100 { pageBackStack.removeFirst() }
         pageForwardStack.removeAll()
+        pageBackButton?.isEnabled = !pageBackStack.isEmpty
+        pageForwardButton?.isEnabled = !pageForwardStack.isEmpty
         window?.toolbar?.validateVisibleItems()
         return true
     }

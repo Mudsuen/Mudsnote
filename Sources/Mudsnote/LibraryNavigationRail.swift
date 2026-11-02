@@ -1,11 +1,13 @@
 import AppKit
 
 @MainActor final class LibraryRailButton: NSButton {
+    let symbolName: String
     var invoke: (() -> Void)?
-    var selected = false { didSet { contentTintColor = selected ? .labelColor : .secondaryLabelColor; needsDisplay = true; setAccessibilityValue(selected ? "已选中" : "") } }
+    var selected = false { didSet { image = NSImage(systemSymbolName: selected && symbolName == "house" ? "house.fill" : symbolName, accessibilityDescription: toolTip)?.withSymbolConfiguration(.init(pointSize: 20, weight: .regular)); contentTintColor = selected ? .labelColor : .secondaryLabelColor; needsDisplay = true; setAccessibilityValue(selected ? "已选中" : "") } }
     private var hovered = false
     private var hoverArea: NSTrackingArea?
     init(title: String, symbol: String, action: @escaping () -> Void) {
+        symbolName = symbol
         super.init(frame: NSRect(x: 0, y: 0, width: 36, height: 36))
         self.title = ""
         invoke = action
@@ -48,12 +50,12 @@ import AppKit
     override func draw(_ dirtyRect: NSRect) {
         NSColor(calibratedWhite: 0.15, alpha: 1).setFill(); bounds.fill()
         NSColor.clear.setFill()
-        let inset = max(safeAreaInsets.top, window.map { $0.frame.height - $0.contentLayoutRect.height } ?? 52)
+        let inset = max(44, max(safeAreaInsets.top, window.map { $0.frame.height - $0.contentLayoutRect.height } ?? 44))
         NSRect(x: bounds.maxX - 1, y: inset, width: 1, height: max(0, bounds.height - inset)).fill()
     }
     override func layout() {
         super.layout()
-        let inset = max(safeAreaInsets.top, window.map { $0.frame.height - $0.contentLayoutRect.height } ?? 52)
+        let inset = max(44, max(safeAreaInsets.top, window.map { $0.frame.height - $0.contentLayoutRect.height } ?? 44))
         for (index, pair) in buttons.enumerated() {
             let gap: CGFloat = index >= 4 ? 12 : 0
             pair.1.frame = NSRect(x: 8, y: inset + 8 + CGFloat(index) * 44 + gap, width: 36, height: 36)
@@ -99,7 +101,7 @@ import AppKit
     required init?(coder: NSCoder) { fatalError() }
     override func layout() {
         super.layout()
-        let inset = max(28, window.map { $0.frame.height - $0.contentLayoutRect.height } ?? 44)
+        let inset = max(44, window.map { $0.frame.height - $0.contentLayoutRect.height } ?? 44)
         if contentTop?.constant != inset { contentTop?.constant = inset }
     }
 }

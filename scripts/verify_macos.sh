@@ -25,7 +25,7 @@ PERFORMANCE_TESTS='StaysInteractiveAtSnapshotLimit|richMarkdownSerializationStay
 case "$MODE" in
   ui)
     echo "Scoped UI verification: overview, ordinary creation, navigation, selection and pointer feedback"
-    run_macos_tests debug --filter 'overview|ordinaryNewNote|codexShell|librarySearchFieldKeyboardNavigates|libraryWindowNoteListKeyboardOpens|librarySelectionChangeCreatesOneConflictCopy|libraryNavigationUsesCachedSnapshot'
+    run_macos_tests debug --filter 'overview|ordinaryNewNote|codexShell|librarySearchFieldKeyboardNavigates|libraryWindowNoteListKeyboardOpens|librarySelectionChangeCreatesOneConflictCopy|libraryNavigationUsesCachedSnapshot|libraryWindowUsesNotesLikeSplitAndLoadsFirstNote|libraryToolbarUsesNotesLikeDisabledStates|libraryWindowCreatesMovesRenamesAndDeletesFolders|libraryNoteListShowsImageAttachmentThumbnail'
     ;;
   pr)
     python3 scripts/test_macos_update.py

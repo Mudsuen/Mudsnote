@@ -13,7 +13,7 @@ enum LibraryNotesLayout {
     ]
     static let sourceColumnWidth: CGFloat = 238
     static let noteColumnWidth: CGFloat = 280
-    static let sourceColumnMinimumWidth: CGFloat = 220
+    static let sourceColumnMinimumWidth: CGFloat = 238
     static let sourceColumnMaximumWidth: CGFloat = 380
     static let noteColumnMinimumWidth: CGFloat = 200
     static let noteColumnMaximumWidth: CGFloat = 320

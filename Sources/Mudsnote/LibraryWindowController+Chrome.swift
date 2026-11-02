@@ -94,6 +94,7 @@ extension LibraryWindowController {
             self.searchField.isHidden = false
             self.window?.makeFirstResponder(self.searchField)
         }
+        searchButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarSearch")
         searchButton.isBordered = false
         searchButton.toolTip = "搜索笔记"
         searchButton.setAccessibilityLabel("搜索笔记")
@@ -105,8 +106,9 @@ extension LibraryWindowController {
         heading.orientation = .horizontal; heading.spacing = 4
         heading.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 12)
         heading.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        let newNote = OverviewActionButton("新建笔记", symbol: "square.and.pencil") { [weak self] in self?.createNewNoteForLibrary() }
+        let newNote = OverviewActionButton("新建笔记", symbol: "square.and.pencil", leading: true) { [weak self] in self?.createNewNoteForLibrary() }
         newNote.identifier = NSUserInterfaceItemIdentifier("OverviewRail-square.and.pencil")
+        newNote.toolTip = "新建笔记"
         newNote.isBordered = false; newNote.alignment = .left
         newNote.font = .systemFont(ofSize: 14)
         newNote.image = newNote.image?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
@@ -424,6 +426,7 @@ extension LibraryWindowController {
     }
 
     func updateSidebarScopeButton() {
+        sidebarHeaderView.isHidden = selectedScope == .all && searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
         sidebarAllNotesButton.isHidden = selectedScope == .all
     }
 

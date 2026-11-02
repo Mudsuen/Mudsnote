@@ -125,17 +125,22 @@ final class LibraryNoteCellView: NSTableCellView {
         // Keep metadata available to accessibility/tooltips without making every
         // sidebar row a three-line card. Attachments remain a small trailing cue.
         snippetLabel.isHidden = true; metaLabel.isHidden = true; folderImageView.isHidden = true
-        addSubview(titleLabel); addSubview(attachmentImageView)
+        addSubview(titleLabel); addSubview(attachmentImageView); addSubview(thumbnailImageView)
         titleLabel.translatesAutoresizingMaskIntoConstraints = false
         attachmentImageView.translatesAutoresizingMaskIntoConstraints = false
+        thumbnailImageView.translatesAutoresizingMaskIntoConstraints = false
         NSLayoutConstraint.activate([
             titleLabel.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 12),
             titleLabel.centerYAnchor.constraint(equalTo: centerYAnchor),
-            titleLabel.trailingAnchor.constraint(lessThanOrEqualTo: trailingAnchor, constant: -28),
+            titleLabel.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -28),
             attachmentImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
             attachmentImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
             attachmentImageView.widthAnchor.constraint(equalToConstant: 12),
-            attachmentImageView.heightAnchor.constraint(equalToConstant: 12)
+            attachmentImageView.heightAnchor.constraint(equalToConstant: 12),
+            thumbnailImageView.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -10),
+            thumbnailImageView.centerYAnchor.constraint(equalTo: centerYAnchor),
+            thumbnailImageView.widthAnchor.constraint(equalToConstant: 18),
+            thumbnailImageView.heightAnchor.constraint(equalToConstant: 18)
         ])
     }
 
@@ -155,7 +160,7 @@ final class LibraryNoteRowView: NSTableRowView {
     static var selectionFillColor = NSColor.labelColor.withAlphaComponent(0.10)
     static let hoverLeadingInset: CGFloat = selectionLeadingInset
     static let hoverTrailingInset: CGFloat = selectionTrailingInset
-    static let hoverVerticalInset: CGFloat = 3
+    static let hoverVerticalInset: CGFloat = 2
     static let hoverCornerRadius: CGFloat = 8
     static var hoverFillColor: NSColor { NSColor.labelColor.withAlphaComponent(0.10) }
     static let separatorLeadingInset: CGFloat = 18

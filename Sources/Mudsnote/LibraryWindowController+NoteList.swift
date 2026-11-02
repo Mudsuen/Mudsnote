@@ -33,11 +33,11 @@ extension LibraryWindowController {
 
         let preferredPath = preferredURL?.standardizedFileURL.path
         var noteToLoad: NoteSearchResult?
-        if let preferredPath,
+        if let preferredPath, !isShowingOverview,
            let row = rowIndex(for: preferredPath) {
             tableView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
             noteToLoad = note(at: row)
-        } else if loadFirstIfNeeded,
+        } else if loadFirstIfNeeded, !isShowingOverview,
                   let firstNoteRow = listRows.firstIndex(where: { $0.note != nil }) {
             tableView.selectRowIndexes(IndexSet(integer: firstNoteRow), byExtendingSelection: false)
             noteToLoad = note(at: firstNoteRow)

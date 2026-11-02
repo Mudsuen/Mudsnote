@@ -66,8 +66,7 @@ extension LibraryWindowController {
     }
 
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [Self.navigationBackToolbarItemIdentifier, Self.navigationForwardToolbarItemIdentifier,
-         Self.toggleSidebarToolbarItemIdentifier, Self.sourceTrackingSeparatorToolbarItemIdentifier,
+        [Self.navigationGroupToolbarItemIdentifier, Self.sourceTrackingSeparatorToolbarItemIdentifier,
          Self.pageTitleToolbarItemIdentifier, Self.documentTabsToolbarItemIdentifier,
          .flexibleSpace, Self.moreToolbarItemIdentifier]
     }
@@ -102,10 +101,37 @@ extension LibraryWindowController {
         willBeInsertedIntoToolbar flag: Bool
     ) -> NSToolbarItem? {
         switch itemIdentifier {
+        case Self.navigationGroupToolbarItemIdentifier:
+            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            let back = OverviewActionButton("", symbol: "arrow.left") { [weak self] in self?.navigateLibraryBack() }
+            let forward = OverviewActionButton("", symbol: "arrow.right") { [weak self] in self?.navigateLibraryForward() }
+            let sidebar = OverviewActionButton("", symbol: "sidebar.left") { [weak self] in _ = self?.toggleSourceListForLibrary() }
+            for (button, label) in [(back, "后退"), (forward, "前进"), (sidebar, "展开或收起笔记列表")] {
+                button.isBordered = false; button.toolTip = label; button.setAccessibilityLabel(label)
+                button.image = button.image?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
+                button.widthAnchor.constraint(equalToConstant: 34).isActive = true
+                button.heightAnchor.constraint(equalToConstant: 28).isActive = true
+            }
+            pageBackButton = back; pageForwardButton = forward; sidebarToggleButton = sidebar
+            back.isEnabled = !pageBackStack.isEmpty; forward.isEnabled = !pageForwardStack.isEmpty
+            let group = NSStackView(views: [back, forward, sidebar]); group.orientation = .horizontal; group.spacing = 0
+            item.view = group; item.visibilityPriority = .high
+            return item
         case Self.pageTitleToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            toolbarPageTitle.font = .systemFont(ofSize: 14, weight: .medium)
-            item.view = toolbarPageTitle
+            toolbarPageTitle.font = .systemFont(ofSize: 16, weight: .medium)
+            toolbarPageTitle.textColor = .labelColor
+            let host = NSView(frame: NSRect(x: 0, y: 0, width: 160, height: 28))
+            host.addSubview(toolbarPageTitle)
+            toolbarPageTitle.translatesAutoresizingMaskIntoConstraints = false
+            NSLayoutConstraint.activate([
+                toolbarPageTitle.leadingAnchor.constraint(equalTo: host.leadingAnchor),
+                toolbarPageTitle.centerYAnchor.constraint(equalTo: host.centerYAnchor),
+                toolbarPageTitle.trailingAnchor.constraint(lessThanOrEqualTo: host.trailingAnchor)
+            ])
+            item.autovalidates = false
+            item.isEnabled = true
+            item.view = host
             item.visibilityPriority = .high
             return item
         case Self.homeOverviewToolbarItemIdentifier:
@@ -708,6 +734,8 @@ extension LibraryWindowController {
     }
 
     func updateToolbarActionState() {
+        pageBackButton?.isEnabled = !pageBackStack.isEmpty
+        pageForwardButton?.isEnabled = !pageForwardStack.isEmpty
         let isTrashScope = selectedScope == .trash
         let selectionCount = selectedMarkdownFileURLsForLibrary().count
         applySourceVisibilityChrome(isSourceListVisibleForLibrary)

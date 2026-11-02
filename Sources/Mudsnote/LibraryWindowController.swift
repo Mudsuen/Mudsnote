@@ -26,6 +26,9 @@ final class LibraryWindowController: NSWindowController,
     let noteStore: NoteStore
     let sidebarLibraryTitle = NSTextField(labelWithString: "笔记")
     var navigationRail: LibraryNavigationRail?
+    weak var pageBackButton: NSButton?
+    weak var pageForwardButton: NSButton?
+    weak var sidebarToggleButton: NSButton?
     var pageBackStack: [LibraryPageState] = []
     var pageForwardStack: [LibraryPageState] = []
     var isRestoringLibraryPage = false
@@ -81,6 +84,7 @@ final class LibraryWindowController: NSWindowController,
 
     static let homeOverviewToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.home")
 
+    static let navigationGroupToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.navigation")
     static let pageTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.page-title")
     let toolbarPageTitle = NSTextField(labelWithString: "总览")
 
@@ -577,6 +581,7 @@ final class LibraryWindowController: NSWindowController,
         window.title = "\(MudsnoteBrand.appName) 笔记"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
+        window.backgroundColor = NSColor(calibratedRed: 0.15, green: 0.16, blue: 0.17, alpha: 1)
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize
