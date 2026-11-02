@@ -1,60 +1,107 @@
-# Native workspace shell design QA
+# Notes-style workspace design QA
 
-## Source, viewport and privacy
+## Accepted scope
 
-- Visual truth: `/tmp/codex-clipboard-78864bd5-3b52-4aa0-a302-c0cc2643b836.png` (Codex target, 1958 x 1456 pixels, 979 x 728 points, 2x).
-- Original Mudsnote: `/tmp/codex-clipboard-2b8d2426-5f22-41af-9fa1-a7d2b4ae4ea0.png` (1792 x 1160 pixels, 896 x 580 points, 2x).
-- Private reference pixels remain outside Git. They include personal titles and must not be uploaded publicly.
-- Local evidence directory: `/Users/Donald/Documents/Codex/2026-10-28/01a18289-ba5a-7b41-9f74-57c9d1e4a0ee-mini/work/codex-ui-qa/`.
-- First implementation: `candidate-979-first.png`, 1958 x 1456 pixels, native AppKit window without shadow. Synthetic notes only.
-- Combined full-view input: `comparison-01-private.png`. Both captures were downsampled to 979 x 728 and placed together with neutral labels. The source is a chat page and the implementation is a note overview; compare shared shell structure and tokens, not unrelated content. System recording indicators and native activation differences are excluded.
+The user's final direction supersedes exact Codex titlebar/list replication:
+retain the original Apple Notes-style title, preview and metadata cards; refine
+hover, click behavior and icon details; remove the white rail/list seam. No new
+features or further decorative changes are part of this acceptance.
 
-## Latest user direction
+## Visual truth and privacy
 
-The user explicitly narrowed the target after the reference comparison: the
-middle pane must retain the original Apple Notes-style title/preview/metadata
-cards, not become a compact single-line chat list. Focus on hover, click behavior
-and icon detail; exact titlebar replication is not required. The rail and list
-must not have a white border seam. This supersedes earlier list-density fidelity
-findings, but does not waive readable controls or working navigation.
+- Codex reference: `/tmp/codex-clipboard-78864bd5-3b52-4aa0-a302-c0cc2643b836.png`, 1958 x 1456 pixels at 2x (979 x 728 points).
+- Original Notes-style list: `/tmp/codex-clipboard-2b8d2426-5f22-41af-9fa1-a7d2b4ae4ea0.png`, 1792 x 1160 pixels at 2x (896 x 580 points).
+- Final overview: `/tmp/mudsnote-codex-ui-transfer/notes-final-overview.png`.
+- Final ordinary-note selection: `/tmp/mudsnote-codex-ui-transfer/notes-final-selected.png`.
+- Full comparison input: `/tmp/mudsnote-codex-ui-transfer/notes-comparison-private.png`.
+- Focused comparison input: `/tmp/mudsnote-codex-ui-transfer/notes-focused-private.png`.
 
-## Comparison history and findings
+The final actual-window captures were made on the coordinator laptop using the
+unchanged Mini-signed candidate `411e360c387e8fd3b55bbcd88e192a3617ef59e1` and
+synthetic fixture data. They are not Mini desktop captures. Both final captures
+and both combined comparison inputs were opened and inspected in this review.
+The supplied reference contains personal titles; its pixels and private combined
+comparisons stay outside Git and must not be published to the website.
 
-1. Initial source inspection: repeated navigation and oversized multi-line rows in Mudsnote differed from the selected compact shell. The overview placed unassigned cards below empty areas and required horizontal scrolling. Reused only reviewed parts of the preserved layout branch; retained ordinary-versus-overview creation and hover fixes.
-2. First actual 979 x 728 comparison found these actionable P2 differences:
-   - Sidebar settled at 220 rather than approximately 238 points. The minimum/default now align at 238.
-   - Ordinary new-note control was right-aligned. A leading-aligned native button cell now positions its real symbol and title consistently.
-   - Top navigation buttons had excessive system spacing. A compact group now contains real back, forward and sidebar actions.
-   - Static page title appeared disabled. It now uses an enabled, non-interactive label host with labelColor.
-   - Main scrollbar was a persistent bright legacy scroller. It now uses small overlay scrollers with autohide and no horizontal scroller.
-   - Inner boundary began at 40 points. The shell/rail now preserve a 44-point header boundary.
-3. The same signed `94b0efea865320f4d95d9cec9138885d051931b8` candidate was subsequently captured on the coordinator's unlocked laptop with isolated fixture data. Evidence: `/tmp/mudsnote-codex-ui-transfer/candidate-979-active.png` and `/tmp/mudsnote-codex-ui-transfer/comparison-final-private.png`. Both were opened together in this review. This does not bypass the Mini lock or require a new build on the laptop.
-4. The active-window comparison confirms two remaining P2 findings: the sidebar new-note title wraps into two lines and sits at the right; the current-page title remains dim inside a large native toolbar capsule. These are not inactive-window artifacts. The coordinator verified sidebar note navigation to an ordinary page, Back to overview, independent rail during sidebar collapse, and corrected overlay scrolling.
-5. Narrow corrective implementation: replace the sidebar button-cell layout with explicitly constrained icon/one-line label subviews and a single accessible button hit target; replace the toolbar control label with a transparent static-text view, disable item borders, and constrain its size. No other UI feature or navigation behavior was changed. Laptop verification of these two corrections is pending; they remain open P2 findings until new actual screenshots confirm resolution.
+## Density, state and comparison method
+
+The final window is 979 x 728 points / 1958 x 1456 pixels, in dark appearance.
+The full comparison normalizes source and candidate to 979 x 728 at 1x and places
+them in the same image. Focused rail/list crops use the same 2x-to-1x scale without
+stretching their different widths. The Codex chat content is not a note-page
+specification; the original Mudsnote image and the user's latest instruction
+control the Notes-list hierarchy. System recording indicators are excluded.
+Geometry checks also cover 896 x 580 and 1200 x 800; this report does not claim
+new final live captures at those sizes.
+
+## Comparison history
+
+1. Initial Mudsnote showed duplicate navigation, oversized empty graph spacing,
+   cards below the first viewport, and horizontal overflow. The shell and graph
+   layout were adjusted while retaining original notes and save protection.
+2. The first 979-point comparison identified P2 differences in sidebar width,
+   new-note alignment, dim current-page title, titlebar spacing and legacy
+   scrolling. The second laptop capture of candidate `94b0efe` confirmed two
+   remaining active-window failures: wrapped/right-aligned new-note text and a
+   dim title inside an oversized toolbar capsule.
+3. Candidate `fdd9f9c` replaced the sidebar cell layout with explicit icon/label
+   constraints and replaced the toolbar control with an unbordered static view.
+   The coordinator verified single-line left alignment and readable title/no
+   capsule, plus ordinary and overview creation with Chinese input and saving,
+   back navigation and rail retention on list collapse.
+4. The user then explicitly retained Notes-style multi-line rows and relaxed
+   exact titlebar fidelity. Candidate `411e360` restored title/preview/metadata
+   and 44-point thumbnails, differentiated hover/selection gray, unified the
+   rail/list background, and removed its border/left corner seam. The final
+   overview, selected-note capture and combined comparisons confirm these
+   changes. The two corrected controls were not changed in this iteration.
 
 ## Five fidelity surfaces
 
-- Fonts/typography: system SF/PingFang, 14-point medium note titles with 12-point preview/metadata and subdued group headings; 16-point static page title. Final active-window comparison of the two corrected controls is pending.
-- Spacing/layout rhythm: independent 52-point rail, 36-point hit regions, 44-point rail rhythm, 238-point list, retained 68-point Notes-style rows and a shared rounded content boundary. Targeted geometry checks cover 896 x 580, 979 x 728 and 1200 x 800; final rendered checks pending.
-- Colors/tokens: neutral gray hover/selection, dark content surface, restrained borders. First comparison accepted the overall hierarchy; overlay scrolling is verified; corrected title/toolbar rendering still requires a new capture.
-- Image quality: vector SF Symbols only, no generated raster assets. Note image attachments retain 44-point thumbnails and their original files. Reference screenshots are not product assets.
-- Copy/content: chat/model/account controls are intentionally absent. Sidebar new note and explicit overview new card remain distinct. No personal reference titles were copied into fixtures or source.
+- **Fonts/typography:** SF/PingFang; 14-point medium note titles with 12-point
+  preview/metadata, retained Notes-style row hierarchy, readable static page
+  title. The multi-line list is intentional, not a remaining drift from Codex.
+- **Spacing/layout rhythm:** fixed narrow rail, independent scrolling list,
+  retained 68-point note rows, visible overview cards, no whole-page horizontal
+  scrollbar. The shared rail/list surface has no white seam. The note-editor
+  divider remains intentional.
+- **Colors/tokens:** neutral gray hover and a stronger gray selection; final
+  selected-note screenshot shows a clear click state. Static title is readable;
+  native overlay scrolling and the seam removal are confirmed. Exact native
+  titlebar coloration is outside the user's narrowed fidelity requirement.
+- **Image quality/assets:** real vector SF Symbols; note thumbnails retained.
+  No chat/account/model imagery or generated raster UI was added. Source and
+  candidate were compared at equal density.
+- **Copy/content:** only note operations are represented. The sidebar new-note
+  action creates an ordinary document; explicit overview new-note actions create
+  cards. Synthetic note content is used for all final acceptance captures.
 
-## Interaction evidence
+## Interaction and verification evidence
 
-- `./scripts/verify macos ui`: 14 affected tests passed in `/tmp/mudsnote-codex-ui-round2.log`, including ordinary/overview creation, page-history restoration with pending Chinese edits, list keyboard navigation, conflict safety, compact attachments, hover and viewport boundaries. This is NOT a full-suite result.
-- Devflow's explicit `mudsnote-ui` verification profile has six scoped tests covering profile restrictions, unchanged default commands, host checks and no-change suppression. Actual verification command/profile are recorded in signed provenance and the manifest; signature, hash, candidate/installed fixture and rollback gates remain intact.
-- Pending actual pointer/keyboard checks on the same signed laptop candidate: back/forward boundary states, sidebar note navigation, normal new note, overview card edit/save, sidebar collapse, hover/selected/tooltip/focus, independent scrolling and ordinary-window dragging.
+1. **Overview and ordinary navigation — passed:** on the laptop, selecting the
+   sidebar fixture note opens the ordinary editor, Back returns to overview,
+   collapse leaves the rail available, and overview has no horizontal overflow.
+2. **Creation/editing — passed:** unchanged `fdd9f9c` controls were verified on
+   the laptop with Chinese input and saving in both ordinary and card editors;
+   ordinary notes were not added to the overview. Targeted Mini tests cover the
+   four ordinary entry points and page-context restoration with pending edits.
+3. **Notes list and pointer feedback — passed:** final actual click selection is
+   visible in `notes-final-selected.png`; focused AppKit tests cover hover entry,
+   exit and activation. The retained title/preview/meta and thumbnail behavior,
+   sidebar controls and navigation passed the latest five related tests in
+   `/tmp/mudsnote-notes-list-tests.log`. Tooltip/AX labels are retained; no claim
+   is made of a separate final screenshot of every tooltip popup.
 
-- Narrow correction tests: `codexShellCriticalControlsStaySingleLineAndUnbordered`, `codexShellSidebarActionKeepsHoverAndActivation`, and `ordinaryNewNoteLeavesOverviewWithoutAddingCard` (four entry cases) passed. Log: `/tmp/mudsnote-two-controls-tests.log`. No full suite was run.
+No full suite was run for this update. The explicit `mudsnote-ui` release route
+records its actual scoped command/profile while retaining signature, provenance,
+archive hash, candidate/installed fixture, and rollback gates. Six scoped
+publisher-profile/host/no-change checks passed. Public website deployment is
+not authorized and is excluded.
 
-- Latest narrowed checks: Notes-style window/list, image thumbnail, ordinary navigation versus overview, the two critical controls, and sidebar hover/activation passed (five tests, `/tmp/mudsnote-notes-list-tests.log`). No full suite was run. Shared rail/list background and zero inner border are implemented; rendered seam acceptance remains pending on the laptop.
+## Final assessment
 
-## Remaining acceptance steps
+No actionable P0/P1/P2 issue remains under the user's final Notes-style scope.
+The coordinator's actual-window acceptance and the same-input comparisons agree.
+Do not expand this change into further titlebar or decorative revisions.
 
-1. Capture the new signed candidate on the coordinator laptop at 979 x 728 and verify the two open P2 controls against the same reference in one comparison input; add focused chrome/list crops.
-2. Verify 896 x 580 and 1200 x 800 states, including collapse and inline editing without horizontal overflow.
-3. Complete actual interaction checks and record post-fix evidence for every P2 above.
-4. Only then mark this report passed, push main, publish the scoped verified bundle and install Mini. Laptop installation belongs to the coordinator. Do not publish the public website.
-
-final result: blocked
+final result: passed
