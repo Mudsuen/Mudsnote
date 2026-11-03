@@ -33,6 +33,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private var hasFinishedLaunching = false
     private var hasPendingReopen = false
     private var statusMenuRefreshTask: Task<Void, Never>?
+    private lazy var applicationUpdates = ApplicationUpdateController(arguments: launchArguments)
+    private var updateStatusMenuItem: NSMenuItem?
 
     override convenience init() {
         let arguments = Array(CommandLine.arguments.dropFirst())
@@ -83,6 +85,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         hasPendingReopen = false
         NSApp.setActivationPolicy(opensLibrary || opensExternalMarkdown ? .regular : .accessory)
         hasFinishedLaunching = true
+        applicationUpdates.check()
 
         if opensExternalMarkdown {
             let urls = pendingExternalMarkdownURLs
@@ -127,6 +130,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     /// the sender keeps its request queued instead of losing startup intents.
     func receiveInstanceRequest(_ request: InstanceRequest) -> Bool {
         guard hasFinishedLaunching else { return false }
+        applicationUpdates.check()
         let flags = Set(request.arguments)
         let urls = Self.markdownFileURLs(from: request.files)
         if !urls.isEmpty { openExternalMarkdownFiles(urls) }
@@ -187,7 +191,12 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             return true
         }
         showLibraryWindow()
+        applicationUpdates.check()
         return true
+    }
+
+    @objc private func checkForApplicationUpdates() {
+        applicationUpdates.check(manual: true)
     }
 
     func application(_ sender: NSApplication, openFiles filenames: [String]) {
@@ -325,6 +334,18 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         )
         aboutItem.target = NSApp
         appMenu.addItem(aboutItem)
+        let versionItem = NSMenuItem(title: ApplicationUpdateController.versionLabel, action: nil, keyEquivalent: "")
+        appMenu.addItem(versionItem)
+        let updateStatus = NSMenuItem(title: applicationUpdates.status, action: nil, keyEquivalent: "")
+        updateStatusMenuItem = updateStatus
+        appMenu.addItem(updateStatus)
+        applicationUpdates.onChange = { [weak self] in
+            guard let self else { return }
+            self.updateStatusMenuItem?.title = self.applicationUpdates.status
+        }
+        let updateItem = NSMenuItem(title: "检查更新…", action: #selector(checkForApplicationUpdates), keyEquivalent: "")
+        updateItem.target = self
+        appMenu.addItem(updateItem)
         appMenu.addItem(.separator())
 
         let settingsItem = NSMenuItem(title: "设置...", action: #selector(showPreferences), keyEquivalent: ",")
@@ -968,6 +989,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
     func validateMenuItem(_ menuItem: NSMenuItem) -> Bool {
         switch menuItem.action {
+        case #selector(checkForApplicationUpdates):
+            return applicationUpdates.enabled
         case #selector(saveDocumentFromMainMenu):
             return NSApp.keyWindow?.windowController is EditorWindowController
         case #selector(moveSelectedNotesFromMainMenu):

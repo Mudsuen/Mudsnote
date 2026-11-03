@@ -40,6 +40,7 @@ mkdir -p "${RESOURCES_DIR}/Fonts/SourceSansPro"
 cp "${ROOT_DIR}/assets/fonts/SourceSansPro/SourceSansPro-Regular.otf" "${RESOURCES_DIR}/Fonts/SourceSansPro/"
 cp "${ROOT_DIR}/assets/fonts/SourceSansPro/SourceSansPro-Semibold.otf" "${RESOURCES_DIR}/Fonts/SourceSansPro/"
 cp "${ROOT_DIR}/assets/fonts/SourceSansPro/LICENSE.txt" "${RESOURCES_DIR}/Fonts/SourceSansPro/"
+cp "${ROOT_DIR}/scripts/macos_update_check.py" "${RESOURCES_DIR}/macos_update_check.py"
 
 cat > "${CONTENTS_DIR}/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
