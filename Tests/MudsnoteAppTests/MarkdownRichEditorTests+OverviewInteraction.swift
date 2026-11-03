@@ -177,7 +177,7 @@ extension MarkdownRichEditorTests {
         let card = try #require(overview.cards[id])
         let point = card.convert(NSPoint(x: card.heading.frame.midX, y: card.heading.frame.midY), to: card.superview)
         #expect(card.hitTest(point) === card)
-        controller.toggleOverviewCard(id)
+        #expect(card.accessibilityPerformPress())
         for _ in 0..<100 where overview.selectedID != id { try await Task.sleep(for: .milliseconds(10)) }
         #expect(overview.selectedID == id)
         overview.setMapStyle(.ink)

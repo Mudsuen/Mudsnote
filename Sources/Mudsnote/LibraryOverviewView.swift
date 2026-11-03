@@ -203,7 +203,7 @@ import MudsnoteCore
         if isCompact && editor == nil { return self }
         return super.hitTest(point)
     }
-    override func accessibilityPerformPress() -> Bool { (selectNode ?? expand.invoke)?(); return true }
+    override func accessibilityPerformPress() -> Bool { expand.invoke?(); return true }
     override func rightMouseDown(with event: NSEvent) { more.invoke?() }
     override var acceptsFirstResponder: Bool { editor == nil }
     override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
