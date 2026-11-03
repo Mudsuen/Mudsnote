@@ -7,7 +7,6 @@ import UniformTypeIdentifiers
 
 extension LibraryWindowController {
     func buildUI() {
-        window?.acceptsMouseMovedEvents = true
         let sourceList = buildSourceList()
         let sidebar = buildSidebar()
         let navigation = buildNavigationSidebar(tree: sourceList, list: sidebar)

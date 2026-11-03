@@ -14,7 +14,7 @@ model; the latest request supersedes the earlier continuous rail/list surface.
 
 - A 50-point rail uses 36-point targets on a 44-point pitch, with fixed 18-point
   vector glyph bounds. Inactive strokes are secondary gray; hover and selection
-  use the primary foreground. Pointer events reconcile stale tracking states.
+  use the primary foreground. Tracking areas and pointer checks stay within each control’s own bounds.
 - All workspace pages share an sRGB #191919 surface. The outer rail/titlebar is
   #242424, cards #1E1E1E, hover #2B2B2B and rail selection #343434. The split
   divider uses #303030 instead of the native black seam. Gallery previews use

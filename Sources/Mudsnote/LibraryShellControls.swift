@@ -1,34 +1,22 @@
 import AppKit
 
-@MainActor protocol LibraryPointerFeedback: AnyObject {
-    func setPointerHovered(_ hovered: Bool)
-}
-
-/// Reconcile tracking areas after layout changes and pointer warps as well as
-/// ordinary enter/exit events. Weak participants do not retain closed windows.
+/// Unclipped AppKit views can have a visibleRect larger than their own bounds.
+/// Hover feedback must satisfy both rectangles, including after a relayout.
 @MainActor enum LibraryPointerTracking {
-    private static let views = NSHashTable<NSView>.weakObjects()
-    private static var monitor: Any?
+    static func contains(_ view: NSView, event: NSEvent) -> Bool {
+        guard let window = view.window, event.window === window else { return false }
+        return contains(view, location: event.locationInWindow)
+    }
 
-    static func register(_ view: NSView) {
-        views.add(view)
-        guard monitor == nil else { return }
-        monitor = NSEvent.addLocalMonitorForEvents(matching: [
-            .mouseEntered, .mouseExited, .mouseMoved,
-            .leftMouseDown, .rightMouseDown, .otherMouseDown,
-            .leftMouseDragged, .rightMouseDragged
-        ]) { event in
-            MainActor.assumeIsolated {
-                for view in views.allObjects {
-                    guard let feedback = view as? any LibraryPointerFeedback else { continue }
-                    let inside = event.window === view.window
-                        && !view.isHiddenOrHasHiddenAncestor
-                        && view.visibleRect.contains(view.convert(event.locationInWindow, from: nil))
-                    feedback.setPointerHovered(inside)
-                }
-            }
-            return event
-        }
+    static func containsPointer(in view: NSView) -> Bool {
+        guard let window = view.window else { return false }
+        return contains(view, location: window.mouseLocationOutsideOfEventStream)
+    }
+
+    private static func contains(_ view: NSView, location: NSPoint) -> Bool {
+        let point = view.convert(location, from: nil)
+        return !view.isHiddenOrHasHiddenAncestor
+            && view.bounds.contains(point) && view.visibleRect.contains(point)
     }
 }
 
@@ -38,7 +26,7 @@ import AppKit
 
 /// The sidebar action lays out its content as views; NSButtonCell never measures
 /// or wraps the title. The button remains the one keyboard/AX/hit-test target.
-@MainActor final class SidebarNewNoteButton: NSButton, LibraryPointerFeedback {
+@MainActor final class SidebarNewNoteButton: NSButton {
     let glyph = NSImageView()
     let label = NSTextField(labelWithString: "新建笔记")
     var invoke: (() -> Void)?
@@ -78,7 +66,6 @@ import AppKit
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             label.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
-        LibraryPointerTracking.register(self)
     }
     required init?(coder: NSCoder) { fatalError() }
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 32) }
@@ -90,12 +77,12 @@ import AppKit
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self)
         addTrackingArea(area); hoverArea = area
-        isPointerHovered = window.map { !isHiddenOrHasHiddenAncestor && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
+        isPointerHovered = LibraryPointerTracking.containsPointer(in: self)
         needsDisplay = true
     }
-    override func mouseEntered(with event: NSEvent) { isPointerHovered = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setPointerHovered(LibraryPointerTracking.contains(self, event: event)) }
     override func mouseExited(with event: NSEvent) { isPointerHovered = false; needsDisplay = true }
     func setPointerHovered(_ hovered: Bool) {
         guard isPointerHovered != hovered else { return }

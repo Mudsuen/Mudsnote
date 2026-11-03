@@ -1,7 +1,7 @@
 import AppKit
 import MudsnoteCore
 
-@MainActor final class OverviewActionButton: NSButton, LibraryPointerFeedback {
+@MainActor final class OverviewActionButton: NSButton {
     var invoke: (() -> Void)?
     private var hoverTrackingArea: NSTrackingArea?
     private(set) var isPointerHovered = false
@@ -9,13 +9,13 @@ import MudsnoteCore
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
         addTrackingArea(area)
         hoverTrackingArea = area
-        isPointerHovered = window.map { !isHiddenOrHasHiddenAncestor && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
+        isPointerHovered = LibraryPointerTracking.containsPointer(in: self)
         needsDisplay = true
     }
-    override func mouseEntered(with event: NSEvent) { isPointerHovered = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setPointerHovered(LibraryPointerTracking.contains(self, event: event)) }
     override func mouseExited(with event: NSEvent) { isPointerHovered = false; needsDisplay = true }
     func setPointerHovered(_ hovered: Bool) {
         guard isPointerHovered != hovered else { return }
@@ -44,13 +44,12 @@ import MudsnoteCore
             imagePosition = title.isEmpty ? .imageOnly : .imageLeading
         }
         setAccessibilityLabel(title)
-        LibraryPointerTracking.register(self)
     }
     required init?(coder: NSCoder) { fatalError() }
     @objc private func pressed() { invoke?() }
 }
 
-@MainActor final class OverviewCardView: NSView, LibraryPointerFeedback {
+@MainActor final class OverviewCardView: NSView {
     let cardID: UUID
     let heading = NSTextField(labelWithString: "")
     let preview = NSTextField(wrappingLabelWithString: "")
@@ -64,13 +63,13 @@ import MudsnoteCore
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverTrackingArea { removeTrackingArea(hoverTrackingArea) }
-        let area = NSTrackingArea(rect: .zero, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self, userInfo: nil)
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self, userInfo: nil)
         addTrackingArea(area)
         hoverTrackingArea = area
-        isPointerHovered = window.map { !isHiddenOrHasHiddenAncestor && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
+        isPointerHovered = LibraryPointerTracking.containsPointer(in: self)
         needsDisplay = true
     }
-    override func mouseEntered(with event: NSEvent) { isPointerHovered = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setPointerHovered(LibraryPointerTracking.contains(self, event: event)) }
     override func mouseExited(with event: NSEvent) { isPointerHovered = false; needsDisplay = true }
     func setPointerHovered(_ hovered: Bool) {
         guard isPointerHovered != hovered else { return }
@@ -102,7 +101,6 @@ import MudsnoteCore
         association.lineBreakMode = .byTruncatingTail
         [heading, preview, expand, more, association].forEach(addSubview)
         setAccessibilityIdentifier("OverviewCard-" + id.uuidString)
-        LibraryPointerTracking.register(self)
     }
     required init?(coder: NSCoder) { fatalError() }
     override func updateLayer() {

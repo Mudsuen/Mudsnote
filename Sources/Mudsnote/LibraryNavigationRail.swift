@@ -70,7 +70,7 @@ import AppKit
     }
 }
 
-@MainActor final class LibraryRailButton: NSButton, LibraryPointerFeedback {
+@MainActor final class LibraryRailButton: NSButton {
     let symbolName: String
     var invoke: (() -> Void)?
     var selected = false {
@@ -100,7 +100,6 @@ import AppKit
         setAccessibilityLabel(title)
         target = self
         self.action = #selector(pressed)
-        LibraryPointerTracking.register(self)
     }
     required init?(coder: NSCoder) { fatalError() }
     private func updateTint() {
@@ -114,12 +113,12 @@ import AppKit
     override func updateTrackingAreas() {
         super.updateTrackingAreas()
         if let hoverArea { removeTrackingArea(hoverArea) }
-        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways, .inVisibleRect], owner: self)
+        let area = NSTrackingArea(rect: bounds, options: [.mouseEnteredAndExited, .activeAlways], owner: self)
         addTrackingArea(area); hoverArea = area
-        hovered = window.map { !isHiddenOrHasHiddenAncestor && visibleRect.contains(convert($0.mouseLocationOutsideOfEventStream, from: nil)) } ?? false
+        hovered = LibraryPointerTracking.containsPointer(in: self)
         needsDisplay = true
     }
-    override func mouseEntered(with event: NSEvent) { hovered = true; needsDisplay = true }
+    override func mouseEntered(with event: NSEvent) { setPointerHovered(LibraryPointerTracking.contains(self, event: event)) }
     override func mouseExited(with event: NSEvent) { hovered = false; needsDisplay = true }
     override func draw(_ dirtyRect: NSRect) {
         updateTint()
