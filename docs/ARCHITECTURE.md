@@ -1,6 +1,6 @@
 # Mudsnote Architecture
 
-This is the stable architecture map. Use it to choose a task boundary; use
+This is the architecture map. Use it to choose a task boundary; use
 `./scripts/agent_context.sh <topic> [regex]` to get the smallest working set.
 Historical changes do not belong here.
 
@@ -31,7 +31,7 @@ product contract but do not share a compiled UI or persistence module.
 - `MudsnoteCore`: Foundation-only models, settings, migration, Markdown file I/O,
   drafts, search, and optional local AI commands.
 - `Mudsnote`: the AppKit executable, app routing, quick capture, library window,
-  rich editor, supporting windows, and packaging resources.
+  rich editor, supporting windows, packaging, and Devflow-delegated updates.
 
 Dependency direction:
 

@@ -17,7 +17,10 @@ extension LibraryWindowController {
     }
 
     @discardableResult func beginLibraryPageNavigation() -> Bool {
-        guard commitOverviewEditor() else { return false }
+        // Ordinary note selection already hands matching writes to the
+        // background autosave path. Only an embedded overview editor needs
+        // the synchronous commit before its view is detached.
+        if isShowingOverview, !commitOverviewEditor() { return false }
         guard !isRestoringLibraryPage, hasRequestedWindowPresentation else { return true }
         let page = currentLibraryPage
         if pageBackStack.last != page { pageBackStack.append(page) }

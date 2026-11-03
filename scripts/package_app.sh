@@ -36,6 +36,7 @@ cp "${BIN_DIR}/mudsnote" "${MACOS_DIR}/Mudsnote"
 chmod +x "${MACOS_DIR}/Mudsnote"
 cp "${ROOT_DIR}/assets/generated/MudsnoteAppIcon.icns" "${RESOURCES_DIR}/MudsnoteAppIcon.icns"
 cp "${ROOT_DIR}/assets/generated/MudsnoteStatusTemplate.png" "${RESOURCES_DIR}/MudsnoteStatusTemplate.png"
+cp "${ROOT_DIR}/scripts/macos_update_check.py" "${RESOURCES_DIR}/macos_update_check.py"
 
 cat > "${CONTENTS_DIR}/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>

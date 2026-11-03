@@ -20,3 +20,13 @@ The new hierarchy, switch/fold/save, note creation, navigation, and pointer
 checks pass via `./scripts/verify macos ui` (18 tests). Delivery uses these scoped
 checks and synthetic-window acceptance; do not describe the full PR gate as
 passing. No verification controller or unrelated navigation code was changed.
+
+## Resolution — 2026-11-04
+
+The startup-update delivery work repaired both blockers rather than publishing
+another scoped-only bundle. Ordinary navigation no longer calls the synchronous
+overview editor drain; existing background handoff and failed-write exit tests
+pass. The embedded split view retains a low-priority width preference after
+programmatic divider changes, so Auto Layout no longer resets it to minimum
+width. The unmodified split persistence test passes. `verify macos pr` passes
+402 Swift tests plus 18 synthetic Python updater tests.

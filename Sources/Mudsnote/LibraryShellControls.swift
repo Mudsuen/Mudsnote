@@ -22,6 +22,22 @@ import AppKit
 
 @MainActor final class LibraryWorkspaceSplitView: NSSplitView {
     override var dividerColor: NSColor { LibraryNotesPalette.separator }
+    private var preferredSidebarWidth: NSLayoutConstraint?
+
+    override func setPosition(_ position: CGFloat, ofDividerAt dividerIndex: Int) {
+        super.setPosition(position, ofDividerAt: dividerIndex)
+        guard dividerIndex == 0, let sidebar = arrangedSubviews.first, !sidebar.isHidden else { return }
+        // The split controller is embedded in an Auto Layout shell. A frame-only
+        // divider change otherwise snaps back to minimum width on the next pass.
+        if preferredSidebarWidth == nil {
+            let constraint = sidebar.widthAnchor.constraint(equalToConstant: sidebar.frame.width)
+            constraint.priority = NSLayoutConstraint.Priority(rawValue: 251)
+            constraint.isActive = true
+            preferredSidebarWidth = constraint
+        } else {
+            preferredSidebarWidth?.constant = sidebar.frame.width
+        }
+    }
 }
 
 /// A compact compose action sharing the sidebar heading with search.

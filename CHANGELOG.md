@@ -11,6 +11,18 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-04 — Check private application updates on launch
+
+- Problem: Macs could remain on different builds until a periodic delivery
+  check, and the fixed marketing version hid their exact installed revision.
+- Fix: check published updates in the background at launch and Dock reopen;
+  add manual checking and revision/status in the app menu. Use the existing
+  private verified-bundle service to install after exit without interrupting
+  editing. Honor system proxies in GUI-launched checks. Restore nonblocking
+  ordinary note navigation and persisted sidebar widths to unblock full verification.
+- Lesson: source synchronization, private bundle publication and recipient
+  installation are distinct stages; the app must expose its actual state.
+
 ## 2026-11-03 — Keep the Mubu recreation scoped to the overview
 
 - Problem: the Mubu reference was applied to the whole window before the user's
