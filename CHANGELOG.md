@@ -11,6 +11,16 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-03 — Keep the Mubu recreation scoped to the overview
+
+- Problem: the Mubu reference was applied to the whole window before the user's
+  scope reply arrived; the requested scope is only the overview map and outline.
+- Fix: restore the existing icon rail, search entry, note-list previews, metadata
+  and thumbnails. Retain the requested icon-only compose action in the sidebar
+  heading, and keep the Mubu-style overview, folding, zoom and inline editing.
+- Lesson: preserve the existing library presentation when the selected reference
+  applies to one content surface.
+
 ## 2026-11-03 — Mubu-style document workspace and hierarchical overview
 
 - Problem: a full-width new-note row took space from the sidebar, and overview

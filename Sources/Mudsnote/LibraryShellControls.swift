@@ -41,7 +41,7 @@ import AppKit
         toolTip = "新建笔记"
         setAccessibilityLabel("新建笔记")
         target = self; self.action = #selector(pressed)
-        glyph.image = NSImage(systemSymbolName: "plus.circle.fill", accessibilityDescription: "新建笔记")?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
+        glyph.image = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: "新建笔记")?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
         glyph.contentTintColor = .labelColor
         glyph.imageScaling = .scaleNone
         glyph.setAccessibilityElement(false)

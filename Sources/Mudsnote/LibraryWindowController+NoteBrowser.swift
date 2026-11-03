@@ -39,7 +39,6 @@ extension LibraryWindowController {
             cell.identifier = identifier
         }
 
-        cell.useCompactDocumentPresentation()
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         cell.titleLabel.attributedStringValue = highlightedSearchString(
             noteListDisplayTitle(for: note),
@@ -60,7 +59,6 @@ extension LibraryWindowController {
         cell.metaLabel.stringValue = noteListFolderText(for: note)
         cell.toolTip = noteListDisplayTitle(for: note) + "\n" + noteListSnippetText(for: note) + "\n" + noteListFolderText(for: note)
         cell.setAccessibilityHelp(cell.toolTip)
-        cell.useCompactDocumentPresentation()
         return cell
     }
 

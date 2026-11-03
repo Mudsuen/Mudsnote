@@ -1,4 +1,11 @@
-# Mubu reference UI verification — macOS
+# Mubu overview UI verification — macOS
+
+## Confirmed scope
+
+The user selected **only the overview mind map and outline**. The existing
+library icon rail, search entry, note previews, metadata and thumbnails are
+restored. The originally requested icon-only new-note action stays in the sidebar
+heading. Mubu's sidebar is outside this comparison.
 
 ## Target and evidence
 
@@ -27,29 +34,32 @@
 1. The initial grid differed in its main composition. Replaced it with one
    ownership tree shared by map and outline, then compared official and native
    captures in the same tool output.
-2. Replaced generic cards and the large segmented switch with a purple root,
-   tinted outlined topics, underlined text leaves, a compact top-right switch,
-   breadcrumbs and a floating zoom panel. Removed the outer icon rail in favor
-   of labeled sidebar navigation and compact document rows.
+2. Replaced generic overview cards and the large segmented switch with a purple
+   root, tinted outlined topics, underlined text leaves, a compact top-right
+   switch, breadcrumbs and a floating zoom panel.
 3. The next captures showed an inset search field that did not fill the sidebar,
    and inconsistent outline bullet indentation. Bound the search row to the
    sidebar width, and gave branches and note leaves separate aligned bullet views.
-   Post-fix captures at 896 × 580 points show a full-width search field and aligned branch/note bullets. The geometry regression assertion also passes.
+4. After the scope reply, restored the original library presentation. Captures at
+   896 × 580 points show the original icon rail and title/preview/metadata rows
+   beside the retained Mubu outline. The new-note icon remains in the heading.
+   The search action hides its redundant trigger while revealing the existing
+   search field, so the extra compose icon does not widen the sidebar.
 
 ## Required fidelity surfaces
 
 - Typography: native system/CJK fallback; 28-point outline title, 16-point outline
-  rows, 15-point map topics/leaves, 18-point map root and 13-point sidebar rows.
+  rows, 15-point map topics/leaves, 18-point map root. The original library typography is outside the recreation scope.
   Hierarchy, wrapping and truncation are checked visually; the raster reference
   does not identify its exact font family.
-- Layout rhythm: compact sidebar, persistent search and icon-only compose action;
-  32-point document rows; centered outline column with 24-point nesting; automatic
-  tree layout with curved branches and viewport fitting. Native titlebar controls
-  and Mudsnote's existing document tabs are retained.
+- Layout rhythm: centered overview outline column with 24-point nesting;
+  automatic map layout with curved branches and viewport fitting. The original
+  library rail, search entry, 68-point note rows and native titlebar/document tabs
+  remain outside the Mubu recreation.
 - Colors: purple root and lavender branches/topic borders follow the reference;
   dark surfaces retain the existing app palette. Hover and keyboard focus have
   distinct feedback; the source's light palette is not used to judge dark colors.
-- Assets: SF Symbols provide document, navigation, disclosure and toolbar icons.
+- Assets: SF Symbols provide overview disclosure and toolbar icons.
   No reference illustrations or logos are required; text, branches and outlines
   are live AppKit content rather than bitmap substitutes.
 - Copy/content: Mudsnote's name, areas, principles and original Markdown notes are
@@ -60,7 +70,7 @@
 
 - `./scripts/verify macos ui`: 18 targeted tests cover creation, navigation,
   persistence, map/outline hierarchy, folding, inline edits, conflict protection
-  and pointer feedback, including the final full-width search geometry assertion. All 18 tests pass on the final source.
+  and pointer feedback. The follow-up also checks that revealing search keeps the sidebar width and new-note icon. All 18 targeted tests pass on the scope-corrected source.
 - Earlier real-window checks confirmed Chinese edits survive view switching and
   folding, and persist to the original note's current path after rename.
 - The full PR gate is limited by pre-existing sidebar restoration and blocked
@@ -70,8 +80,12 @@
 
 ## Final acceptance
 
-- No actionable P0/P1/P2 findings remain within the native adaptation scope.
-- Final real-window checks passed at 896 × 580 points: an existing note opens
+- No actionable P0/P1/P2 findings remain within the confirmed overview-only scope.
+- Follow-up native-window verification at 896 × 580 points confirms the original
+  rail and title/preview/metadata note rows. Clicking Search reveals the existing
+  field while the sidebar remains exactly 238 points wide and the compose icon
+  stays visible. Map/outline switching is functional with the restored shell.
+- Earlier overview real-window checks passed at 896 × 580 points: an existing note opens
   from an outline bullet; pasted Chinese edits survive a switch to the map with
   focus retained; folding its parent saves and hides the edited subtree; expanding
   restores it; zoom changes from 100% to 110% and Fit returns to 100%; search finds

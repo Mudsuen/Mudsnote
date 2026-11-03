@@ -231,13 +231,12 @@ extension MarkdownRichEditorTests {
         }
         _ = controller.setSourceListVisibleForLibrary(false)
         controller.window?.contentView?.layoutSubtreeIfNeeded()
-        #expect(controller.navigationRail?.isHiddenOrHasHiddenAncestor == true)
+        #expect(controller.navigationRail?.isHiddenOrHasHiddenAncestor == false)
         #expect(controller.sourceListView?.isHiddenOrHasHiddenAncestor == true)
         _ = controller.setSourceListVisibleForLibrary(true)
         let cell = try #require(controller.noteCell(for: note, tableView: controller.tableView) as? LibraryNoteCellView)
         #expect(cell.toolTip?.contains("Read me") == true)
-        #expect(!cell.titleLabel.isHidden && cell.snippetLabel.isHidden && cell.metaLabel.isHiddenOrHasHiddenAncestor)
-        #expect(!cell.documentImageView.isHidden)
+        #expect(!cell.titleLabel.isHidden && !cell.snippetLabel.isHidden && !cell.metaLabel.isHidden)
     }
 }
 
@@ -263,12 +262,17 @@ extension MarkdownRichEditorTests {
             #expect(button.subviews.count == 1)
             let heading = try #require(button.superview as? NSStackView)
             #expect(heading.arrangedSubviews.contains(controller.sidebarLibraryTitle))
-            let sidebar = try #require(controller.sourceListView)
-            #expect(abs(controller.searchField.bounds.width - (sidebar.bounds.width - 24)) < 2)
             let point = button.convert(NSPoint(x: button.glyph.frame.midX, y: button.glyph.frame.midY), to: button.superview)
             #expect(button.hitTest(point) === button)
         }
         #expect(button.accessibilityLabel() == "新建笔记")
+        let sidebar = try #require(controller.sourceListView)
+        let widthBeforeSearch = sidebar.frame.width
+        let search = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "LibrarySidebarSearch" })
+        search.performClick(nil)
+        window.contentView?.layoutSubtreeIfNeeded()
+        #expect(abs(sidebar.frame.width - widthBeforeSearch) < 1)
+        #expect(!controller.searchField.isHidden && !button.isHidden)
         let titleItem = try #require(window.toolbar?.items.first { $0.itemIdentifier == LibraryWindowController.pageTitleToolbarItemIdentifier })
         #expect(!titleItem.isBordered && titleItem.isEnabled && !titleItem.autovalidates)
         #expect(titleItem.view === controller.toolbarPageTitle)

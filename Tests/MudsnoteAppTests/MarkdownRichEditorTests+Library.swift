@@ -824,9 +824,10 @@ extension MarkdownRichEditorTests {
         #expect(NSApp.sendAction(try #require(dateSortItem.action), to: dateSortItem.target, from: dateSortItem))
         #expect(controller.groupsNoteListByDate)
         #expect(controller.noteListSortOrder == .dateEdited)
+        let searchButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "LibrarySidebarSearch" })
+        searchButton.performClick(nil)
         let toolbarSearchField = controller.searchField
         #expect(!toolbarSearchField.isHidden)
-        #expect(window.makeFirstResponder(toolbarSearchField))
         #expect(toolbarSearchField.font?.pointSize == 14)
         #expect(toolbarSearchField.placeholderString == "搜索")
         #expect(toolbarSearchField.accessibilityLabel() == "搜索笔记")
@@ -1076,7 +1077,7 @@ extension MarkdownRichEditorTests {
         #expect(controller.tableView(controller.tableView, heightOfRow: 0) == LibraryNotesLayout.noteGroupRowHeight)
         #expect(LibraryNotesLayout.noteGroupRowHeight == 30)
         #expect(controller.tableView(controller.tableView, heightOfRow: 1) == LibraryNotesLayout.noteRowHeight)
-        #expect(LibraryNotesLayout.noteRowHeight == 32)
+        #expect(LibraryNotesLayout.noteRowHeight == 68)
         let notePasteboardWriter = try #require(controller.tableView(controller.tableView, pasteboardWriterForRow: 1) as? NSURL)
         #expect(notePasteboardWriter as URL == noteURL)
         let noteRowView = try #require(controller.tableView(controller.tableView, rowViewForRow: 1) as? LibraryNoteRowView)
@@ -1137,8 +1138,8 @@ extension MarkdownRichEditorTests {
         #expect(LibraryNoteCellView.textRowSpacing == 2.5)
         #expect(LibraryNotesLayout.noteGroupFontSize == 12)
         #expect(LibraryNotesLayout.noteGroupFontWeight == .medium)
-        #expect(LibraryNotesLayout.noteTitleFontSize == 13)
-        #expect(LibraryNotesLayout.noteTitleFontWeight == .regular)
+        #expect(LibraryNotesLayout.noteTitleFontSize == 14)
+        #expect(LibraryNotesLayout.noteTitleFontWeight == .medium)
         #expect(LibraryNotesLayout.noteSnippetFontSize == 12)
         #expect(LibraryNotesLayout.noteSnippetFontWeight == .regular)
         #expect(LibraryNotesLayout.noteMetaFontSize == 12)
@@ -1165,7 +1166,6 @@ extension MarkdownRichEditorTests {
         let availableTextWidth = firstNoteCell.bounds.width
             - LibraryNoteCellView.contentLeadingInset
             - LibraryNoteCellView.contentTrailingInset
-            - 22 // Document symbol and spacing in the compact sidebar.
         #expect(titleFrameInCell.width >= availableTextWidth - 4.5)
         let titleDrawingRect = try #require(firstNoteCell.titleLabel.cell?.drawingRect(
             forBounds: firstNoteCell.titleLabel.bounds
@@ -4376,9 +4376,7 @@ extension MarkdownRichEditorTests {
         ) as? LibraryNoteCellView)
 
         #expect(controller.noteListSearchResultsForLibrary().first?.thumbnailURL?.path == imageURL.standardizedFileURL.path)
-        // The compact document sidebar keeps thumbnails out of its single-line
-        // rows while retaining the cached image and the editor's attachment.
-        #expect(cell.thumbnailImageView.isHidden)
+        #expect(!cell.thumbnailImageView.isHidden)
         #expect(cell.thumbnailImageView.image != nil)
         #expect(cell.thumbnailImageView.constraints.contains {
             $0.firstAttribute == .width && $0.constant == 44

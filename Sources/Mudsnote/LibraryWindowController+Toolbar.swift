@@ -15,8 +15,7 @@ extension LibraryWindowController {
         searchField.delegate = self
         searchField.target = self
         searchField.action = #selector(searchFieldAction(_:))
-        searchField.isBordered = false
-        searchField.isBezeled = true
+        searchField.isBordered = true
         searchField.bezelStyle = .roundedBezel
         searchField.focusRingType = .default
         searchField.translatesAutoresizingMaskIntoConstraints = false
@@ -26,9 +25,7 @@ extension LibraryWindowController {
             width: LibraryNotesLayout.toolbarSearchWidth,
             height: LibraryNotesLayout.toolbarSearchHeight
         )
-        let preferredWidth = searchField.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWidth)
-        preferredWidth.priority = .defaultLow
-        preferredWidth.isActive = true
+        searchField.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWidth).isActive = true
         searchField.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchHeight).isActive = true
 
         let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
