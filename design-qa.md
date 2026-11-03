@@ -62,9 +62,11 @@ the normal save/conflict path and restores editor appearance when leaving overvi
 - Affected check: `./scripts/verify macos ui` passed all 22 tests on the final
   source, including bundled font names, five-level moves/focus/undo, IME completion,
   independent modes, long-label layout, descriptions and canonical-note preservation.
-- All 12 installer/update unit tests passed; the packaging script passes shell
-  syntax validation. Native signed-candidate/font-resource acceptance remains
-  pending and no installation has been performed for this candidate.
+- Merged installer/update checks pass all 18 Python tests; packaging syntax
+  validation passes. The combined candidate passes deep/strict signature checks,
+  team `3JA29GL46S`, and the installed app's designated requirement. Both fonts,
+  license and `macos_update_check.py` match their source bytes; CoreText loads both
+  fonts from the actual bundle. No installation or private publication occurred.
 - Recovery tests cover legacy overview rewrites and malformed canonical metadata;
   recovery data is retained without silently replacing user state.
 - Integrated remote `524302f` (startup update checks and prior navigation/sidebar
@@ -91,6 +93,8 @@ the normal save/conflict path and restores editor appearance when leaving overvi
 2. Exercise native five-level edits, folds, drag/drop, focus, undo and linked saves.
 3. Fix observed P0/P1/P2 differences and recapture.
 4. Trash the disposable source document and restore the original source tab.
-5. Verify the signed candidate and font resources, then deliver macOS only.
+5. Reverify the exact final candidate after visual fixes, then deliver the main
+   commit to the coordinating Mac mini chat. That chat owns installation and
+   private distribution; this chat does not operate the Mini app.
 
 final result: blocked

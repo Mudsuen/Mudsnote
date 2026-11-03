@@ -41,3 +41,10 @@ actual Search entry and passes in the merged suite.
 The coordinating Mac mini chat owns final installation/private publication. This
 chat must not publish Devflow bundles or modify the Mini's installed app. Do not
 push main until the pending native gates pass.
+
+Static combined-candidate acceptance passes: deep/strict signature, team
+`3JA29GL46S`, installed designated requirement continuity, exact font/license and
+update-helper bytes, helper Python syntax, and actual bundled font loading through
+CoreText. This does not replace native window acceptance. The current snapshot
+and candidate path are in `/tmp/mudsnote-live-candidate-verification.json`; no
+installed app or private release was modified.
