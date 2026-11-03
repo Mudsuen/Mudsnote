@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 
 extension LibraryWindowController {
     func buildUI() {
+        _ = buildOverviewRail()
         let sourceList = buildSourceList()
         let sidebar = buildSidebar()
         let navigation = buildNavigationSidebar(tree: sourceList, list: sidebar)
@@ -43,7 +44,7 @@ extension LibraryWindowController {
         librarySplitView = splitController.splitView
         let shell = NSViewController()
         shell.addChild(splitController)
-        shell.view = LibraryShellView(rail: buildOverviewRail(), content: splitController.view)
+        shell.view = LibraryShellView(content: splitController.view)
         window?.contentViewController = shell
         hostEditorSuggestionView(in: shell.view)
         NotificationCenter.default.addObserver(
@@ -87,40 +88,28 @@ extension LibraryWindowController {
         tree.translatesAutoresizingMaskIntoConstraints = false
         list.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(tint)
-        sidebarLibraryTitle.font = .systemFont(ofSize: 18, weight: .semibold)
-        let searchButton = OverviewActionButton("", symbol: "magnifyingglass") { [weak self] in
-            guard let self else { return }
-            self.sidebarLibraryTitle.isHidden = true
-            self.searchField.isHidden = false
-            self.window?.makeFirstResponder(self.searchField)
-        }
-        searchButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarSearch")
-        searchButton.isBordered = false
-        searchButton.toolTip = "搜索笔记"
-        searchButton.setAccessibilityLabel("搜索笔记")
-        searchButton.image = searchButton.image?.withSymbolConfiguration(.init(pointSize: 18, weight: .regular))
-        searchButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
+        sidebarLibraryTitle.stringValue = "Mudsnote"
+        sidebarLibraryTitle.font = .systemFont(ofSize: 14, weight: .semibold)
+        let newNote = SidebarNewNoteButton { [weak self] in self?.createNewNoteForLibrary() }
+        newNote.identifier = NSUserInterfaceItemIdentifier("OverviewRail-square.and.pencil")
+        newNote.widthAnchor.constraint(equalToConstant: 28).isActive = true
         let headingSpacer = NSView()
-        let heading = NSStackView(views: [sidebarLibraryTitle, searchField, headingSpacer, searchButton])
-        searchField.isHidden = true
+        let heading = NSStackView(views: [sidebarLibraryTitle, headingSpacer, newNote])
+        searchField.isHidden = false
+        searchField.placeholderString = "搜索笔记"
+        for constraint in searchField.constraints where constraint.firstAttribute == .width { constraint.isActive = false }
+        let searchRow = NSStackView(views: [searchField])
+        searchRow.orientation = .horizontal
+        searchRow.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 8, right: 12)
+        searchRow.heightAnchor.constraint(equalToConstant: 36).isActive = true
+        searchField.widthAnchor.constraint(equalTo: searchRow.widthAnchor, constant: -24).isActive = true
         heading.orientation = .horizontal; heading.spacing = 4
         heading.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 12)
         heading.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        let newNote = SidebarNewNoteButton { [weak self] in self?.createNewNoteForLibrary() }
-        newNote.identifier = NSUserInterfaceItemIdentifier("OverviewRail-square.and.pencil")
-        let newRow = NSView()
-        newRow.addSubview(newNote)
-        newNote.translatesAutoresizingMaskIntoConstraints = false
-        newRow.heightAnchor.constraint(equalToConstant: 32).isActive = true
-        NSLayoutConstraint.activate([
-            newNote.leadingAnchor.constraint(equalTo: newRow.leadingAnchor, constant: 12),
-            newNote.trailingAnchor.constraint(equalTo: newRow.trailingAnchor, constant: -12),
-            newNote.topAnchor.constraint(equalTo: newRow.topAnchor),
-            newNote.bottomAnchor.constraint(equalTo: newRow.bottomAnchor)
-        ])
-        let sidebarChrome = NSStackView(views: [heading, newRow, sidebarHeaderView])
+        let sidebarChrome = NSStackView(views: [heading, searchRow] + (navigationRail.map { [$0] } ?? []) + [sidebarHeaderView])
+        searchRow.widthAnchor.constraint(equalTo: sidebarChrome.widthAnchor).isActive = true
+        navigationRail?.heightAnchor.constraint(equalToConstant: 164).isActive = true
         sidebarChrome.orientation = .vertical; sidebarChrome.alignment = .width; sidebarChrome.spacing = 4
-        newRow.widthAnchor.constraint(equalTo: sidebarChrome.widthAnchor).isActive = true
         container.addSubview(sidebarChrome)
         sidebarChrome.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(modeContainer)

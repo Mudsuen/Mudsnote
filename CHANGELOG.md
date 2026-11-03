@@ -11,6 +11,22 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-03 — Mubu-style document workspace and hierarchical overview
+
+- Problem: a full-width new-note row took space from the sidebar, and overview
+  cards were laid out as a grid without expressing area ownership. The requested
+  reference also called for a compact document sidebar and an outline layout.
+- Fix: place an icon-only compose action beside the sidebar heading, with
+  persistent search, labeled navigation and single-line document rows. Match the
+  reference's purple root, outlined topics, underlined leaf nodes, bullet outline,
+  compact view switch and floating zoom controls. Show the
+  overview as a connected life/area/subarea/note tree, with an outline switch,
+  collapsible branches, map zoom and fit. Reuse original notes and the inline
+  editor; save before switching or folding an edited branch, and remember the
+  selected presentation.
+- Lesson: map and outline must project one ownership tree; associations must
+  not duplicate notes or introduce a second save path.
+
 ## 2026-11-03 — Consistent workspace surfaces and compact navigation
 
 - Problem: rail icons were too large and stayed dim on hover; changing pages

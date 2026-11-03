@@ -130,6 +130,11 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryNoteViewMode) }
     }
 
+    public var libraryOverviewModeRawValue: Int {
+        get { defaults.integer(forKey: NoteStoreDefaultsKey.libraryOverviewMode) }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryOverviewMode) }
+    }
+
     public var libraryIncludesSubfolderNotes: Bool {
         get { defaults.object(forKey: NoteStoreDefaultsKey.libraryIncludesSubfolderNotes) as? Bool ?? true }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryIncludesSubfolderNotes) }

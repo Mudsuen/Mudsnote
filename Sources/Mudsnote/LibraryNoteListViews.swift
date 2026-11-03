@@ -71,6 +71,18 @@ final class LibraryNoteCellView: NSTableCellView {
     let folderImageView = NSImageView()
     let attachmentImageView = NSImageView()
     let thumbnailImageView = NSImageView()
+    let documentImageView = NSImageView()
+    private let metaRow = NSStackView()
+    private let stack = NSStackView()
+
+    func useCompactDocumentPresentation() {
+        titleLabel.font = .systemFont(ofSize: 13, weight: .regular)
+        snippetLabel.isHidden = true
+        metaRow.isHidden = true
+        thumbnailImageView.isHidden = true
+        documentImageView.isHidden = false
+        stack.edgeInsets = NSEdgeInsets(top: 3, left: 16, bottom: 3, right: 18)
+    }
 
     override init(frame frameRect: NSRect) {
         super.init(frame: frameRect)
@@ -122,7 +134,7 @@ final class LibraryNoteCellView: NSTableCellView {
         thumbnailImageView.layer?.borderColor = NSColor.separatorColor.withAlphaComponent(0.45).cgColor
         thumbnailImageView.isHidden = true
 
-        let metaRow = NSStackView(views: [folderImageView, metaLabel, attachmentImageView])
+        [folderImageView, metaLabel, attachmentImageView].forEach(metaRow.addArrangedSubview)
         metaRow.orientation = .horizontal
         metaRow.alignment = .centerY
         metaRow.spacing = 4
@@ -137,7 +149,12 @@ final class LibraryNoteCellView: NSTableCellView {
             label.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         }
 
-        let stack = NSStackView(views: [textStack, thumbnailImageView])
+        documentImageView.image = NSImage(systemSymbolName: "doc.text", accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: 12, weight: .regular))
+        documentImageView.contentTintColor = .secondaryLabelColor
+        documentImageView.isHidden = true
+        documentImageView.setAccessibilityElement(false)
+        [documentImageView, textStack, thumbnailImageView].forEach(stack.addArrangedSubview)
         stack.orientation = .horizontal
         stack.alignment = .centerY
         stack.distribution = .fill
@@ -161,6 +178,8 @@ final class LibraryNoteCellView: NSTableCellView {
         attachmentImageView.heightAnchor.constraint(equalToConstant: 12).isActive = true
         thumbnailImageView.widthAnchor.constraint(equalToConstant: 44).isActive = true
         thumbnailImageView.heightAnchor.constraint(equalToConstant: 44).isActive = true
+        documentImageView.widthAnchor.constraint(equalToConstant: 14).isActive = true
+        documentImageView.heightAnchor.constraint(equalToConstant: 16).isActive = true
     }
 
     @available(*, unavailable)

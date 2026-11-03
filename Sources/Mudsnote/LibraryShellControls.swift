@@ -24,11 +24,9 @@ import AppKit
     override var dividerColor: NSColor { LibraryNotesPalette.separator }
 }
 
-/// The sidebar action lays out its content as views; NSButtonCell never measures
-/// or wraps the title. The button remains the one keyboard/AX/hit-test target.
+/// A compact compose action sharing the sidebar heading with search.
 @MainActor final class SidebarNewNoteButton: NSButton {
     let glyph = NSImageView()
-    let label = NSTextField(labelWithString: "新建笔记")
     var invoke: (() -> Void)?
     private var hoverArea: NSTrackingArea?
     private(set) var isPointerHovered = false
@@ -43,32 +41,21 @@ import AppKit
         toolTip = "新建笔记"
         setAccessibilityLabel("新建笔记")
         target = self; self.action = #selector(pressed)
-        glyph.image = NSImage(systemSymbolName: "square.and.pencil", accessibilityDescription: "新建笔记")?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
+        glyph.image = NSImage(systemSymbolName: "plus.circle.fill", accessibilityDescription: "新建笔记")?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
         glyph.contentTintColor = .labelColor
         glyph.imageScaling = .scaleNone
-        label.font = .systemFont(ofSize: 14, weight: .regular)
-        label.textColor = .labelColor
-        label.maximumNumberOfLines = 1
-        label.lineBreakMode = .byTruncatingTail
-        label.cell?.wraps = false
-        label.cell?.usesSingleLineMode = true
-        for view in [glyph, label] {
-            view.setAccessibilityElement(false)
-            view.translatesAutoresizingMaskIntoConstraints = false
-            addSubview(view)
-        }
+        glyph.setAccessibilityElement(false)
+        glyph.translatesAutoresizingMaskIntoConstraints = false
+        addSubview(glyph)
         NSLayoutConstraint.activate([
-            glyph.leadingAnchor.constraint(equalTo: leadingAnchor, constant: 8),
+            glyph.centerXAnchor.constraint(equalTo: centerXAnchor),
             glyph.centerYAnchor.constraint(equalTo: centerYAnchor),
             glyph.widthAnchor.constraint(equalToConstant: 18),
-            glyph.heightAnchor.constraint(equalToConstant: 18),
-            label.leadingAnchor.constraint(equalTo: glyph.trailingAnchor, constant: 8),
-            label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
-            label.centerYAnchor.constraint(equalTo: centerYAnchor)
+            glyph.heightAnchor.constraint(equalToConstant: 18)
         ])
     }
     required init?(coder: NSCoder) { fatalError() }
-    override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 32) }
+    override var intrinsicContentSize: NSSize { NSSize(width: 28, height: 28) }
     @objc private func pressed() { invoke?() }
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, alphaValue > 0, bounds.contains(convert(point, from: superview)) else { return nil }

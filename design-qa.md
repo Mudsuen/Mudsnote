@@ -1,157 +1,89 @@
-# Workspace visual QA — 2026-11-03
+# Mubu reference UI verification — macOS
 
-## Current scope and reference
+## Target and evidence
 
-The user requested smaller Codex-style rail icons, consistent page colors and
-less visual structure, then clarified that hover must brighten the icon strokes.
-The supplied 380 x 432 video is the rail reference:
-`/Users/Donald/Movies/Tshot Recordings/Tshot-73D895E1-718B-4227-AFE8-5624228101A7.mp4`.
-Frames at 0, 3 and 6 seconds were inspected locally. The recording and extracted
-frames remain outside Git. The Notes-style multi-line list remains the content
-model; the latest request supersedes the earlier continuous rail/list surface.
-
-## Implemented direction
-
-- A 50-point rail uses 36-point targets on a 44-point pitch, with fixed 18-point
-  vector glyph bounds. Inactive strokes are secondary gray; hover and selection
-  use the primary foreground. Tracking areas and pointer checks stay within each control’s own bounds.
-- All workspace pages share an sRGB #191919 surface. The outer rail/titlebar is
-  #242424, cards #1E1E1E, hover #2B2B2B and rail selection #343434. The split
-  divider uses #303030 instead of the native black seam. Gallery previews use
-  the same card surface instead of white sheets.
-- The overview retains one heading, principles, area names and note cards.
-  The duplicate root and its decorative connector tier, area icons, normal card
-  borders and button bezels are removed. Unassigned cards omit repeated status
-  text. New-card and link-existing-note actions remain explicit.
-
-## Verification evidence
-
-`./scripts/verify macos ui` passes 16 related tests, including navigation,
-ordinary and inline creation, saving, source changes, selection, keyboard access,
-hover entry/exit and geometry at 896 x 580, 979 x 728 and 1200 x 800. The final
-log is `/tmp/mudsnote-ui-20261103/verify-ui.log`; no full suite was run.
-
-Local real-window inspection used a separate QA bundle, disposable defaults,
-support directory and four synthetic notes under `/tmp/mudsnote-ui-20261103/`.
-At 979 x 728, the overview and ordinary editor share the same background. Recent
-and Favorites navigation, rail retention during sidebar collapse, and restoring
-Home were exercised. A card was expanded, Chinese text pasted, collapsed, and
-its saved Markdown and refreshed preview checked. This does not claim a separate
-interactive IME-composition test. Build signing and installed revision are
-recorded by the local installer receipt, separately from this visual report.
-
-The remote builder could not resolve `Mac-mini.local`, so verification runs
-locally. No iOS build, installation or public site publication is included.
-
----
-
-The previous acceptance below is historical and is superseded where the current
-scope differs.
-
-# Notes-style workspace design QA
-
-## Accepted scope
-
-The user's final direction supersedes exact Codex titlebar/list replication:
-retain the original Apple Notes-style title, preview and metadata cards; refine
-hover, click behavior and icon details; remove the white rail/list seam. No new
-features or further decorative changes are part of this acceptance.
-
-## Visual truth and privacy
-
-- Codex reference: `/tmp/codex-clipboard-78864bd5-3b52-4aa0-a302-c0cc2643b836.png`, 1958 x 1456 pixels at 2x (979 x 728 points).
-- Original Notes-style list: `/tmp/codex-clipboard-2b8d2426-5f22-41af-9fa1-a7d2b4ae4ea0.png`, 1792 x 1160 pixels at 2x (896 x 580 points).
-- Final overview: `/tmp/mudsnote-codex-ui-transfer/notes-final-overview.png`.
-- Final ordinary-note selection: `/tmp/mudsnote-codex-ui-transfer/notes-final-selected.png`.
-- Full comparison input: `/tmp/mudsnote-codex-ui-transfer/notes-comparison-private.png`.
-- Focused comparison input: `/tmp/mudsnote-codex-ui-transfer/notes-focused-private.png`.
-
-The final actual-window captures were made on the coordinator laptop using the
-unchanged Mini-signed candidate `411e360c387e8fd3b55bbcd88e192a3617ef59e1` and
-synthetic fixture data. They are not Mini desktop captures. Both final captures
-and both combined comparison inputs were opened and inspected in this review.
-The supplied reference contains personal titles; its pixels and private combined
-comparisons stay outside Git and must not be published to the website.
-
-## Density, state and comparison method
-
-The final window is 979 x 728 points / 1958 x 1456 pixels, in dark appearance.
-The full comparison normalizes source and candidate to 979 x 728 at 1x and places
-them in the same image. Focused rail/list crops use the same 2x-to-1x scale without
-stretching their different widths. The Codex chat content is not a note-page
-specification; the original Mudsnote image and the user's latest instruction
-control the Notes-list hierarchy. System recording indicators are excluded.
-Geometry checks also cover 896 x 580 and 1200 x 800; this report does not claim
-new final live captures at those sizes.
+- Source visual truth: the desktop outline image and map animation in
+  [Mubu's official quick-start guide](https://mubu.com/help/50).
+- Outline image: `https://union-resource.oss-cn-shanghai.aliyuncs.com/admin/2025/07/22/687f583e50dff.png`
+  (1080 × 669 source pixels, displayed at 1031.17 × 640 browser pixels).
+- Map animation: `https://union-resource.oss-cn-shanghai.aliyuncs.com/admin/2025/07/22/687f58c0296de.gif`.
+- Implementation: native Mudsnote Preview with disposable Markdown notes, isolated
+  defaults and support directory under `/tmp/mudsnote-overview-qa-20261103`.
+- Implementation screenshot paths: the computer-use tool emits inline captures
+  in this chat and does not provide filesystem paths. No personal-note screenshots
+  are checked into the repository.
+- Viewports: 1100 × 760 and 896 × 580 AppKit points; screenshots are respectively
+  2200 × 1520 and 1792 × 1160 pixels at 2×. Reference captures are 1226 × 720 browser
+  pixels including the help page's image viewer. Compare the embedded reference
+  content and the app at logical-point scale, excluding browser and macOS chrome.
+- States: overview map, outline, folded branch, inline editor, navigation and zoom.
+  The reference uses tutorial text and light appearance; the implementation uses
+  synthetic life-area notes and the existing dark Mac workspace. These content,
+  branding, native window chrome and appearance differences are intentional.
+  This is a native UI adaptation; the evidence does not establish pixel identity.
 
 ## Comparison history
 
-1. Initial Mudsnote showed duplicate navigation, oversized empty graph spacing,
-   cards below the first viewport, and horizontal overflow. The shell and graph
-   layout were adjusted while retaining original notes and save protection.
-2. The first 979-point comparison identified P2 differences in sidebar width,
-   new-note alignment, dim current-page title, titlebar spacing and legacy
-   scrolling. The second laptop capture of candidate `94b0efe` confirmed two
-   remaining active-window failures: wrapped/right-aligned new-note text and a
-   dim title inside an oversized toolbar capsule.
-3. Candidate `fdd9f9c` replaced the sidebar cell layout with explicit icon/label
-   constraints and replaced the toolbar control with an unbordered static view.
-   The coordinator verified single-line left alignment and readable title/no
-   capsule, plus ordinary and overview creation with Chinese input and saving,
-   back navigation and rail retention on list collapse.
-4. The user then explicitly retained Notes-style multi-line rows and relaxed
-   exact titlebar fidelity. Candidate `411e360` restored title/preview/metadata
-   and 44-point thumbnails, differentiated hover/selection gray, unified the
-   rail/list background, and removed its border/left corner seam. The final
-   overview, selected-note capture and combined comparisons confirm these
-   changes. The two corrected controls were not changed in this iteration.
+1. The initial grid differed in its main composition. Replaced it with one
+   ownership tree shared by map and outline, then compared official and native
+   captures in the same tool output.
+2. Replaced generic cards and the large segmented switch with a purple root,
+   tinted outlined topics, underlined text leaves, a compact top-right switch,
+   breadcrumbs and a floating zoom panel. Removed the outer icon rail in favor
+   of labeled sidebar navigation and compact document rows.
+3. The next captures showed an inset search field that did not fill the sidebar,
+   and inconsistent outline bullet indentation. Bound the search row to the
+   sidebar width, and gave branches and note leaves separate aligned bullet views.
+   Post-fix captures at 896 × 580 points show a full-width search field and aligned branch/note bullets. The geometry regression assertion also passes.
 
-## Five fidelity surfaces
+## Required fidelity surfaces
 
-- **Fonts/typography:** SF/PingFang; 14-point medium note titles with 12-point
-  preview/metadata, retained Notes-style row hierarchy, readable static page
-  title. The multi-line list is intentional, not a remaining drift from Codex.
-- **Spacing/layout rhythm:** fixed narrow rail, independent scrolling list,
-  retained 68-point note rows, visible overview cards, no whole-page horizontal
-  scrollbar. The shared rail/list surface has no white seam. The note-editor
-  divider remains intentional.
-- **Colors/tokens:** neutral gray hover and a stronger gray selection; final
-  selected-note screenshot shows a clear click state. Static title is readable;
-  native overlay scrolling and the seam removal are confirmed. Exact native
-  titlebar coloration is outside the user's narrowed fidelity requirement.
-- **Image quality/assets:** real vector SF Symbols; note thumbnails retained.
-  No chat/account/model imagery or generated raster UI was added. Source and
-  candidate were compared at equal density.
-- **Copy/content:** only note operations are represented. The sidebar new-note
-  action creates an ordinary document; explicit overview new-note actions create
-  cards. Synthetic note content is used for all final acceptance captures.
+- Typography: native system/CJK fallback; 28-point outline title, 16-point outline
+  rows, 15-point map topics/leaves, 18-point map root and 13-point sidebar rows.
+  Hierarchy, wrapping and truncation are checked visually; the raster reference
+  does not identify its exact font family.
+- Layout rhythm: compact sidebar, persistent search and icon-only compose action;
+  32-point document rows; centered outline column with 24-point nesting; automatic
+  tree layout with curved branches and viewport fitting. Native titlebar controls
+  and Mudsnote's existing document tabs are retained.
+- Colors: purple root and lavender branches/topic borders follow the reference;
+  dark surfaces retain the existing app palette. Hover and keyboard focus have
+  distinct feedback; the source's light palette is not used to judge dark colors.
+- Assets: SF Symbols provide document, navigation, disclosure and toolbar icons.
+  No reference illustrations or logos are required; text, branches and outlines
+  are live AppKit content rather than bitmap substitutes.
+- Copy/content: Mudsnote's name, areas, principles and original Markdown notes are
+  preserved. New-note and overview-card creation remain separate actions. There
+  are no nonfunctional share, account, cloud or membership controls.
 
-## Interaction and verification evidence
+## Functional verification
 
-1. **Overview and ordinary navigation — passed:** on the laptop, selecting the
-   sidebar fixture note opens the ordinary editor, Back returns to overview,
-   collapse leaves the rail available, and overview has no horizontal overflow.
-2. **Creation/editing — passed:** unchanged `fdd9f9c` controls were verified on
-   the laptop with Chinese input and saving in both ordinary and card editors;
-   ordinary notes were not added to the overview. Targeted Mini tests cover the
-   four ordinary entry points and page-context restoration with pending edits.
-3. **Notes list and pointer feedback — passed:** final actual click selection is
-   visible in `notes-final-selected.png`; focused AppKit tests cover hover entry,
-   exit and activation. The retained title/preview/meta and thumbnail behavior,
-   sidebar controls and navigation passed the latest five related tests in
-   `/tmp/mudsnote-notes-list-tests.log`. Tooltip/AX labels are retained; no claim
-   is made of a separate final screenshot of every tooltip popup.
+- `./scripts/verify macos ui`: 18 targeted tests cover creation, navigation,
+  persistence, map/outline hierarchy, folding, inline edits, conflict protection
+  and pointer feedback, including the final full-width search geometry assertion. All 18 tests pass on the final source.
+- Earlier real-window checks confirmed Chinese edits survive view switching and
+  folding, and persist to the original note's current path after rename.
+- The full PR gate is limited by pre-existing sidebar restoration and blocked
+  autosave-navigation/exit tests, reproduced on unchanged `78ca90e`; see
+  `agent-memory/incidents/2026-11-03-overview-verification-baseline.md`.
+- Browser-console checks do not apply to the native AppKit implementation.
 
-No full suite was run for this update. The explicit `mudsnote-ui` release route
-records its actual scoped command/profile while retaining signature, provenance,
-archive hash, candidate/installed fixture, and rollback gates. Six scoped
-publisher-profile/host/no-change checks passed. Public website deployment is
-not authorized and is excluded.
+## Final acceptance
 
-## Final assessment
-
-No actionable P0/P1/P2 issue remains under the user's final Notes-style scope.
-The coordinator's actual-window acceptance and the same-input comparisons agree.
-Do not expand this change into further titlebar or decorative revisions.
+- No actionable P0/P1/P2 findings remain within the native adaptation scope.
+- Final real-window checks passed at 896 × 580 points: an existing note opens
+  from an outline bullet; pasted Chinese edits survive a switch to the map with
+  focus retained; folding its parent saves and hides the edited subtree; expanding
+  restores it; zoom changes from 100% to 110% and Fit returns to 100%; search finds
+  the expected one document; icon-only ordinary creation opens the full editor
+  without adding an overview node; returning to overview restores the hierarchy.
+- File verification confirms the final edited text is on disk, and ordinary
+  creation leaves the original six overview nodes unchanged.
+- Full-view and focused sidebar/node/bullet regions were compared in combined
+  reference/implementation screenshot outputs. No screenshot alone is treated
+  as proof of persistence or keyboard behavior.
+- P3 follow-up: exact font metrics and the light reference's rendering can differ
+  from native macOS dark rendering. No additional visual iteration is required
+  for the retained dark workspace.
 
 final result: passed

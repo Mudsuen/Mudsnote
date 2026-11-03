@@ -211,9 +211,7 @@ extension LibraryWindowController {
         updateDocumentTabBar()
         editor.isHidden = false
         overviewView?.cards[id]?.embed(editor)
-        overviewView?.needsLayout = true
-        overviewView?.layoutSubtreeIfNeeded()
-        overviewView?.cards[id]?.scrollToVisible(overviewView?.cards[id]?.bounds ?? .zero)
+        overviewView?.revealCard(id)
         window?.makeFirstResponder(editorTextView)
         return true
     }

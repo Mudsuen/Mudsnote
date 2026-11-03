@@ -225,22 +225,24 @@ extension MarkdownRichEditorTests {
             controller.window?.contentView?.layoutSubtreeIfNeeded()
             controller.overviewView?.layoutSubtreeIfNeeded()
             let overview = try #require(controller.overviewView)
-            #expect(overview.canvas.bounds.width <= overview.bounds.width + 1)
+            #expect(overview.scroll.hasHorizontalScroller)
+            #expect(overview.canvas.bounds.width >= overview.scroll.contentView.frame.width)
             #expect(overview.cards.values.allSatisfy { $0.frame.maxX <= overview.canvas.bounds.width + 1 })
         }
         _ = controller.setSourceListVisibleForLibrary(false)
         controller.window?.contentView?.layoutSubtreeIfNeeded()
-        #expect(controller.navigationRail?.isHiddenOrHasHiddenAncestor == false)
+        #expect(controller.navigationRail?.isHiddenOrHasHiddenAncestor == true)
         #expect(controller.sourceListView?.isHiddenOrHasHiddenAncestor == true)
         _ = controller.setSourceListVisibleForLibrary(true)
         let cell = try #require(controller.noteCell(for: note, tableView: controller.tableView) as? LibraryNoteCellView)
         #expect(cell.toolTip?.contains("Read me") == true)
-        #expect(!cell.titleLabel.isHidden && !cell.snippetLabel.isHidden && !cell.metaLabel.isHidden)
+        #expect(!cell.titleLabel.isHidden && cell.snippetLabel.isHidden && cell.metaLabel.isHiddenOrHasHiddenAncestor)
+        #expect(!cell.documentImageView.isHidden)
     }
 }
 
 extension MarkdownRichEditorTests {
-    @Test func codexShellCriticalControlsStaySingleLineAndUnbordered() throws {
+    @Test func codexShellComposeIconSharesHeadingAndStaysUnbordered() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let suite = "mudsnote.shell-controls." + UUID().uuidString
         let defaults = try #require(UserDefaults(suiteName: suite))
@@ -256,12 +258,14 @@ extension MarkdownRichEditorTests {
             window.setFrame(NSRect(origin: .zero, size: size), display: true)
             window.contentView?.layoutSubtreeIfNeeded()
             button.layoutSubtreeIfNeeded()
-            #expect(button.bounds.width >= 180)
-            #expect(button.label.frame.width >= button.label.intrinsicContentSize.width)
-            #expect(button.label.maximumNumberOfLines == 1)
-            #expect(button.label.cell?.wraps == false)
-            #expect(button.glyph.frame.maxX < button.label.frame.minX)
-            let point = button.convert(NSPoint(x: button.label.frame.midX, y: button.label.frame.midY), to: button.superview)
+            #expect(button.bounds.width == 28)
+            #expect(button.title.isEmpty)
+            #expect(button.subviews.count == 1)
+            let heading = try #require(button.superview as? NSStackView)
+            #expect(heading.arrangedSubviews.contains(controller.sidebarLibraryTitle))
+            let sidebar = try #require(controller.sourceListView)
+            #expect(abs(controller.searchField.bounds.width - (sidebar.bounds.width - 24)) < 2)
+            let point = button.convert(NSPoint(x: button.glyph.frame.midX, y: button.glyph.frame.midY), to: button.superview)
             #expect(button.hitTest(point) === button)
         }
         #expect(button.accessibilityLabel() == "新建笔记")
@@ -300,5 +304,87 @@ extension MarkdownRichEditorTests {
         button.mouseExited(with: exit)
         #expect(!button.isPointerHovered)
         #expect(try pixels() == normal)
+    }
+}
+
+extension MarkdownRichEditorTests {
+    @Test func overviewMapAndOutlineShareHierarchyAndCollapseWholeBranches() throws {
+        var state = NoteOverview()
+        let parent = state.areas[0].id
+        let child = NoteOverview.Area(title: "项目", parentID: parent)
+        state.areas.append(child)
+        let assigned = state.add(URL(fileURLWithPath: "/fixture/Assigned.md"), areaID: child.id)
+        let unassigned = state.add(URL(fileURLWithPath: "/fixture/Unassigned.md"))
+        let tree = OverviewTree(state)
+        #expect(tree.ancestors(of: .card(assigned)) == [.area(child.id), .area(parent), .root])
+        #expect(tree.ancestors(of: .card(unassigned)) == [.unassigned, .root])
+        let map = OverviewLayout.make(width: 600, height: 500, state: state, selected: nil)
+        let outline = OverviewLayout.make(width: 600, height: 500, state: state, selected: nil, presentation: .outline)
+        #expect(Set(map.frames.keys) == Set(outline.frames.keys))
+        let parentFrame = try #require(map.areas[parent])
+        let childFrame = try #require(map.areas[child.id])
+        let noteFrame = try #require(map.cards[assigned])
+        #expect(parentFrame.maxX < childFrame.minX && childFrame.maxX < noteFrame.minX)
+        #expect(outline.areas[parent]!.minX < outline.areas[child.id]!.minX)
+        #expect(outline.areas[child.id]!.maxY < outline.cards[assigned]!.minY)
+        for mode in [OverviewPresentation.mindMap, .outline] {
+            let folded = OverviewLayout.make(width: 600, height: 500, state: state, selected: nil, presentation: mode, collapsed: [.area(parent)])
+            #expect(folded.areas[parent] != nil)
+            #expect(folded.areas[child.id] == nil && folded.cards[assigned] == nil)
+            #expect(folded.cards[unassigned] != nil)
+            let frames = Array(folded.frames.values)
+            for i in frames.indices {
+                #expect(frames[i].minX >= 0 && frames[i].minY >= 0)
+                #expect(frames[i].maxX <= folded.size.width && frames[i].maxY <= folded.size.height)
+                for j in frames.indices where j > i { #expect(!frames[i].intersects(frames[j])) }
+            }
+        }
+        // Imported cycles and missing parents remain visible, without mutating metadata.
+        state.areas[0].parentID = child.id
+        state.areas[1].parentID = UUID()
+        let recovered = OverviewLayout.make(width: 600, height: 500, state: state, selected: nil)
+        #expect(recovered.areas.count == state.areas.count)
+        #expect(recovered.cards.count == state.cards.count)
+    }
+
+    @Test func overviewSwitchAndFoldSaveInlineEditsAndRevealHiddenNote() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.overview-modes." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let url = try store.saveNewNote(title: "Plan", body: "Original")
+        var model = NoteOverview()
+        let area = model.areas[0].id
+        let id = model.add(url, areaID: area)
+        model.seeded = true
+        try store.saveOverview(model)
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus(); controller.showOverview()
+        let overview = try #require(controller.overviewView)
+        controller.toggleOverviewCard(id)
+        for _ in 0..<100 where overview.selectedID != id { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(overview.selectedID == id)
+        controller.applyDocument(title: "Plan", body: "Before switch 中文", tags: []); controller.markDirty()
+        overview.setPresentation(.outline)
+        #expect(overview.presentation == .outline && overview.presentationButton.title == "思维导图")
+        #expect(store.libraryOverviewModeRawValue == 1)
+        #expect(try store.loadNote(at: url).body == "Before switch 中文")
+        #expect(controller.regularEditorView?.superview === overview.cards[id])
+        #expect(overview.scroll.magnification == 1 && !overview.scroll.allowsMagnification)
+        controller.applyDocument(title: "Plan", body: "Before fold 中文", tags: []); controller.markDirty()
+        overview.toggleBranch(.area(area))
+        #expect(overview.selectedID == nil && overview.cards[id]?.isHidden == true)
+        #expect(try store.loadNote(at: url).body == "Before fold 中文")
+        #expect(try store.loadOverview() == model)
+        controller.toggleOverviewCard(id)
+        for _ in 0..<100 where overview.selectedID != id { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(overview.cards[id]?.isHidden == false)
+        #expect(!overview.collapsed.contains(.area(area)))
+        overview.setPresentation(.mindMap)
+        #expect(overview.selectedID == id && overview.scroll.magnification == 1)
+        #expect(store.libraryOverviewModeRawValue == 0)
+        #expect(try store.loadOverview() == model)
     }
 }

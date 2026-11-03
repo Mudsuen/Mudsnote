@@ -71,7 +71,7 @@ enum LibraryNotesLayout {
     static let sourceCountTrailingInset: CGFloat = 6
     static let sourceCountWidth: CGFloat = 32
     static let noteGroupRowHeight: CGFloat = 30
-    static let noteRowHeight: CGFloat = 68
+    static let noteRowHeight: CGFloat = 32
     static let sourceGroupFontSize: CGFloat = 12
     static let sourceButtonFontSize: CGFloat = 14
     static let sourceSelectedButtonFontWeight: NSFont.Weight = .regular
@@ -81,8 +81,8 @@ enum LibraryNotesLayout {
     static let sourceSymbolWeight: NSFont.Weight = .medium
     static let noteGroupFontSize: CGFloat = 12
     static let noteGroupFontWeight: NSFont.Weight = .medium
-    static let noteTitleFontSize: CGFloat = 14
-    static let noteTitleFontWeight: NSFont.Weight = .medium
+    static let noteTitleFontSize: CGFloat = 13
+    static let noteTitleFontWeight: NSFont.Weight = .regular
     static let noteSnippetFontSize: CGFloat = 12
     static let noteSnippetFontWeight: NSFont.Weight = .regular
     static let noteMetaFontSize: CGFloat = 12
