@@ -16,6 +16,7 @@ public final class NoteStore: @unchecked Sendable {
     let fileManager: FileManager
     // Relocations update multiple notes; serialize mutations before acquiring file coordinators.
     let noteMutationLock = NSRecursiveLock()
+    let overviewPersistenceLock = NSLock()
     let appSupportDirectory: URL
     let searchIndexLock = NSLock()
     let searchIndexBuildLock = NSLock()
@@ -165,6 +166,10 @@ enum NoteStoreDefaultsKey {
     static let libraryGroupsNotesByDate = "mudsnote.library.groupsNotesByDate"
     static let libraryNoteViewMode = "mudsnote.library.noteViewMode"
     static let libraryOverviewMode = "mudsnote.library.overviewMode"
+    static let libraryOverviewAppearance = "mudsnote.library.overviewAppearance"
+    static let libraryOverviewMapStyle = "mudsnote.library.overviewMapStyle"
+    static let libraryOverviewMapStructure = "mudsnote.library.overviewMapStructure"
+    static let libraryOverviewCollapsedNodes = "mudsnote.library.overviewCollapsedNodes"
     static let libraryIncludesSubfolderNotes = "mudsnote.library.includesSubfolderNotes"
     static let libraryImageDisplayWidths = "mudsnote.library.imageDisplayWidths"
     static let libraryPinnedNotePaths = "mudsnote.library.pinnedNotePaths"

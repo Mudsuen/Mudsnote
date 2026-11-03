@@ -5,6 +5,7 @@ public struct NoteOverview: Codable, Equatable, Sendable {
         public var id: UUID
         public var title: String
         public var parentID: UUID?
+        public var details: String?
         public init(title: String, parentID: UUID? = nil) { id = UUID(); self.title = title; self.parentID = parentID }
     }
     public struct Card: Codable, Equatable, Identifiable, Sendable {
@@ -19,6 +20,7 @@ public struct NoteOverview: Codable, Equatable, Sendable {
         public init(from: UUID, to: UUID) { self.from = from; self.to = to }
     }
     public var seeded: Bool?
+    public var title: String?
     public var principles = "AI Native · 长期主义 · 身体优先"
     public var areas = [Area(title: "搞钱"), Area(title: "健康"), Area(title: "关系"), Area(title: "内在世界")]
     public var cards: [Card] = []
@@ -55,8 +57,14 @@ extension NoteStore {
         return try JSONDecoder().decode(NoteOverview.self, from: Data(contentsOf: file))
     }
     public func saveOverview(_ overview: NoteOverview) throws {
+        overviewPersistenceLock.lock()
+        defer { overviewPersistenceLock.unlock() }
         try fileManager.createDirectory(at: appSupportDirectory, withIntermediateDirectories: true)
         let data = try JSONEncoder().encode(overview)
+        // Older builds ignore new optional metadata when re-encoding. Keep the
+        // latest full snapshot independently; never silently replace canonical
+        // metadata with it on load, including after malformed writes.
+        try data.write(to: appSupportDirectory.appendingPathComponent("Overview-recovery.json"), options: .atomic)
         try data.write(to: appSupportDirectory.appendingPathComponent("Overview-v1.json"), options: .atomic)
     }
 }

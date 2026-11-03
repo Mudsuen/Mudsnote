@@ -135,6 +135,23 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryOverviewMode) }
     }
 
+    public var libraryOverviewAppearanceRawValue: Int {
+        get { defaults.integer(forKey: NoteStoreDefaultsKey.libraryOverviewAppearance) }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryOverviewAppearance) }
+    }
+    public var libraryOverviewMapStyleRawValue: Int {
+        get { defaults.integer(forKey: NoteStoreDefaultsKey.libraryOverviewMapStyle) }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryOverviewMapStyle) }
+    }
+    public var libraryOverviewMapStructureRawValue: Int {
+        get { defaults.integer(forKey: NoteStoreDefaultsKey.libraryOverviewMapStructure) }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryOverviewMapStructure) }
+    }
+    public var libraryOverviewCollapsedNodes: [String] {
+        get { defaults.stringArray(forKey: NoteStoreDefaultsKey.libraryOverviewCollapsedNodes) ?? [] }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryOverviewCollapsedNodes) }
+    }
+
     public var libraryIncludesSubfolderNotes: Bool {
         get { defaults.object(forKey: NoteStoreDefaultsKey.libraryIncludesSubfolderNotes) as? Bool ?? true }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryIncludesSubfolderNotes) }

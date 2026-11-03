@@ -119,14 +119,12 @@ extension LibraryWindowController {
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isShowingOverview, self.overviewView?.selectedID == nil else { return }
             self.overviewHost?.layoutSubtreeIfNeeded()
-            if let scroll = self.overviewView?.scroll {
-                scroll.contentView.scroll(to: .zero)
-                scroll.reflectScrolledClipView(scroll.contentView)
-            }
+            self.overviewView?.resetViewport()
         }
     }
 
     @discardableResult func commitOverviewEditor() -> Bool {
+        guard overviewView?.commitTopicEditing() != false else { return false }
         // End input-method composition before serializing the shared editor.
         window?.makeFirstResponder(nil)
         do { drainBackgroundAutosaves(); try saveCurrentNoteIfNeeded(); return true }
@@ -136,6 +134,7 @@ extension LibraryWindowController {
     @discardableResult func leaveOverview() -> Bool {
         guard isShowingOverview else { return true }
         guard commitOverviewEditor() else { return false }
+        overviewView?.restoreEditorAppearance()
         cancelActiveNoteLoad()
         if let id = overviewView?.selectedID { overviewView?.cards[id]?.embed(nil) }
         overviewView?.selectedID = nil
@@ -157,10 +156,12 @@ extension LibraryWindowController {
 
     @discardableResult func changeOverview(_ change: (inout NoteOverview) -> Void) -> Bool {
         guard var next = overviewState else { return false }
+        let previous = next
         change(&next)
         do { try noteStore.saveOverview(next) }
         catch { presentErrorAlert(message: "无法保存总览", details: error.localizedDescription); return false }
         overviewState = next
+        if next != previous { overviewView?.recordChange(from: previous) }
         refreshOverview()
         return true
     }
@@ -169,6 +170,7 @@ extension LibraryWindowController {
         guard let card = overviewState?.cards.first(where: { $0.id == id }) else { return }
         if overviewView?.selectedID == id {
             guard commitOverviewEditor() else { return }
+            overviewView?.restoreEditorAppearance()
             overviewView?.cards[id]?.embed(nil)
             overviewView?.selectedID = nil
             updateDocumentTabBar()
@@ -216,11 +218,12 @@ extension LibraryWindowController {
         return true
     }
 
-    func createNoteInOverview() {
+    func createNoteInOverview(area: UUID? = nil) {
         guard isShowingOverview else { return }
         guard commitOverviewEditor() else { return }
         do {
             let url = try noteStore.saveNewNote(title: "", body: "", in: noteStore.notesDirectory)
+            if let area, !changeOverview({ _ = $0.add(url, areaID: area) }) { return }
             let note = NoteSearchResult(url: url, title: "未命名笔记", snippet: "", modifiedAt: Date())
             openOverviewNote(note)
         } catch { presentErrorAlert(message: "无法新建笔记", details: error.localizedDescription) }
@@ -298,13 +301,24 @@ extension LibraryWindowController {
     func overviewCardMenu(_ id: UUID) {
         guard let state = overviewState, let anchor = overviewView?.cards[id] else { return }
         let menu = NSMenu()
+        menu.addItem(OverviewMenuItem(overviewView?.selectedID == id ? "收起笔记" : "编辑笔记") { [weak self] in self?.toggleOverviewCard(id) })
         menu.addItem(OverviewMenuItem("关联笔记…") { [weak self] in self?.pickOverviewNote(area: nil, connecting: id) })
         let areaItem = NSMenuItem(title: "归属", action: nil, keyEquivalent: "")
         let areaMenu = NSMenu()
+        let currentArea = state.cards.first { $0.id == id }?.areaID
+        let unassigned = OverviewMenuItem("未归属") { [weak self] in
+            _ = self?.changeOverview { state in if let index = state.cards.firstIndex(where: { $0.id == id }) { state.cards[index].areaID = nil } }
+        }
+        unassigned.state = currentArea == nil ? .on : .off; areaMenu.addItem(unassigned)
+        let tree = OverviewTree(state)
         for area in state.areas {
-            areaMenu.addItem(OverviewMenuItem(area.title) { [weak self] in
+            let path = tree.ancestors(of: .area(area.id)).reversed().compactMap { node -> String? in
+                if case .area(let id) = node { return state.areas.first { $0.id == id }?.title }; return nil
+            } + [area.title]
+            let item = OverviewMenuItem(path.joined(separator: " / ")) { [weak self] in
                 _ = self?.changeOverview { state in if let index = state.cards.firstIndex(where: { $0.id == id }) { state.cards[index].areaID = area.id } }
-            })
+            }
+            item.state = currentArea == area.id ? .on : .off; areaMenu.addItem(item)
         }
         areaItem.submenu = areaMenu; menu.addItem(areaItem)
         for edge in state.connections where edge.from == id || edge.to == id {

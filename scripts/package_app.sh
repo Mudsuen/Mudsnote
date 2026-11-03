@@ -36,6 +36,10 @@ cp "${BIN_DIR}/mudsnote" "${MACOS_DIR}/Mudsnote"
 chmod +x "${MACOS_DIR}/Mudsnote"
 cp "${ROOT_DIR}/assets/generated/MudsnoteAppIcon.icns" "${RESOURCES_DIR}/MudsnoteAppIcon.icns"
 cp "${ROOT_DIR}/assets/generated/MudsnoteStatusTemplate.png" "${RESOURCES_DIR}/MudsnoteStatusTemplate.png"
+mkdir -p "${RESOURCES_DIR}/Fonts/SourceSansPro"
+cp "${ROOT_DIR}/assets/fonts/SourceSansPro/SourceSansPro-Regular.otf" "${RESOURCES_DIR}/Fonts/SourceSansPro/"
+cp "${ROOT_DIR}/assets/fonts/SourceSansPro/SourceSansPro-Semibold.otf" "${RESOURCES_DIR}/Fonts/SourceSansPro/"
+cp "${ROOT_DIR}/assets/fonts/SourceSansPro/LICENSE.txt" "${RESOURCES_DIR}/Fonts/SourceSansPro/"
 
 cat > "${CONTENTS_DIR}/Info.plist" <<'PLIST'
 <?xml version="1.0" encoding="UTF-8"?>
