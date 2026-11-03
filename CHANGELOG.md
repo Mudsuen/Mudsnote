@@ -11,6 +11,18 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-03 — Consistent workspace surfaces and compact navigation
+
+- Problem: rail icons were too large and stayed dim on hover; changing pages
+  exposed different background grays and the overview repeated visual structure.
+- Fix: use fixed-size rail glyphs with brighter hover strokes, consistent spacing
+  and neutral selection; reconcile pointer feedback across tracking areas. Share
+  one page surface across the library, overview, editor and gallery. Remove the
+  repeated overview root, decorative area icons, card borders and button bezels;
+  make card creation and existing-note linking distinct actions.
+- Lesson: compare pointer entry and exit as well as static screenshots, and keep
+  page surfaces in one palette instead of independently styling each host.
+
 ## 2026-11-02 — Notes-style workspace navigation
 
 - Problem: navigation feedback and icon details were inconsistent, and separate

@@ -581,7 +581,7 @@ final class LibraryWindowController: NSWindowController,
         window.title = "\(MudsnoteBrand.appName) 笔记"
         window.titleVisibility = .hidden
         window.titlebarAppearsTransparent = true
-        window.backgroundColor = NSColor(calibratedRed: 0.15, green: 0.16, blue: 0.17, alpha: 1)
+        window.backgroundColor = LibraryNotesPalette.shellBackground
         window.titlebarSeparatorStyle = .none
         window.styleMask.insert(.fullSizeContentView)
         window.minSize = LibraryNotesLayout.minimumWindowSize

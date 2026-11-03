@@ -1,7 +1,7 @@
 import AppKit
 import MudsnoteCore
 
-@MainActor final class OverviewActionButton: NSButton {
+@MainActor final class OverviewActionButton: NSButton, LibraryPointerFeedback {
     var invoke: (() -> Void)?
     private var hoverTrackingArea: NSTrackingArea?
     private(set) var isPointerHovered = false
@@ -17,6 +17,11 @@ import MudsnoteCore
     }
     override func mouseEntered(with event: NSEvent) { isPointerHovered = true; needsDisplay = true }
     override func mouseExited(with event: NSEvent) { isPointerHovered = false; needsDisplay = true }
+    func setPointerHovered(_ hovered: Bool) {
+        guard isPointerHovered != hovered else { return }
+        isPointerHovered = hovered
+        needsDisplay = true
+    }
     override func draw(_ dirtyRect: NSRect) {
         if isEnabled && isPointerHovered {
             NSColor.labelColor.withAlphaComponent(0.10).setFill()
@@ -29,17 +34,23 @@ import MudsnoteCore
         self.title = title
         self.invoke = action
         bezelStyle = .rounded
+        isBordered = false
         font = .systemFont(ofSize: 12)
         target = self
         self.action = #selector(pressed)
-        if let symbol { image = NSImage(systemSymbolName: symbol, accessibilityDescription: title); imagePosition = title.isEmpty ? .imageOnly : .imageLeading }
+        if let symbol {
+            image = NSImage(systemSymbolName: symbol, accessibilityDescription: title)?
+                .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
+            imagePosition = title.isEmpty ? .imageOnly : .imageLeading
+        }
         setAccessibilityLabel(title)
+        LibraryPointerTracking.register(self)
     }
     required init?(coder: NSCoder) { fatalError() }
     @objc private func pressed() { invoke?() }
 }
 
-@MainActor final class OverviewCardView: NSView {
+@MainActor final class OverviewCardView: NSView, LibraryPointerFeedback {
     let cardID: UUID
     let heading = NSTextField(labelWithString: "")
     let preview = NSTextField(wrappingLabelWithString: "")
@@ -61,18 +72,25 @@ import MudsnoteCore
     }
     override func mouseEntered(with event: NSEvent) { isPointerHovered = true; needsDisplay = true }
     override func mouseExited(with event: NSEvent) { isPointerHovered = false; needsDisplay = true }
+    func setPointerHovered(_ hovered: Bool) {
+        guard isPointerHovered != hovered else { return }
+        isPointerHovered = hovered
+        needsDisplay = true
+    }
     override var isFlipped: Bool { true }
     init(id: UUID, open: @escaping () -> Void, menu: @escaping () -> Void) {
         cardID = id
-        expand = OverviewActionButton("编辑", symbol: "arrow.up.left.and.arrow.down.right", action: open)
+        expand = OverviewActionButton("", symbol: "square.and.pencil", action: open)
+        expand.setAccessibilityLabel("编辑笔记")
+        expand.toolTip = "编辑笔记"
         more = OverviewActionButton("", symbol: "ellipsis", action: menu)
         more.setAccessibilityLabel("关联与归属")
         more.toolTip = "关联与归属"
         super.init(frame: .zero)
         wantsLayer = true
         clipsToBounds = true
-        layer?.cornerRadius = 12
-        layer?.borderWidth = 0.5
+        layer?.cornerRadius = 8
+        layer?.borderWidth = 0
         heading.font = .systemFont(ofSize: 15, weight: .semibold)
         heading.lineBreakMode = .byTruncatingTail
         preview.font = .systemFont(ofSize: 14)
@@ -84,21 +102,22 @@ import MudsnoteCore
         association.lineBreakMode = .byTruncatingTail
         [heading, preview, expand, more, association].forEach(addSubview)
         setAccessibilityIdentifier("OverviewCard-" + id.uuidString)
+        LibraryPointerTracking.register(self)
     }
     required init?(coder: NSCoder) { fatalError() }
     override func updateLayer() {
         layer?.backgroundColor = (isPointerHovered
-            ? NSColor.controlBackgroundColor.blended(withFraction: 0.08, of: .labelColor) ?? .controlBackgroundColor
-            : NSColor.controlBackgroundColor).cgColor
-        layer?.borderColor = (editor == nil ? NSColor.separatorColor : NSColor.systemGreen.withAlphaComponent(0.6)).cgColor
+            ? LibraryNotesPalette.hoverBackground : LibraryNotesPalette.cardBackground).cgColor
+        layer?.borderWidth = editor == nil ? 0 : 1
+        layer?.borderColor = LibraryNotesPalette.separator.cgColor
     }
     override func layout() {
         super.layout()
         heading.frame = NSRect(x: 16, y: 14, width: bounds.width - 32, height: 22)
         preview.frame = NSRect(x: 16, y: 46, width: bounds.width - 32, height: bounds.height - 92)
-        expand.frame = NSRect(x: 12, y: bounds.height - 36, width: 80, height: 26)
+        expand.frame = NSRect(x: 12, y: bounds.height - 36, width: editor == nil ? 28 : 52, height: 26)
         more.frame = NSRect(x: bounds.width - 44, y: bounds.height - 36, width: 32, height: 26)
-        association.frame = NSRect(x: 100, y: bounds.height - 32, width: max(0, bounds.width - 150), height: 18)
+        association.frame = NSRect(x: editor == nil ? 48 : 72, y: bounds.height - 32, width: max(0, bounds.width - 120), height: 18)
         editor?.frame = NSRect(x: 4, y: 10, width: bounds.width - 8, height: bounds.height - 52)
     }
     override func mouseDown(with event: NSEvent) { if editor == nil { expand.invoke?() } else { super.mouseDown(with: event) } }
@@ -108,8 +127,10 @@ import MudsnoteCore
         if let view { view.translatesAutoresizingMaskIntoConstraints = true; view.autoresizingMask = []; view.clipsToBounds = true; addSubview(view) }
         heading.isHidden = view != nil
         preview.isHidden = view != nil
-        expand.title = view == nil ? "编辑" : "收起"
-        expand.setAccessibilityLabel(view == nil ? "展开编辑" : "收起")
+        expand.title = view == nil ? "" : "收起"
+        expand.imagePosition = view == nil ? .imageOnly : .imageLeading
+        expand.setAccessibilityLabel(view == nil ? "编辑笔记" : "收起")
+        expand.toolTip = view == nil ? "编辑笔记" : "收起"
         needsLayout = true
         needsDisplay = true
     }
@@ -138,12 +159,11 @@ import MudsnoteCore
     weak var owner: LibraryWindowController?
     let scroll = NSScrollView()
     let canvas = OverviewCanvas()
-    let title = NSTextField(labelWithString: "我的总览")
+    let title = NSTextField(labelWithString: "我的生活")
     let principles = OverviewActionButton("", action: {})
-    let newNote = OverviewActionButton("新建笔记", symbol: "square.and.pencil", action: {})
-    let add = OverviewActionButton("添加笔记", symbol: "plus", action: {})
+    let newNote = OverviewActionButton("新建卡片", symbol: "square.and.pencil", action: {})
+    let add = OverviewActionButton("关联笔记", symbol: "plus", action: {})
     let addArea = OverviewActionButton("添加领域", symbol: "square.grid.2x2", action: {})
-    let root = NSTextField(labelWithString: "我的生活")
     var cards: [UUID: OverviewCardView] = [:]
     var areas: [UUID: OverviewActionButton] = [:]
     var previews: [UUID: String] = [:]
@@ -162,9 +182,6 @@ import MudsnoteCore
         principles.lineBreakMode = .byTruncatingTail
         addArea.title = "领域"
         title.font = .systemFont(ofSize: 18, weight: .medium)
-        root.font = .systemFont(ofSize: 12, weight: .medium)
-        root.textColor = .secondaryLabelColor
-        root.alignment = .center
         scroll.hasVerticalScroller = true
         scroll.scrollerStyle = .overlay
         scroll.verticalScroller?.controlSize = .small
@@ -175,7 +192,7 @@ import MudsnoteCore
         scroll.drawsBackground = false
         scroll.documentView = canvas
         addSubview(scroll)
-        [title, principles, newNote, add, addArea, root].forEach(canvas.addSubview)
+        [title, principles, newNote, add, addArea].forEach(canvas.addSubview)
         principles.invoke = { [weak owner] in owner?.editOverviewPrinciples() }
         newNote.identifier = NSUserInterfaceItemIdentifier("OverviewNewNote")
         newNote.invoke = { [weak owner] in owner?.createNoteInOverview() }
@@ -200,15 +217,6 @@ import MudsnoteCore
                 let button = OverviewActionButton(area.title) { [weak owner] in owner?.overviewAreaMenu(area.id) }
                 button.font = .systemFont(ofSize: 12, weight: .medium)
                 button.isBordered = false
-                button.wantsLayer = true
-                button.layer?.cornerRadius = 8
-                button.layer?.borderWidth = 1
-                button.layer?.borderColor = NSColor.separatorColor.cgColor
-                button.layer?.backgroundColor = NSColor.controlBackgroundColor.cgColor
-                let symbols = ["搞钱": "chart.bar", "健康": "heart", "关系": "person.2", "内在世界": "leaf"]
-                button.image = NSImage(systemSymbolName: symbols[area.title] ?? "square.grid.2x2", accessibilityDescription: nil)
-                button.imagePosition = .imageLeading
-                button.image = button.image?.withSymbolConfiguration(.init(pointSize: 13, weight: .regular))
                 areas[area.id] = button
                 canvas.addSubview(button)
             }
@@ -228,6 +236,7 @@ import MudsnoteCore
                 previewVersions[card.id] = note.modifiedAt
             }
             view.association.stringValue = state.areas.first(where: { $0.id == card.areaID })?.title ?? "未归属"
+            view.association.isHidden = card.areaID == nil
             view.heading.stringValue = note?.title ?? card.url.deletingPathExtension().lastPathComponent
             view.preview.stringValue = previews[card.id] ?? note?.snippet ?? "点击打开笔记"
             if previews[card.id] == nil && previewTasks[card.id] == nil, let store = owner?.noteStore {
@@ -256,13 +265,12 @@ import MudsnoteCore
         add.frame = NSRect(x: width - 118, y: 14, width: 98, height: 28)
         newNote.frame = NSRect(x: width - 228, y: 14, width: 102, height: 28)
         addArea.frame = NSRect(x: width - 310, y: 14, width: 74, height: 28)
-        root.frame = plan.root
         for (id, frame) in plan.areas { areas[id]?.frame = frame }
         for (id, frame) in plan.cards { cards[id]?.frame = frame }
         canvas.lines = []
         for area in state.areas {
             guard let rect = plan.areas[area.id] else { continue }
-            let parent = area.parentID.flatMap { plan.areas[$0] } ?? plan.root
+            guard let parentID = area.parentID, let parent = plan.areas[parentID] else { continue }
             let start = NSPoint(x: parent.midX, y: parent.maxY)
             let end = NSPoint(x: rect.midX, y: rect.minY)
             let midY = (start.y + end.y) / 2

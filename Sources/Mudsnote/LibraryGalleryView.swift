@@ -88,11 +88,10 @@ final class LibraryGalleryItem: NSCollectionViewItem {
         root.layer?.cornerRadius = 6
 
         previewSurface.wantsLayer = true
-        previewSurface.layer?.backgroundColor = NSColor(calibratedWhite: 0.92, alpha: 1).cgColor
+        previewSurface.layer?.backgroundColor = LibraryNotesPalette.cardBackground.cgColor
         previewSurface.layer?.cornerRadius = 6
         previewSurface.layer?.masksToBounds = true
-        previewSurface.layer?.borderWidth = 1
-        previewSurface.layer?.borderColor = NSColor.white.withAlphaComponent(0.12).cgColor
+        previewSurface.layer?.borderWidth = 0
 
         previewImageView.imageScaling = .scaleProportionallyUpOrDown
         previewImageView.wantsLayer = true
@@ -100,7 +99,7 @@ final class LibraryGalleryItem: NSCollectionViewItem {
         previewImageView.layer?.masksToBounds = true
 
         previewTextLabel.font = .systemFont(ofSize: 12, weight: .regular)
-        previewTextLabel.textColor = NSColor(calibratedWhite: 0.16, alpha: 1)
+        previewTextLabel.textColor = panelSecondaryTextColor()
         previewTextLabel.maximumNumberOfLines = 7
         previewTextLabel.lineBreakMode = .byTruncatingTail
 
@@ -198,10 +197,10 @@ final class LibraryGalleryItem: NSCollectionViewItem {
 
     private func updateSelectionAppearance() {
         guard isViewLoaded else { return }
-        previewSurface.layer?.borderWidth = isSelected ? 2 : 1
+        previewSurface.layer?.borderWidth = isSelected ? 2 : 0
         previewSurface.layer?.borderColor = isSelected
             ? panelAccentColor().cgColor
-            : NSColor.white.withAlphaComponent(0.12).cgColor
+            : LibraryNotesPalette.separator.cgColor
     }
 }
 

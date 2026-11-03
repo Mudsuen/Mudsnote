@@ -1,8 +1,44 @@
 import AppKit
 
+@MainActor protocol LibraryPointerFeedback: AnyObject {
+    func setPointerHovered(_ hovered: Bool)
+}
+
+/// Reconcile tracking areas after layout changes and pointer warps as well as
+/// ordinary enter/exit events. Weak participants do not retain closed windows.
+@MainActor enum LibraryPointerTracking {
+    private static let views = NSHashTable<NSView>.weakObjects()
+    private static var monitor: Any?
+
+    static func register(_ view: NSView) {
+        views.add(view)
+        guard monitor == nil else { return }
+        monitor = NSEvent.addLocalMonitorForEvents(matching: [
+            .mouseEntered, .mouseExited, .mouseMoved,
+            .leftMouseDown, .rightMouseDown, .otherMouseDown,
+            .leftMouseDragged, .rightMouseDragged
+        ]) { event in
+            MainActor.assumeIsolated {
+                for view in views.allObjects {
+                    guard let feedback = view as? any LibraryPointerFeedback else { continue }
+                    let inside = event.window === view.window
+                        && !view.isHiddenOrHasHiddenAncestor
+                        && view.visibleRect.contains(view.convert(event.locationInWindow, from: nil))
+                    feedback.setPointerHovered(inside)
+                }
+            }
+            return event
+        }
+    }
+}
+
+@MainActor final class LibraryWorkspaceSplitView: NSSplitView {
+    override var dividerColor: NSColor { LibraryNotesPalette.separator }
+}
+
 /// The sidebar action lays out its content as views; NSButtonCell never measures
 /// or wraps the title. The button remains the one keyboard/AX/hit-test target.
-@MainActor final class SidebarNewNoteButton: NSButton {
+@MainActor final class SidebarNewNoteButton: NSButton, LibraryPointerFeedback {
     let glyph = NSImageView()
     let label = NSTextField(labelWithString: "新建笔记")
     var invoke: (() -> Void)?
@@ -42,6 +78,7 @@ import AppKit
             label.trailingAnchor.constraint(equalTo: trailingAnchor, constant: -8),
             label.centerYAnchor.constraint(equalTo: centerYAnchor)
         ])
+        LibraryPointerTracking.register(self)
     }
     required init?(coder: NSCoder) { fatalError() }
     override var intrinsicContentSize: NSSize { NSSize(width: NSView.noIntrinsicMetric, height: 32) }
@@ -60,6 +97,11 @@ import AppKit
     }
     override func mouseEntered(with event: NSEvent) { isPointerHovered = true; needsDisplay = true }
     override func mouseExited(with event: NSEvent) { isPointerHovered = false; needsDisplay = true }
+    func setPointerHovered(_ hovered: Bool) {
+        guard isPointerHovered != hovered else { return }
+        isPointerHovered = hovered
+        needsDisplay = true
+    }
     override func draw(_ dirtyRect: NSRect) {
         if isEnabled && (isPointerHovered || isHighlighted) {
             NSColor.labelColor.withAlphaComponent(0.10).setFill()

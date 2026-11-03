@@ -1,3 +1,53 @@
+# Workspace visual QA — 2026-11-03
+
+## Current scope and reference
+
+The user requested smaller Codex-style rail icons, consistent page colors and
+less visual structure, then clarified that hover must brighten the icon strokes.
+The supplied 380 x 432 video is the rail reference:
+`/Users/Donald/Movies/Tshot Recordings/Tshot-73D895E1-718B-4227-AFE8-5624228101A7.mp4`.
+Frames at 0, 3 and 6 seconds were inspected locally. The recording and extracted
+frames remain outside Git. The Notes-style multi-line list remains the content
+model; the latest request supersedes the earlier continuous rail/list surface.
+
+## Implemented direction
+
+- A 50-point rail uses 36-point targets on a 44-point pitch, with fixed 18-point
+  vector glyph bounds. Inactive strokes are secondary gray; hover and selection
+  use the primary foreground. Pointer events reconcile stale tracking states.
+- All workspace pages share an sRGB #191919 surface. The outer rail/titlebar is
+  #242424, cards #1E1E1E, hover #2B2B2B and rail selection #343434. The split
+  divider uses #303030 instead of the native black seam. Gallery previews use
+  the same card surface instead of white sheets.
+- The overview retains one heading, principles, area names and note cards.
+  The duplicate root and its decorative connector tier, area icons, normal card
+  borders and button bezels are removed. Unassigned cards omit repeated status
+  text. New-card and link-existing-note actions remain explicit.
+
+## Verification evidence
+
+`./scripts/verify macos ui` passes 16 related tests, including navigation,
+ordinary and inline creation, saving, source changes, selection, keyboard access,
+hover entry/exit and geometry at 896 x 580, 979 x 728 and 1200 x 800. The final
+log is `/tmp/mudsnote-ui-20261103/verify-ui.log`; no full suite was run.
+
+Local real-window inspection used a separate QA bundle, disposable defaults,
+support directory and four synthetic notes under `/tmp/mudsnote-ui-20261103/`.
+At 979 x 728, the overview and ordinary editor share the same background. Recent
+and Favorites navigation, rail retention during sidebar collapse, and restoring
+Home were exercised. A card was expanded, Chinese text pasted, collapsed, and
+its saved Markdown and refreshed preview checked. This does not claim a separate
+interactive IME-composition test. Build signing and installed revision are
+recorded by the local installer receipt, separately from this visual report.
+
+The remote builder could not resolve `Mac-mini.local`, so verification runs
+locally. No iOS build, installation or public site publication is included.
+
+---
+
+The previous acceptance below is historical and is superseded where the current
+scope differs.
+
 # Notes-style workspace design QA
 
 ## Accepted scope

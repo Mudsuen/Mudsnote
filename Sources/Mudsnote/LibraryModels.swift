@@ -220,10 +220,21 @@ enum LibrarySourceSection: Int {
 }
 
 enum LibraryNotesPalette {
-    static let sidebarBackground = NSColor(calibratedWhite: 0.13, alpha: 1)
-    static let windowBackground = NSColor(calibratedWhite: 0.075, alpha: 1)
-    static let editorBackground = NSColor(calibratedWhite: 0.095, alpha: 1)
+    // Use the same sRGB surface on every page, including transparent hosts.
+    static let shellBackground = gray(0x24)
+    static let windowBackground = gray(0x19)
+    static let sidebarBackground = windowBackground
+    static let editorBackground = windowBackground
+    static let cardBackground = gray(0x1E)
+    static let hoverBackground = gray(0x2B)
+    static let selectionBackground = gray(0x34)
+    static let separator = gray(0x30)
     static let sidebarMaterialTint = NSColor.black.withAlphaComponent(0.10)
+
+    private static func gray(_ value: Int) -> NSColor {
+        let component = CGFloat(value) / 255
+        return NSColor(srgbRed: component, green: component, blue: component, alpha: 1)
+    }
 }
 
 @MainActor

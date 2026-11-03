@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 
 extension LibraryWindowController {
     func buildUI() {
+        window?.acceptsMouseMovedEvents = true
         let sourceList = buildSourceList()
         let sidebar = buildSidebar()
         let navigation = buildNavigationSidebar(tree: sourceList, list: sidebar)
@@ -29,6 +30,7 @@ extension LibraryWindowController {
         editorItem.minimumThickness = LibraryNotesLayout.editorColumnMinimumWidth
 
         let splitController = NSSplitViewController()
+        splitController.splitView = LibraryWorkspaceSplitView()
         splitController.addSplitViewItem(sourceItem)
         splitController.addSplitViewItem(editorItem)
         splitController.splitView.isVertical = true

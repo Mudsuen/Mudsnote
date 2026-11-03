@@ -33,6 +33,8 @@ extension LibraryWindowController {
         regularEditorView = editor
         let host = OverviewContentHost()
         host.owner = self
+        host.wantsLayer = true
+        host.layer?.backgroundColor = LibraryNotesPalette.windowBackground.cgColor
         overviewHost = host
         editor.translatesAutoresizingMaskIntoConstraints = true
         host.addSubview(editor)
