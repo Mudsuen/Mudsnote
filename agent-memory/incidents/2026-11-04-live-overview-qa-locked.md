@@ -26,3 +26,18 @@ The installed app remains at the previously verified main revision until this
 native gate is completed. The full PR test limitations from the preceding work
 remain documented in `2026-11-03-overview-verification-baseline.md`; this follow-up
 uses affected overview/library checks rather than repeating the known blockers.
+
+## Integration follow-up
+
+Remote `524302f` was merged without dropping either font resources or the packaged
+update-check helper. Its ordinary-navigation and sidebar fixes are retained.
+A full merged macOS PR run executes 406 Swift tests and 18 Python tests. Python
+passes; the remaining Swift failure expects a floating browser window to become
+the key window. It reproduces on unchanged `524302f` on this locked MBP. Keep the
+assertion and rerun after unlock. A separate hidden-search TagInput focus failure
+also reproduced on the baseline; its test setup now uses a shown window and the
+actual Search entry and passes in the merged suite.
+
+The coordinating Mac mini chat owns final installation/private publication. This
+chat must not publish Devflow bundles or modify the Mini's installed app. Do not
+push main until the pending native gates pass.

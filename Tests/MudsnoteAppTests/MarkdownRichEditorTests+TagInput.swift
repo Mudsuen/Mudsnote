@@ -77,6 +77,7 @@ extension MarkdownRichEditorTests {
         let controller = LibraryWindowController(noteStore: harness.store,
             onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
         defer { controller.close() }
+        controller.showWindowAndFocus()
         let editor = controller.editorTextView
         let before = editor.string
         let selection = (before as NSString).range(of: "Body")
@@ -94,7 +95,11 @@ extension MarkdownRichEditorTests {
         editor.onAddMetadataTag?()
         let secondInput = try #require(editor.allSubviews.compactMap { $0 as? NSComboBox }.first)
         secondInput.stringValue = "失焦取消"
-        #expect(controller.window?.makeFirstResponder(controller.searchField) == true)
+        // Exercise the user-visible search entry. A hidden, not-yet-laid-out
+        // search control can accept first responder without a field editor.
+        let searchButton = try #require(controller.window?.contentView?.allSubviews.compactMap { $0 as? NSButton }
+            .first { $0.identifier?.rawValue == "LibrarySidebarSearch" })
+        searchButton.performClick(nil)
         await finishTagInputEvent()
         #expect(controller.window?.firstResponder === controller.searchField.currentEditor())
         #expect(secondInput.superview == nil)

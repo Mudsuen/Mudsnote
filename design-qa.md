@@ -67,8 +67,18 @@ the normal save/conflict path and restores editor appearance when leaving overvi
   pending and no installation has been performed for this candidate.
 - Recovery tests cover legacy overview rewrites and malformed canonical metadata;
   recovery data is retained without silently replacing user state.
-- Full PR verification has previously reproduced navigation/autosave blockers;
-  see `agent-memory/incidents/2026-11-03-overview-verification-baseline.md`.
+- Integrated remote `524302f` (startup update checks and prior navigation/sidebar
+  fixes) into the candidate. The packaging merge retains both fonts/license and
+  `macos_update_check.py`.
+- Merged `./scripts/verify macos pr`: all 18 Python tests pass; the latest Swift
+  run executes 406 tests with one remaining `isKeyWindow` failure in
+  `floatingBrowseButtonDispatchesCompleteClicksToBrowserPanel`. That same failure
+  reproduces on unchanged `524302f` on this locked Mac. The assertion is retained.
+- A hidden-search TagInput focus failure also reproduces on unchanged `524302f`.
+  Its setup now shows the window and clicks the actual Search entry, exercising
+  the real blur path; the merged full run confirms that test passes.
+- Real-window focus and visual gates remain pending manual unlock; these baseline
+  reproductions do not justify skipping native acceptance.
 - [P1] Native visual and interactive comparison is blocked by the Mac lock screen.
   No final fidelity claim or installation is permitted before that comparison.
 - [P2] Verify actual native control alignment, hover-to-gutter transitions, wrapped
