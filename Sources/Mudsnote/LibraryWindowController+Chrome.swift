@@ -100,7 +100,7 @@ extension LibraryWindowController {
         searchButton.isBordered = false
         searchButton.toolTip = "搜索笔记"
         searchButton.setAccessibilityLabel("搜索笔记")
-        searchButton.image = searchButton.image?.withSymbolConfiguration(.init(pointSize: 18, weight: .regular))
+        searchButton.image = searchButton.image?.withSymbolConfiguration(.init(pointSize: 18, weight: .light))
         searchButton.widthAnchor.constraint(equalToConstant: 28).isActive = true
         let newNote = SidebarNewNoteButton { [weak self] in self?.createNewNoteForLibrary() }
         newNote.identifier = NSUserInterfaceItemIdentifier("OverviewRail-square.and.pencil")

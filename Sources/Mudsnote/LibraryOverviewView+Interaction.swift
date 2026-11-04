@@ -1,7 +1,7 @@
 import AppKit
 import MudsnoteCore
 
-extension LibraryOverviewView: NSTextViewDelegate, NSDraggingSource, NSMenuItemValidation {
+extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
     var insertionArea: UUID? {
         if case .area(let id) = activeNode ?? focusedRoot { return id }
         if case .area(let id) = focusedRoot { return id }
@@ -45,32 +45,40 @@ extension LibraryOverviewView: NSTextViewDelegate, NSDraggingSource, NSMenuItemV
     }
 
     func updateBreadcrumbs() {
-        breadcrumb.arrangedSubviews.forEach { breadcrumb.removeArrangedSubview($0); $0.removeFromSuperview() }
+        breadcrumb.subviews.forEach { $0.removeFromSuperview() }
         let tree = OverviewTree(state)
         let path = focusedRoot == .root ? [OverviewNodeID.root] : tree.ancestors(of: focusedRoot).reversed() + [focusedRoot]
-        let home = OverviewActionButton("总览") { [weak self] in self?.focus(.root) }
-        home.font = .systemFont(ofSize: 14); home.contentTintColor = colors.detail
-        breadcrumb.addArrangedSubview(home)
+        let available = max(100, breadcrumbScroll.bounds.width)
+        var x: CGFloat = 0
+        func append(_ label: String, current: Bool, action: @escaping () -> Void) {
+            let button = OverviewActionButton(label, action: action)
+            button.font = .systemFont(ofSize: 14)
+            button.alignment = .left; button.lineBreakMode = .byTruncatingTail
+            button.cell?.usesSingleLineMode = true; button.cell?.wraps = false
+            button.attributedTitle = NSAttributedString(string: label, attributes: [.font: button.font!, .foregroundColor: current ? colors.text : colors.detail])
+            let natural = ceil((label as NSString).size(withAttributes: [.font: button.font!]).width) + 8
+            button.frame = NSRect(x: x, y: 0, width: min(natural, max(90, available * 0.62)), height: 18)
+            button.setAccessibilityLabel(current ? label : "返回 " + label)
+            button.toolTip = label
+            breadcrumb.addSubview(button); x += button.frame.width
+        }
+        append("总览", current: false) { [weak self] in self?.focus(.root) }
         for node in path {
             let arrow = NSImageView(image: NSImage(systemSymbolName: "chevron.right", accessibilityDescription: nil)!)
-            arrow.contentTintColor = colors.detail
-            arrow.widthAnchor.constraint(equalToConstant: 8).isActive = true
-            arrow.heightAnchor.constraint(equalToConstant: 10).isActive = true
-            arrow.setAccessibilityElement(false)
-            breadcrumb.addArrangedSubview(arrow)
-            let button = OverviewActionButton(nodeTitle(node)) { [weak self] in self?.focus(node) }
-            button.font = .systemFont(ofSize: 14)
-            button.attributedTitle = NSAttributedString(string: button.title, attributes: [.font: button.font!, .foregroundColor: node == focusedRoot ? colors.text : colors.detail])
-            button.setAccessibilityLabel("返回 " + nodeTitle(node))
-            breadcrumb.addArrangedSubview(button)
+            arrow.contentTintColor = colors.detail; arrow.setAccessibilityElement(false)
+            arrow.frame = NSRect(x: x + 5, y: 4, width: 8, height: 10)
+            breadcrumb.addSubview(arrow); x += 20
+            append(nodeTitle(node), current: node == focusedRoot) { [weak self] in self?.focus(node) }
         }
-        breadcrumb.needsLayout = true
+        breadcrumb.frame = NSRect(x: 0, y: 0, width: max(1, x), height: 18)
+        breadcrumbScroll.contentView.scroll(to: NSPoint(x: max(0, x - available), y: 0))
     }
 
-    func createTopic(parent: OverviewNodeID, after sibling: OverviewNodeID? = nil) {
+    func createTopic(parent: OverviewNodeID, after sibling: OverviewNodeID? = nil, position: NoteOverview.MapPosition? = nil) {
         guard parent != .unassigned, !isCard(parent), prepareStructureChange() else { return }
         let parentID: UUID? = { if case .area(let id) = parent { return id }; return nil }()
-        let area = NoteOverview.Area(title: "", parentID: parentID)
+        var area = NoteOverview.Area(title: "", parentID: parentID)
+        area.mapPosition = position
         guard owner?.changeOverview({ state in
             if case .area(let id) = sibling, let index = state.areas.firstIndex(where: { $0.id == id }) {
                 state.areas.insert(area, at: index + 1)
@@ -125,13 +133,13 @@ extension LibraryOverviewView: NSTextViewDelegate, NSDraggingSource, NSMenuItemV
             switch node {
             case .area(let id):
                 guard let index = state.areas.firstIndex(where: { $0.id == id }) else { return }
-                var area = state.areas.remove(at: index); area.parentID = parentID
+                var area = state.areas.remove(at: index); area.parentID = parentID; area.mapPosition = nil
                 if case .area(let targetID) = target, let at = state.areas.firstIndex(where: { $0.id == targetID }) {
                     state.areas.insert(area, at: at + (after ? 1 : 0))
                 } else { state.areas.append(area) }
             case .card(let id):
                 guard let index = state.cards.firstIndex(where: { $0.id == id }) else { return }
-                var card = state.cards.remove(at: index); card.areaID = parentID
+                var card = state.cards.remove(at: index); card.areaID = parentID; card.mapPosition = nil
                 if case .card(let targetID) = target, let at = state.cards.firstIndex(where: { $0.id == targetID }) {
                     state.cards.insert(card, at: at + (after ? 1 : 0))
                 } else { state.cards.append(card) }
@@ -340,27 +348,43 @@ extension LibraryOverviewView: NSTextViewDelegate, NSDraggingSource, NSMenuItemV
     }
     func revealActiveNode() {
         guard let node = activeNode, let frame = plan?.frames[node] else { return }
-        canvas.scrollToVisible(frame.insetBy(dx: -40, dy: -20))
+        if presentation == .mindMap, let plan { centerWorldPoint(CGPoint(x: frame.midX - plan.worldOffset.x, y: frame.midY - plan.worldOffset.y)) }
+        else { canvas.scrollToVisible(frame.insetBy(dx: -40, dy: -20)) }
     }
 
-    func startDrag(_ node: OverviewNodeID, event: NSEvent) {
-        guard prepareStructureChange(), let host = hosts[node] else { return }
-        let pasteboard = NSPasteboardItem(); pasteboard.setString(node.dragString, forType: OverviewCanvas.dragType)
-        let item = NSDraggingItem(pasteboardWriter: pasteboard)
-        let image = host.bitmapImageRepForCachingDisplay(in: host.contentRect).map { bitmap -> NSImage in
-            host.cacheDisplay(in: host.contentRect, to: bitmap)
-            let image = NSImage(size: host.contentRect.size); image.addRepresentation(bitmap); return image
-        } ?? NSImage(size: host.contentRect.size)
-        item.setDraggingFrame(convert(host.contentRect, from: host), contents: image)
-        beginDraggingSession(with: [item], event: event, source: self)
-    }
-    func draggingSession(_ session: NSDraggingSession, sourceOperationMaskFor context: NSDraggingContext) -> NSDragOperation {
-        context == .withinApplication ? .move : []
+    func startDrag(_ node: OverviewNodeID, event: NSEvent, origin: NSEvent) {
+        guard prepareStructureChange(), let window, let host = hosts[node],
+              let frame = plan?.frames[node] else { return }
+        let start = canvas.convert(origin.locationInWindow, from: nil)
+        dragOffset = CGPoint(x: start.x - frame.minX, y: start.y - frame.minY)
+        host.alphaValue = 0.45
+        NSCursor.closedHand.push()
+        defer {
+            host.alphaValue = 1
+            canvas.dropRect = nil; canvas.needsDisplay = true
+            NSCursor.pop()
+        }
+        _ = handleDrop(node, point: canvas.convert(event.locationInWindow, from: nil), perform: false)
+        while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp, .keyDown]) {
+            if next.type == .keyDown {
+                if next.keyCode == 53 { return }
+                continue
+            }
+            let point = canvas.convert(next.locationInWindow, from: nil)
+            _ = handleDrop(node, point: point, perform: next.type == .leftMouseUp)
+            if next.type == .leftMouseUp { return }
+        }
     }
     func handleDrop(_ node: OverviewNodeID, point: NSPoint, perform: Bool) -> Bool {
         guard let plan else { return false }
         let tree = OverviewTree(state)
         let hit = plan.order.first { plan.frames[$0]?.contains(point) == true }
+        if presentation == .mindMap, hit == nil {
+            let origin = CGPoint(x: point.x - dragOffset.x, y: point.y - dragOffset.y)
+            canvas.dropRect = CGRect(origin: origin, size: plan.frames[node]?.size ?? CGSize(width: 120, height: 44))
+            canvas.needsDisplay = true
+            return perform ? moveToCanvas(node, at: origin) : node != focusedRoot && node != .unassigned
+        }
         var parent = focusedRoot
         var target: OverviewNodeID?
         var after = false

@@ -73,6 +73,8 @@ struct OverviewLayout {
     var sides: [OverviewNodeID: CGFloat]
     var order: [OverviewNodeID]
     var root: OverviewNodeID
+    var presentation: OverviewPresentation
+    var worldOffset: CGPoint
     var areas: [UUID: CGRect] {
         Dictionary(uniqueKeysWithValues: frames.compactMap { key, value in
             if case .area(let id) = key { return (id, value) }; return nil
@@ -91,11 +93,27 @@ struct OverviewLayout {
         let tree = OverviewTree(state)
         let root = requestedRoot == .root || tree.parents[requestedRoot] != nil ? requestedRoot : .root
         let width = max(1, width), height = max(1, height)
+        let outlineAvailable = max(120, width - 11.5)
+        let outlineWrapper = min(872, outlineAvailable)
+        let outlineColumn = max(120, outlineWrapper - 105)
+        let outlineLeading = max(0, (outlineAvailable - outlineWrapper) / 2) + 52.5
         var frames: [OverviewNodeID: CGRect] = [:]
         var links: [(OverviewNodeID, OverviewNodeID)] = []
         var depths: [OverviewNodeID: Int] = [:]
         var sides: [OverviewNodeID: CGFloat] = [:]
         var order: [OverviewNodeID] = []
+        var worldOffset = CGPoint.zero
+        let floating = Dictionary(uniqueKeysWithValues: tree.descendants(of: root).compactMap { node -> (OverviewNodeID, NoteOverview.MapPosition)? in
+            let position: NoteOverview.MapPosition?
+            switch node {
+            case .area(let id): position = state.areas.first { $0.id == id }?.mapPosition
+            case .card(let id): position = state.cards.first { $0.id == id }?.mapPosition
+            default: position = nil
+            }
+            guard let position, position.scope == root.dragString,
+                  position.x.isFinite, position.y.isFinite, abs(position.x) < 1e12, abs(position.y) < 1e12 else { return nil }
+            return (node, position)
+        })
         func label(_ node: OverviewNodeID) -> String {
             switch node {
             case .root: return state.title ?? "我的生活"
@@ -112,15 +130,20 @@ struct OverviewLayout {
             }
         }
         func children(_ node: OverviewNodeID) -> [OverviewNodeID] {
-            collapsed.contains(node) && node != root ? [] : tree.children[node, default: []]
+            guard !collapsed.contains(node) || node == root else { return [] }
+            return tree.children[node, default: []].filter { child in
+                guard presentation == .mindMap else { return true }
+                if floating[child] != nil { return false }
+                if child == .unassigned { return tree.children[child, default: []].contains { floating[$0] == nil } }
+                return true
+            }
         }
         var nodeSizes: [OverviewNodeID: CGSize] = [:]
         func measureNode(_ node: OverviewNodeID, depth: Int) -> CGSize {
             if let cached = nodeSizes[node] { return cached }
             let size: CGSize
             if presentation == .outline {
-                let column = min(767, max(200, width - 96))
-                let w = max(120, column - CGFloat(max(0, depth - 1)) * 28)
+                let w = max(120, outlineColumn - CGFloat(max(0, depth - 1)) * 28)
                 let h: CGFloat
                 if node == root { h = OverviewTypography.textHeight(label(node), width: w, size: 34, lineHeight: 54.4, weight: .semibold) }
                 else if case .card(let id) = node, id == selected { h = max(280, min(420, height - 48)) }
@@ -147,7 +170,7 @@ struct OverviewLayout {
             return size
         }
         if presentation == .outline {
-            let leading = (width - min(767, max(200, width - 96))) / 2
+            let leading = outlineLeading
             var y: CGFloat = 48
             func place(_ node: OverviewNodeID, depth: Int) {
                 let size = measureNode(node, depth: depth)
@@ -220,14 +243,21 @@ struct OverviewLayout {
                           top: offset - center, depth: 1, side: side)
                 }
             }
-            let raw = frames.values.reduce(CGRect.null) { $0.union($1) }
-            let shift = CGPoint(x: width - raw.minX, y: height - raw.minY)
+            for node in tree.descendants(of: root) {
+                guard let position = floating[node], !tree.ancestors(of: node).contains(where: { $0 != root && collapsed.contains($0) }) else { continue }
+                let depth = (tree.ancestors(of: node).firstIndex(of: root) ?? 0) + 1
+                let m = measure(node, depth: depth)
+                let side: CGFloat = position.x >= rootSize.width / 2 ? 1 : -1
+                place(node, x: position.x, top: position.y - m.anchor + anchorOffset(node, depth: depth), depth: depth, side: side)
+            }
+            let shift = CGPoint(x: width, y: height)
+            worldOffset = shift
             frames = frames.mapValues { $0.offsetBy(dx: shift.x, dy: shift.y) }
         }
         let bounds = frames.values.reduce(CGRect.null) { $0.union($1) }
         let size = presentation == .mindMap
-            ? CGSize(width: bounds.maxX + width, height: bounds.maxY + height)
+            ? CGSize(width: width * 3, height: height * 3)
             : CGSize(width: max(width, bounds.maxX + 24), height: max(height, bounds.maxY + 48))
-        return Self(frames: frames, links: links, size: size, contentBounds: bounds, depths: depths, sides: sides, order: order, root: root)
+        return Self(frames: frames, links: links, size: size, contentBounds: bounds, depths: depths, sides: sides, order: order, root: root, presentation: presentation, worldOffset: worldOffset)
     }
 }

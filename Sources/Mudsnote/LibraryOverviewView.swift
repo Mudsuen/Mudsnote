@@ -4,7 +4,7 @@ import MudsnoteCore
 @MainActor final class OverviewActionButton: NSButton {
     var invoke: (() -> Void)?
     var doubleClick: ((NSEvent) -> Void)?
-    var beginDrag: ((NSEvent) -> Void)?
+    var beginDrag: ((NSEvent, NSEvent) -> Void)?
     var keyHandler: ((NSEvent) -> Bool)?
     var contextAction: (() -> Void)?
     var drawsHoverBackground = true
@@ -59,7 +59,7 @@ import MudsnoteCore
         while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp { invoke?(); return }
             if hypot(next.locationInWindow.x - event.locationInWindow.x, next.locationInWindow.y - event.locationInWindow.y) > 4,
-               let beginDrag { beginDrag(next); return }
+               let beginDrag { beginDrag(next, event); return }
         }
     }
     override func rightMouseDown(with event: NSEvent) {
@@ -72,7 +72,7 @@ import MudsnoteCore
 
 @MainActor final class OverviewCardView: NSView {
     let cardID: UUID
-    let heading = NSTextField(wrappingLabelWithString: "")
+    let heading = OverviewTextLabel(wrappingLabelWithString: "")
     let preview = NSTextField(wrappingLabelWithString: "")
     let association = NSTextField(labelWithString: "未归属")
     let expand: OverviewActionButton
@@ -86,7 +86,7 @@ import MudsnoteCore
     var colors = OverviewColors(dark: true, mapStyle: .ink)
     var nodeActive = false
     var selectNode: (() -> Void)?
-    var beginDrag: ((NSEvent) -> Void)?
+    var beginDrag: ((NSEvent, NSEvent) -> Void)?
     var keyHandler: ((NSEvent) -> Bool)?
     private var hoverTrackingArea: NSTrackingArea?
     private(set) var isPointerHovered = false
@@ -148,7 +148,7 @@ import MudsnoteCore
         let focused = window?.firstResponder === self
         layer?.backgroundColor = (isPointerHovered && !isCompact ? LibraryNotesPalette.hoverBackground : isCompact && editor == nil ? NSColor.clear
             : isOutline ? colors.outlineBackground : colors.mapBackground).cgColor
-        layer?.borderWidth = editor != nil || (isCompact && focused) ? 1 : 0
+        layer?.borderWidth = editor != nil || (!isCompact && focused) ? 1 : 0
         layer?.borderColor = colors.mapLine.cgColor
         layer?.cornerRadius = isCompact && editor == nil ? 0 : 8
         if isCompact && editor == nil {
@@ -195,7 +195,7 @@ import MudsnoteCore
         while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp { selectNode?(); return }
             if hypot(next.locationInWindow.x - event.locationInWindow.x, next.locationInWindow.y - event.locationInWindow.y) > 4,
-               let beginDrag { beginDrag(next); return }
+               let beginDrag { beginDrag(next, event); return }
         }
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
@@ -235,41 +235,32 @@ import MudsnoteCore
     var isOutline = false
     var strokeColor = NSColor.gray
     var blankClick: (() -> Void)?
-    var draggedNode: ((OverviewNodeID, NSPoint, Bool) -> Bool)?
+    var blankMenu: ((NSPoint, NSEvent) -> Void)?
+    var panTo: ((NSPoint) -> Void)?
     var dropRect: NSRect?
-    static let dragType = NSPasteboard.PasteboardType("local.mudsnote.overview.node")
-    override init(frame: NSRect) { super.init(frame: frame); registerForDraggedTypes([Self.dragType]) }
-    required init?(coder: NSCoder) { fatalError() }
     override func mouseDown(with event: NSEvent) {
         guard let scroll = enclosingScrollView, let window else { return }
-        let origin = scroll.contentView.bounds.origin
+        var last = event.locationInWindow
         var panned = false
         while let next = window.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp { if !panned { blankClick?() }; return }
             guard !isOutline else { continue }
             panned = true
-            let dx = (next.locationInWindow.x - event.locationInWindow.x) / scroll.magnification
-            let dy = (next.locationInWindow.y - event.locationInWindow.y) / scroll.magnification
-            scroll.contentView.scroll(to: NSPoint(x: origin.x - dx, y: origin.y + dy))
-            scroll.reflectScrolledClipView(scroll.contentView)
+            let dx = (next.locationInWindow.x - last.x) / scroll.magnification
+            let dy = (next.locationInWindow.y - last.y) / scroll.magnification
+            let origin = scroll.contentView.bounds.origin
+            let target = NSPoint(x: origin.x - dx, y: origin.y + dy)
+            if let panTo { panTo(target) }
+            else { scroll.contentView.scroll(to: target); scroll.reflectScrolledClipView(scroll.contentView) }
+            last = next.locationInWindow
         }
     }
-    override func draggingEntered(_ sender: any NSDraggingInfo) -> NSDragOperation { draggingUpdated(sender) }
-    override func draggingUpdated(_ sender: any NSDraggingInfo) -> NSDragOperation {
-        guard let raw = sender.draggingPasteboard.string(forType: Self.dragType), let node = OverviewNodeID(dragString: raw) else { return [] }
-        return draggedNode?(node, convert(sender.draggingLocation, from: nil), false) == true ? .move : []
-    }
-    override func draggingExited(_ sender: (any NSDraggingInfo)?) { dropRect = nil; needsDisplay = true }
-    override func performDragOperation(_ sender: any NSDraggingInfo) -> Bool {
-        defer { dropRect = nil; needsDisplay = true }
-        guard let raw = sender.draggingPasteboard.string(forType: Self.dragType), let node = OverviewNodeID(dragString: raw) else { return false }
-        return draggedNode?(node, convert(sender.draggingLocation, from: nil), true) == true
-    }
+    override func rightMouseDown(with event: NSEvent) { blankMenu?(convert(event.locationInWindow, from: nil), event) }
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
         for (points, accent) in lines {
             guard let first = points.first else { continue }
-            strokeColor.withAlphaComponent(accent ? 1 : 0.9).setStroke()
+            strokeColor.withAlphaComponent(strokeColor.alphaComponent * (accent ? 1 : 0.9)).setStroke()
             let path = NSBezierPath()
             path.move(to: first)
             if !isOutline && points.count > 2 {
@@ -322,6 +313,7 @@ import MudsnoteCore
 @MainActor final class LibraryOverviewView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
+    override var undoManager: UndoManager? { structuralUndo }
     weak var owner: LibraryWindowController?
     let scroll = NSScrollView()
     let canvas = OverviewCanvas()
@@ -333,7 +325,7 @@ import MudsnoteCore
     let appearanceButton = OverviewActionButton("", symbol: "ellipsis", action: {})
     let presentationButton = OverviewActionButton("大纲笔记", symbol: "list.bullet", action: {})
     let breadcrumbScroll = NSScrollView()
-    let breadcrumb = NSStackView()
+    let breadcrumb = NSView()
     let mapTools = OverviewRailView()
     let zoomValue = OverviewActionButton("100%", action: {})
     let structureButton = OverviewActionButton("", symbol: "point.3.connected.trianglepath.dotted", action: {})
@@ -366,6 +358,10 @@ import MudsnoteCore
     var topicSaveWork: DispatchWorkItem?
     var endingTopicEdit = false
     var replayingHistory = false
+    var canvasTranslation = CGPoint.zero
+    var updatingViewport = false
+    var viewportLayoutQueued = false
+    var dragOffset = CGPoint.zero
     var editorAppearance: NSAppearance?
     var overriddenEditor: NSView?
     var editorLayers: [(NSView, CGColor?)] = []
@@ -393,7 +389,7 @@ import MudsnoteCore
         topicEditor.isHidden = true
         topicEditor.setAccessibilityLabel("主题内容")
         topicEditor.setAccessibilityIdentifier("OverviewTopicEditor")
-        scroll.hasVerticalScroller = true; scroll.hasHorizontalScroller = presentation == .mindMap
+        scroll.hasVerticalScroller = presentation == .outline; scroll.hasHorizontalScroller = false
         scroll.scrollerStyle = .overlay; scroll.autohidesScrollers = true
         scroll.automaticallyAdjustsContentInsets = false; scroll.drawsBackground = false
         scroll.allowsMagnification = presentation == .mindMap
@@ -403,15 +399,20 @@ import MudsnoteCore
             guard let self, self.commitTopicEditing() else { return }
             self.activeNode = nil; self.window?.makeFirstResponder(self); self.needsLayout = true
         }
-        canvas.draggedNode = { [weak self] node, point, perform in self?.handleDrop(node, point: point, perform: perform) ?? false }
+        canvas.panTo = { [weak self] point in self?.panViewport(to: point) }
+        canvas.blankMenu = { [weak self] point, event in self?.showCanvasMenu(at: point, event: event) }
+        scroll.contentView.postsBoundsChangedNotifications = true
+        NotificationCenter.default.addObserver(self, selector: #selector(canvasViewportChanged), name: NSView.boundsDidChangeNotification, object: scroll.contentView)
         addSubview(scroll)
-        breadcrumb.orientation = .horizontal; breadcrumb.spacing = 8
         breadcrumbScroll.drawsBackground = false; breadcrumbScroll.hasHorizontalScroller = false
         breadcrumbScroll.documentView = breadcrumb
         mapTools.wantsLayer = true; mapTools.layer?.cornerRadius = 4
         mapTools.layer?.backgroundColor = NSColor.white.cgColor
         mapTools.layer?.shadowColor = NSColor.black.cgColor
         mapTools.layer?.shadowOpacity = 0.08; mapTools.layer?.shadowRadius = 8
+        mapTools.layer?.borderWidth = 0.5; mapTools.layer?.borderColor = NSColor(white: 0.9, alpha: 1).cgColor
+        mapTools.layer?.masksToBounds = false
+        mapTools.clipsToBounds = false
         mapTools.appearance = NSAppearance(named: .aqua)
         [zoomValue, structureButton, paletteButton].forEach(mapTools.addSubview)
         structureButton.image = structureButton.image?.withSymbolConfiguration(.init(pointSize: 22, weight: .regular))
@@ -432,6 +433,7 @@ import MudsnoteCore
         principles.pressed = { [weak self] in self?.beginTopicEdit(self?.focusedRoot ?? .root, details: true) }
         rootHost.addChild.invoke = { [weak self] in self?.createTopic(parent: self?.focusedRoot ?? .root) }
         rootHost.more.invoke = { [weak self] in self?.showTopicMenu(self?.focusedRoot ?? .root) }
+        rootHost.contextAction = { [weak self] in self?.showTopicMenu(self?.focusedRoot ?? .root) }
         presentationButton.identifier = NSUserInterfaceItemIdentifier("OverviewPresentation")
         presentationButton.invoke = { [weak self] in
             guard let self else { return }; self.setPresentation(self.presentation == .mindMap ? .outline : .mindMap)
@@ -474,7 +476,7 @@ import MudsnoteCore
                 let button = OverviewActionButton(area.title) { [weak self] in self?.topicPressed(node) }
                 button.drawsHoverBackground = false
                 button.doubleClick = { [weak self] _ in self?.beginTopicEdit(node) }
-                button.beginDrag = { [weak self] event in self?.startDrag(node, event: event) }
+                button.beginDrag = { [weak self] event, origin in self?.startDrag(node, event: event, origin: origin) }
                 button.contextAction = { [weak self] in self?.showTopicMenu(node) }
                 button.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
                 areas[area.id] = button
@@ -490,7 +492,7 @@ import MudsnoteCore
             else {
                 view = OverviewCardView(id: card.id, open: { [weak owner] in owner?.toggleOverviewCard(card.id) }, menu: { [weak self] in self?.showTopicMenu(node) })
                 view.selectNode = { [weak self] in self?.select(node) }
-                view.beginDrag = { [weak self] event in self?.startDrag(node, event: event) }
+                view.beginDrag = { [weak self] event, origin in self?.startDrag(node, event: event, origin: origin) }
                 view.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
                 cards[card.id] = view; attachHost(node, content: view)
             }
@@ -521,9 +523,10 @@ import MudsnoteCore
         let host = OverviewTopicHost(node: node, content: content)
         host.fold.invoke = { [weak self] in self?.toggleBranch(node) }
         host.bullet.invoke = { [weak self] in self?.focus(node) }
-        host.bullet.beginDrag = { [weak self] event in self?.startDrag(node, event: event) }
+        host.bullet.beginDrag = { [weak self] event, origin in self?.startDrag(node, event: event, origin: origin) }
         host.detail.pressed = { [weak self] in self?.beginTopicEdit(node, details: true) }
         host.more.invoke = { [weak self] in self?.showTopicMenu(node) }
+        host.contextAction = { [weak self] in self?.showTopicMenu(node) }
         host.addChild.invoke = { [weak self] in self?.createTopic(parent: node) }
         hosts[node] = host; canvas.addSubview(host)
     }
@@ -561,9 +564,12 @@ import MudsnoteCore
 
     override func layout() {
         super.layout()
+        let wasUpdatingViewport = updatingViewport
+        updatingViewport = true
+        defer { updatingViewport = wasUpdatingViewport }
         let width = max(1, bounds.width)
         breadcrumbScroll.frame = NSRect(x: 36, y: 16, width: max(1, width - 340), height: 18)
-        breadcrumb.frame = NSRect(origin: .zero, size: breadcrumb.fittingSize)
+        updateBreadcrumbs()
         presentationButton.frame = NSRect(x: width - 271, y: 11, width: 91, height: 26)
         addArea.frame = NSRect(x: width - 166, y: 10, width: 28, height: 28)
         add.frame = NSRect(x: width - 128, y: 10, width: 28, height: 28)
@@ -582,8 +588,22 @@ import MudsnoteCore
         structureButton.frame = NSRect(x: 0, y: 56, width: 60, height: 56)
         paletteButton.frame = NSRect(x: 0, y: 112, width: 60, height: 56)
         let viewport = scroll.contentView.frame.size
-        let next = OverviewLayout.make(width: viewport.width, height: viewport.height, state: state, selected: selectedID,
+        var next = OverviewLayout.make(width: viewport.width, height: viewport.height, state: state, selected: selectedID,
             presentation: presentation, collapsed: collapsed, titles: cards.mapValues { $0.heading.stringValue }, root: focusedRoot, structure: mapStructure)
+        var preserveOrigin: CGPoint?
+        if presentation == .mindMap {
+            let visible = scroll.contentView.bounds.size
+            let offset = CGPoint(x: visible.width + canvasTranslation.x, y: visible.height + canvasTranslation.y)
+            let delta = CGPoint(x: offset.x - next.worldOffset.x, y: offset.y - next.worldOffset.y)
+            next.frames = next.frames.mapValues { $0.offsetBy(dx: delta.x, dy: delta.y) }
+            next.contentBounds = next.contentBounds.offsetBy(dx: delta.x, dy: delta.y)
+            next.worldOffset = offset
+            next.size = CGSize(width: max(1, visible.width * 3), height: max(1, visible.height * 3))
+            if let old = plan, old.presentation == .mindMap, old.root == next.root {
+                preserveOrigin = CGPoint(x: scroll.contentView.bounds.minX + offset.x - old.worldOffset.x,
+                                         y: scroll.contentView.bounds.minY + offset.y - old.worldOffset.y)
+            }
+        }
         plan = next
         let tree = OverviewTree(state)
         rootHost.configure(nodeFrame: next.frames[next.root] ?? .zero, presentation: presentation, depth: 0, side: 1,
@@ -658,6 +678,11 @@ import MudsnoteCore
             }
         }
         canvas.setFrameSize(next.size); canvas.needsDisplay = true
+        if let preserveOrigin {
+            let wasUpdating = updatingViewport; updatingViewport = true
+            scroll.contentView.scroll(to: preserveOrigin); scroll.reflectScrolledClipView(scroll.contentView)
+            updatingViewport = wasUpdating
+        }
         layoutTopicEditor()
         if initialViewport, bounds.width > 0, bounds.height > 48 {
             initialViewport = false
@@ -665,5 +690,12 @@ import MudsnoteCore
         }
     }
     func isCard(_ node: OverviewNodeID) -> Bool { if case .card = node { return true }; return false }
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard selectedID == nil, topicEdit == nil,
+              let responder = window?.firstResponder as? NSView,
+              responder === self || responder.isDescendant(of: self),
+              event.modifierFlags.contains(.command) else { return super.performKeyEquivalent(with: event) }
+        return handleKey(event) || super.performKeyEquivalent(with: event)
+    }
     override func keyDown(with event: NSEvent) { if !handleKey(event) { super.keyDown(with: event) } }
 }

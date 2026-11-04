@@ -1,100 +1,100 @@
-# Live Mubu overview recreation — candidate, 2026-11-04
+# Live Mubu overview recreation — accepted, 2026-11-04
 
-## Confirmed scope
+## Confirmed scope and visual targets
 
-Only the overview mind map and outline are being recreated. Preserve the existing
-library rail, search entry and note-list presentation, including the requested
-icon-only compose action. Canonical Markdown editing still uses the shared editor.
+Recreate only the overview mind map and outline from the user's live Mubu page.
+Keep the existing library rail, search and note-list layout, including icon-only
+compose. A later GPT chrome screenshot supplies the thin icon treatment for
+existing navigation/search/compose controls. No account or notification controls
+are invented. Canonical Markdown editing retains the shared editor and save path.
 
-## Source and capture evidence
+## Capture and comparison evidence
 
-- Source visual truth: the user's authenticated, currently open Mubu page, then a
-  disposable neutral document created for interaction tests. Private document URLs,
-  business text and reference images are not committed to this repository.
-- Source viewport: 1615 × 919 CSS pixels, devicePixelRatio 2; browser captures are
-  emitted at CSS-pixel scale. Text and node geometry were read from actual DOM
-  elements, editable canvas overlays and computed styles. No private JS state was read.
-- Native preview requested: 1633 × 963 AppKit points (2× density), so its content
-  area can be compared after excluding native titlebar and the existing sidebar.
-- Native implementation screenshot: unavailable. The computer-use tool reported
-  the Mac was locked and required the owner's manual unlock. A build or a test
-  result is not treated as evidence of rendered fidelity.
-- Temporary preview and source-session pointers are under
-  `/tmp/mudsnote-live-reference-20261104`, outside Git.
+- Reference: authenticated live Mubu DOM/CSS and a neutral temporary document;
+  no private JavaScript state was read. Source interactions were exercised through
+  five levels. Private URLs, business text and screenshots are not committed.
+- Initial source measurement: 1615x919 CSS pixels, DPR 2. Final comparison:
+  1082x716 CSS-pixel source viewport and 1100x760-point native window captured at
+  2x. Excluding the source sidebar and the native sidebar/titlebar yields matched
+  content areas of approximately 811x716 points. Captures were inspected in the
+  computer-use session in light/dark outline and Ink/Focus map states.
+- The owner unlocked the MBP; the earlier native-capture gate is resolved.
+  The isolated preview uses disposable notes, support directory and defaults.
+  Native capture/session pointers remain under the temporary reference directory,
+  outside Git. The original source document was not edited.
+- The temporary Mubu document was moved to recoverable Trash and its presence
+  there verified. Follow System appearance, the original document and the normal
+  browser viewport were restored.
 
-## Five required fidelity surfaces
+## Fidelity surfaces
 
-- Typography: live outline title 34/54.4 and topics 16/25.6 plus six points of row
-  padding; map root Helvetica Neue Medium 24/38, first level 16/26 and deeper levels
-  14/22. Source Sans Pro Regular/Semibold are bundled for the outline rather than
-  relying on a system-font substitution. Long titles and descriptions wrap.
-- Layout: 28-point outline nesting, 31-point text inset, 6-point center dots with
-  an 18-point collapsed outer dot; 48-point header, 91 × 26 mode switch; floating
-  60 × 168 map panel. Map uses gray rounded elbow branches, first-level pills and
-  plain deeper topics. Left/right and right-only structures are implemented.
-- Colors: outline light white/#2e2e2e and dark #1c1c1e/#d4d4d4; bullets #949494;
-  guides black/10% or #373c43. Ink uses white paper/black root; Focus uses dark
-  paper/light root. The app appearance and map palette are independent settings.
-- Assets: standard SF Symbols for functional controls; live vector/text rendering
-  for topics and branches. Fonts are unmodified Adobe OTFs with the bundled OFL
-  license and pinned-source/hash record. No private source screenshots are assets.
-- Copy/content: comparison content is neutral and disposable. Existing areas,
-  note identity and principles survive. In Mudsnote, structural topics can nest;
-  linked notes remain document leaves and expose their existing rich editor.
-  No nonfunctional account, collaboration or publishing controls were added.
+- Typography: bundled Source Sans Pro Regular/Semibold for 34/54.4 outline title
+  and 16/25.6 topics, with six points row padding. Map uses Helvetica Neue Medium
+  24/38 root, 16/26 first level and 14/22 deeper levels. Actual single-line map
+  node heights are 62/50/44 points; wrapped labels use measured line counts.
+- Layout: outline 28-point nesting, 31-point text inset, six-point dots and
+  18-point collapsed outer dots. Wrapper capped at 872 points with 105-point
+  horizontal inset. Header 48, mode switch 91x26, map panel 60x168. Root/first-level
+  pills and rounded elbow branches match the live neutral reference.
+- Colors: light outline white/#2e2e2e; dark #1c1c1e/#d4d4d4; dots #949494;
+  guides black at 10% or #373c43. Ink and Focus map palettes are independent of
+  light/dark/system overview appearance. Floating map controls remain white.
+- Assets: light-weight SF Symbols replace hand-drawn rail glyphs. Existing
+  navigation controls have no surrounding native capsule. Bundled Adobe OTFs are
+  unmodified with the pinned source/hash record and OFL license. No private
+  reference image is included in app assets.
+- Content: neutral hierarchy and descriptions were compared. Mudsnote preserves
+  its note identity/membership model: structural topics can nest, while linked
+  notes use the existing Markdown editor and remain files when removed from the
+  overview. Free-position content stays reachable in outline mode.
 
-## Interaction evidence and implementation
+## Actual interaction acceptance
 
-The reference was exercised through five levels, not inferred from screenshots:
-outline Enter/Tab/Shift-Tab; map Enter/Tab; selection/double-click editing; subtree
-folding; dot drill-down and breadcrumbs; parent drag; subtree deletion; undo/redo;
-descriptions; light/dark/system appearance; neutral light/dark map palette; zoom
-slider and center-root. Map paste can create topics, distinct from normal typing.
+Reference and native checks cover five-level Enter/Tab/outdent editing, separate
+map/outline keyboard rules, selection and inline editing, descriptions, folded
+subtrees, dot drill-down and breadcrumbs. A native parent was dragged to another
+parent with its descendant hierarchy intact; folding and structural undo/redo
+were verified. Native Command-Z and Command-Shift-Z restore/reapply deletion.
+Cycle rejection and linked-file preservation are covered by affected tests.
 
-The candidate implements inline structural-topic editing with IME completion,
-context actions, distinct map/outline keyboard rules, hover fold/More/child actions,
-focus breadcrumbs, drag with cycle rejection, metadata undo/redo, independent
-appearance preferences, map panning and zoom controls. Linked-note editing reuses
-the normal save/conflict path and restores editor appearance when leaving overview.
+Blank-map right click exposes New Note, New Topic, Link Existing Note, Center and
+Fit All. A note was created there, edited, saved, renamed, freely dragged and
+recovered after restart at its persisted world position. A new topic immediately
+received typing focus. Repeated blank-space pans move beyond multiple screens;
+return-to-center preserves content. Zoom, slider, palette and structure controls
+were exercised. Automated panning crosses over 100 viewport widths without
+increasing the backing-view size or changing persisted note data.
 
-## Verification and findings
+## Findings resolved
 
-- Affected check: `./scripts/verify macos ui` passed all 22 tests on the final
-  source, including bundled font names, five-level moves/focus/undo, IME completion,
-  independent modes, long-label layout, descriptions and canonical-note preservation.
-- Merged installer/update checks pass all 18 Python tests; packaging syntax
-  validation passes. The combined candidate passes deep/strict signature checks,
-  team `3JA29GL46S`, and the installed app's designated requirement. Both fonts,
-  license and `macos_update_check.py` match their source bytes; CoreText loads both
-  fonts from the actual bundle. No installation or private publication occurred.
-- Recovery tests cover legacy overview rewrites and malformed canonical metadata;
-  recovery data is retained without silently replacing user state.
-- Integrated remote `524302f` (startup update checks and prior navigation/sidebar
-  fixes) into the candidate. The packaging merge retains both fonts/license and
-  `macos_update_check.py`.
-- Merged `./scripts/verify macos pr`: all 18 Python tests pass; the latest Swift
-  run executes 406 tests with one remaining `isKeyWindow` failure in
-  `floatingBrowseButtonDispatchesCompleteClicksToBrowserPanel`. That same failure
-  reproduces on unchanged `524302f` on this locked Mac. The assertion is retained.
-- A hidden-search TagInput focus failure also reproduces on unchanged `524302f`.
-  Its setup now shows the window and clicks the actual Search entry, exercising
-  the real blur path; the merged full run confirms that test passes.
-- Real-window focus and visual gates remain pending manual unlock; these baseline
-  reproductions do not justify skipping native acceptance.
-- [P1] Native visual and interactive comparison is blocked by the Mac lock screen.
-  No final fidelity claim or installation is permitted before that comparison.
-- [P2] Verify actual native control alignment, hover-to-gutter transitions, wrapped
-  labels, theme contrast, selected/editing states and scaled drag targets after
-  unlock. These are pending checks, not claimed defects or accepted differences.
+- Single-line node heights were doubled by rounded text bounding boxes.
+- Native text-field cell padding clipped the final label character.
+- Breadcrumb stack sizing clipped labels.
+- Light guide opacity was replaced by an opaque stroke.
+- Right-click menus dismissed early and menu restoration stole input focus.
+- Shared-editor commit cleared overview focus, disabling structural shortcuts.
+- Dragging used the first dragged event as its grab origin. Internal tracking now
+  retains the original grab point, shows a drop indicator and supports Escape.
+- Dark-map zoom controls needed an explicit white content surface for contrast.
 
-## Remaining checklist
+## Verification and delivery boundary
 
-1. Unlock and compare native/source at the same viewport/state in both modes.
-2. Exercise native five-level edits, folds, drag/drop, focus, undo and linked saves.
-3. Fix observed P0/P1/P2 differences and recapture.
-4. Trash the disposable source document and restore the original source tab.
-5. Reverify the exact final candidate after visual fixes, then deliver the main
-   commit to the coordinating Mac mini chat. That chat owns installation and
-   private distribution; this chat does not operate the Mini app.
+- `./scripts/verify macos pr`: 408 Swift tests and 18 Python updater/installer
+  tests pass. The formerly blocked floating-window key-state assertion passes
+  after unlock. The shown-search test uses the real visible search entry.
+- Final `./scripts/verify macos ui`: 24 affected tests pass, including window-level
+  structural undo dispatch, free placement and outline conversion, long text,
+  five-level hierarchy operations and shared-editor appearance restoration.
+- The merged source retains remote `524302f` startup update checks, navigation
+  and sidebar fixes, plus both font resources/license and the packaged updater.
+- The candidate-only packaging path signs and verifies the final source. Exact
+  candidate revision/signature/resource/font-load evidence is recorded outside
+  Git in `/tmp/mudsnote-live-candidate-verification.json`.
+- No installation or private bundle publication is performed by this chat. The
+  coordinating Mac mini chat owns installation/distribution after source delivery.
+  iOS is outside scope.
 
-final result: blocked
+P0/P1/P2 findings: none remaining. P3: native macOS menus/popover chrome retain
+platform styling; the functional content, geometry and contrast are verified.
+
+final result: passed

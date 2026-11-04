@@ -9,6 +9,9 @@ import MudsnoteCore
     override func loadView() {
         let container = OverviewRailView(frame: NSRect(x: 0, y: 0, width: 244, height: 44))
         container.appearance = NSAppearance(named: .aqua)
+        container.wantsLayer = true
+        container.layer?.backgroundColor = NSColor.white.cgColor
+        container.layer?.cornerRadius = 6
         let center = OverviewActionButton("", symbol: "scope") { [weak overview] in overview?.centerRoot() }
         let minus = OverviewActionButton("", symbol: "minus.magnifyingglass") { [weak self] in self?.overview?.changeZoom(by: -0.1); self?.sync() }
         let plus = OverviewActionButton("", symbol: "plus.magnifyingglass") { [weak self] in self?.overview?.changeZoom(by: 0.1); self?.sync() }
@@ -34,7 +37,7 @@ extension LibraryOverviewView {
         presentation = next; owner?.noteStore.libraryOverviewModeRawValue = next.rawValue
         zoomPopover.close()
         scroll.magnification = 1; scroll.allowsMagnification = next == .mindMap
-        scroll.hasHorizontalScroller = next == .mindMap
+        scroll.hasHorizontalScroller = false; scroll.hasVerticalScroller = next == .outline
         updatePresentationChrome(); applyAppearance(); needsLayout = true; layoutSubtreeIfNeeded()
         if let selectedID {
             revealCard(selectedID)
@@ -75,7 +78,7 @@ extension LibraryOverviewView {
         undo.isEnabled = structuralUndo.canUndo; menu.addItem(undo)
         let redo = OverviewMenuItem("重做") { [weak self] in self?.structuralUndo.redo() }
         redo.isEnabled = structuralUndo.canRedo; menu.addItem(redo)
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: appearanceButton.bounds.maxY), in: appearanceButton)
+        showControlMenu(menu, from: appearanceButton)
     }
     func showPaletteMenu() {
         let menu = NSMenu()
@@ -83,7 +86,7 @@ extension LibraryOverviewView {
             let item = OverviewMenuItem(label) { [weak self] in self?.setMapStyle(style) }
             item.state = mapStyle == style ? .on : .off; menu.addItem(item)
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: paletteButton.bounds.maxY), in: paletteButton)
+        showControlMenu(menu, from: paletteButton)
     }
     func showStructureMenu() {
         let menu = NSMenu()
@@ -91,25 +94,43 @@ extension LibraryOverviewView {
             let item = OverviewMenuItem(label) { [weak self] in self?.setStructure(structure) }
             item.state = mapStructure == structure ? .on : .off; menu.addItem(item)
         }
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: structureButton.bounds.maxY), in: structureButton)
+        showControlMenu(menu, from: structureButton)
+    }
+    func showControlMenu(_ menu: NSMenu, from button: NSButton) {
+        let location = button.convert(NSPoint(x: 0, y: button.bounds.maxY), to: nil)
+        if let window = button.window, let event = NSEvent.mouseEvent(
+            with: .rightMouseDown, location: location, modifierFlags: [],
+            timestamp: ProcessInfo.processInfo.systemUptime, windowNumber: window.windowNumber,
+            context: nil, eventNumber: 0, clickCount: 1, pressure: 1) {
+            NSMenu.popUpContextMenu(menu, with: event, for: button)
+        } else {
+            menu.popUp(positioning: nil, at: NSPoint(x: 0, y: button.bounds.maxY), in: button)
+        }
     }
     func showZoomPopover() {
         if zoomPopover.isShown { zoomPopover.close(); return }
         let controller = OverviewZoomController(overview: self)
         zoomPopover.contentViewController = controller
+        zoomPopover.appearance = NSAppearance(named: .aqua)
         zoomPopover.behavior = .transient; zoomPopover.animates = false
         zoomPopover.show(relativeTo: zoomValue.bounds, of: zoomValue, preferredEdge: .minX)
     }
     func changeZoom(by delta: CGFloat) { setZoom(scroll.magnification + delta) }
     func setZoom(_ value: CGFloat) {
+        let clip = scroll.contentView
+        let offset = plan?.worldOffset ?? .zero
+        let worldCenter = CGPoint(x: clip.bounds.midX - offset.x, y: clip.bounds.midY - offset.y)
+        updatingViewport = true
         scroll.magnification = min(scroll.maxMagnification, max(scroll.minMagnification, value))
+        updatingViewport = false
+        centerWorldPoint(worldCenter)
         updateZoomValue()
     }
     func centerRoot() {
         guard presentation == .mindMap, let root = plan?.frames[focusedRoot] else { return }
-        let clip = scroll.contentView
-        clip.scroll(to: NSPoint(x: root.midX - clip.bounds.width / 2, y: root.midY - clip.bounds.height / 2))
-        scroll.reflectScrolledClipView(clip); updateZoomValue()
+        let offset = plan?.worldOffset ?? .zero
+        centerWorldPoint(CGPoint(x: root.midX - offset.x, y: root.midY - offset.y))
+        updateZoomValue()
     }
     func resetViewport() {
         guard selectedID == nil else { return }
@@ -118,11 +139,11 @@ extension LibraryOverviewView {
     }
     func fitToWindow() {
         guard presentation == .mindMap, let content = plan?.contentBounds else { return }
+        let offset = plan?.worldOffset ?? .zero
+        let center = CGPoint(x: content.midX - offset.x, y: content.midY - offset.y)
         let viewport = scroll.contentView.frame.size
         setZoom(min(1, min(viewport.width / (content.width + 96), viewport.height / (content.height + 96))))
-        let clip = scroll.contentView
-        clip.scroll(to: NSPoint(x: content.midX - clip.bounds.width / 2, y: content.midY - clip.bounds.height / 2))
-        scroll.reflectScrolledClipView(clip)
+        centerWorldPoint(center)
     }
     func toggleBranch(_ node: OverviewNodeID) {
         guard node != focusedRoot, commitTopicEditing() else { return }
@@ -140,10 +161,12 @@ extension LibraryOverviewView {
         if focusedRoot != .root && !ancestors.contains(focusedRoot) { focusedRoot = .root; updateBreadcrumbs() }
         for ancestor in ancestors { collapsed.remove(ancestor) }
         activeNode = .card(id)
-        scroll.magnification = 1; updateZoomValue()
+        setZoom(1); updateZoomValue()
         if let editor = owner?.regularEditorView { prepareEditorAppearance(editor) }
         needsLayout = true; layoutSubtreeIfNeeded()
-        cards[id]?.scrollToVisible(cards[id]?.bounds ?? .zero)
+        if presentation == .mindMap, let frame = plan?.frames[.card(id)], let offset = plan?.worldOffset {
+            centerWorldPoint(CGPoint(x: frame.midX - offset.x, y: frame.midY - offset.y))
+        } else { cards[id]?.scrollToVisible(cards[id]?.bounds ?? .zero) }
     }
 
     func showTopicMenu(_ node: OverviewNodeID) {
@@ -173,7 +196,9 @@ extension LibraryOverviewView {
         }
         let host = node == focusedRoot ? rootHost : hosts[node]
         guard let host else { return }
-        menu.popUp(positioning: nil, at: NSPoint(x: host.contentRect.minX, y: host.contentRect.midY), in: host)
+        if let event = NSApp.currentEvent, event.type == .rightMouseDown {
+            NSMenu.popUpContextMenu(menu, with: event, for: host)
+        } else { menu.popUp(positioning: nil, at: NSPoint(x: host.contentRect.minX, y: host.contentRect.midY), in: host) }
     }
 
     // Only the shared editor currently embedded in overview gets this override.

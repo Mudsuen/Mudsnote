@@ -1,6 +1,15 @@
 import AppKit
 import MudsnoteCore
 
+@MainActor final class LibraryWindow: NSWindow {
+    override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        if let owner = windowController as? LibraryWindowController,
+           owner.isShowingOverview,
+           owner.overviewView?.performKeyEquivalent(with: event) == true { return true }
+        return super.performKeyEquivalent(with: event)
+    }
+}
+
 @MainActor final class OverviewRailView: NSView { override var isFlipped: Bool { true } }
 
 @MainActor final class OverviewContentHost: NSView {
@@ -25,7 +34,11 @@ import MudsnoteCore
         target = self
     }
     required init(coder: NSCoder) { fatalError() }
-    @objc func pressed() { invoke() }
+    @objc func pressed() {
+        // Let AppKit finish restoring menu focus before opening an inline editor.
+        let action = invoke
+        DispatchQueue.main.async { action() }
+    }
 }
 
 extension LibraryWindowController {
@@ -126,7 +139,11 @@ extension LibraryWindowController {
     @discardableResult func commitOverviewEditor() -> Bool {
         guard overviewView?.commitTopicEditing() != false else { return false }
         // End input-method composition before serializing the shared editor.
-        window?.makeFirstResponder(nil)
+        if let responder = window?.firstResponder as? NSView,
+           let editor = regularEditorView,
+           responder === editor || responder.isDescendant(of: editor) {
+            window?.makeFirstResponder(nil)
+        }
         do { drainBackgroundAutosaves(); try saveCurrentNoteIfNeeded(); return true }
         catch { presentErrorAlert(message: "无法保存笔记", details: error.localizedDescription); return false }
     }
@@ -218,12 +235,17 @@ extension LibraryWindowController {
         return true
     }
 
-    func createNoteInOverview(area: UUID? = nil) {
+    func createNoteInOverview(area: UUID? = nil, position: NoteOverview.MapPosition? = nil) {
         guard isShowingOverview else { return }
         guard commitOverviewEditor() else { return }
         do {
             let url = try noteStore.saveNewNote(title: "", body: "", in: noteStore.notesDirectory)
-            if let area, !changeOverview({ _ = $0.add(url, areaID: area) }) { return }
+            if area != nil || position != nil {
+                guard changeOverview({ state in
+                    let id = state.add(url, areaID: area)
+                    if let index = state.cards.firstIndex(where: { $0.id == id }) { state.cards[index].mapPosition = position }
+                }) else { return }
+            }
             let note = NoteSearchResult(url: url, title: "未命名笔记", snippet: "", modifiedAt: Date())
             openOverviewNote(note)
         } catch { presentErrorAlert(message: "无法新建笔记", details: error.localizedDescription) }
@@ -253,7 +275,7 @@ extension LibraryWindowController {
         return field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
     }
 
-    func pickOverviewNote(area: UUID?, connecting: UUID?) {
+    func pickOverviewNote(area: UUID?, connecting: UUID?, position: NoteOverview.MapPosition? = nil) {
         let candidates = sourceCountSnapshot.sorted { $0.modifiedAt > $1.modifiedAt }
         let alert = NSAlert()
         alert.messageText = connecting == nil ? "添加笔记到总览" : "关联笔记"
@@ -275,6 +297,7 @@ extension LibraryWindowController {
         guard candidates.indices.contains(index) else { presentErrorAlert(message: "请选择一篇笔记", details: "从列表中选择要关联的笔记。"); return }
         _ = changeOverview {
             let id = $0.add(candidates[index].url, areaID: area)
+            if let position, let index = $0.cards.firstIndex(where: { $0.id == id }) { $0.cards[index].mapPosition = position }
             if let connecting { $0.connect(connecting, id) }
         }
     }
@@ -331,7 +354,9 @@ extension LibraryWindowController {
             if self.overviewView?.selectedID == id { self.toggleOverviewCard(id) }
             _ = self.changeOverview { $0.removeCard(id) }
         })
-        menu.popUp(positioning: nil, at: NSPoint(x: anchor.bounds.width - 130, y: anchor.bounds.height - 32), in: anchor)
+        if let event = NSApp.currentEvent, event.type == .rightMouseDown {
+            NSMenu.popUpContextMenu(menu, with: event, for: anchor)
+        } else { menu.popUp(positioning: nil, at: NSPoint(x: anchor.bounds.width - 130, y: anchor.bounds.height - 32), in: anchor) }
     }
 
     func remapOverviewAfterSave(previousURL: URL?, savedURL: URL) {

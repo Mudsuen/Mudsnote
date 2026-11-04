@@ -572,7 +572,7 @@ final class LibraryWindowController: NSWindowController,
         self.sourceFoldersSectionCollapsed = noteStore.libraryFoldersSectionCollapsed
         self.sourceTagsSectionCollapsed = noteStore.libraryTagsSectionCollapsed
 
-        let window = NSWindow(
+        let window = LibraryWindow(
             contentRect: NSRect(origin: .zero, size: LibraryNotesLayout.initialWindowSize),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
             backing: .buffered,

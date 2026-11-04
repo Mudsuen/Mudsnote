@@ -1,13 +1,19 @@
 import AppKit
 
-@MainActor final class OverviewDescriptionLabel: NSTextField {
+@MainActor class OverviewTextLabel: NSTextField {
+    override func draw(_ dirtyRect: NSRect) {
+        attributedStringValue.draw(with: bounds, options: [.usesLineFragmentOrigin, .usesFontLeading])
+    }
+}
+
+@MainActor final class OverviewDescriptionLabel: OverviewTextLabel {
     var pressed: (() -> Void)?
     override func mouseDown(with event: NSEvent) { pressed?() }
 }
 
 @MainActor final class OverviewBulletButton: NSButton {
     var invoke: (() -> Void)?
-    var beginDrag: ((NSEvent) -> Void)?
+    var beginDrag: ((NSEvent, NSEvent) -> Void)?
     var collapsed = false
     var dotColor = NSColor.gray
     var ringColor = NSColor.clear
@@ -22,7 +28,7 @@ import AppKit
         while let next = window?.nextEvent(matching: [.leftMouseDragged, .leftMouseUp]) {
             if next.type == .leftMouseUp { invoke?(); return }
             if hypot(next.locationInWindow.x - event.locationInWindow.x, next.locationInWindow.y - event.locationInWindow.y) > 4 {
-                beginDrag(next); return
+                beginDrag(next, event); return
             }
         }
     }
@@ -61,6 +67,7 @@ import AppKit
     var allowsChild = true
     var hovered = false
     var tracks: NSTrackingArea?
+    var contextAction: (() -> Void)?
 
     init(node: OverviewNodeID, content: NSView) {
         self.node = node; self.content = content
@@ -126,7 +133,7 @@ import AppKit
         updateTrackingAreas()
     }
     func updateActions() {
-        fold.isHidden = !hasChildren || (!folded && !hovered && !active)
+        fold.isHidden = depth == 0 || !hasChildren || (!folded && !hovered && !active)
         more.isHidden = map || (!hovered && !active) || depth == 0
         addChild.isHidden = !map || !allowsChild || (!hovered && !active)
     }
@@ -138,6 +145,7 @@ import AppKit
     }
     override func mouseEntered(with event: NSEvent) { hovered = true; updateActions() }
     override func mouseExited(with event: NSEvent) { hovered = false; updateActions() }
+    override func rightMouseDown(with event: NSEvent) { contextAction?() }
     override func hitTest(_ point: NSPoint) -> NSView? {
         let p = convert(point, from: superview)
         guard !isHidden, bounds.contains(p) else { return nil }

@@ -48,3 +48,22 @@ update-helper bytes, helper Python syntax, and actual bundled font loading throu
 CoreText. This does not replace native window acceptance. The current snapshot
 and candidate path are in `/tmp/mudsnote-live-candidate-verification.json`; no
 installed app or private release was modified.
+
+## Resolved after owner unlock (2026-11-04)
+
+The owner replied “MBP 已解锁”; the native window became available. Comparison
+used a 1100x760-point preview (2x capture) and a 1082x716 CSS-pixel source viewport,
+excluding the native titlebar/sidebar and the source sidebar. Both outline
+appearances, both neutral map palettes, five-level focus/edit/fold, subtree drag,
+keyboard deletion/undo/redo, linked-note saves, free placement, continuous panning
+and blank-space context creation were exercised. Observed rendering/focus/drag
+issues were fixed. The final macOS PR run passes 408 Swift tests and 18 Python
+tests, including the formerly blocked key-window assertion. A final affected UI
+run covers 24 tests. See `design-qa.md` for the final acceptance record.
+
+The temporary source document was moved to normal recoverable Trash, the original
+source document was restored, the temporary viewport override was reset, and the
+source appearance was restored to Follow System. Private source content and
+captures remain outside Git. The coordinating Mac mini chat still owns final
+installation/private distribution; this chat prepares and verifies the candidate
+and delivers the main source revision.

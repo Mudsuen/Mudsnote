@@ -225,7 +225,7 @@ extension MarkdownRichEditorTests {
             controller.window?.contentView?.layoutSubtreeIfNeeded()
             controller.overviewView?.layoutSubtreeIfNeeded()
             let overview = try #require(controller.overviewView)
-            #expect(overview.scroll.hasHorizontalScroller)
+            #expect(overview.scroll.allowsMagnification)
             #expect(overview.canvas.bounds.width >= overview.scroll.contentView.frame.width)
             #expect(overview.cards.values.allSatisfy { $0.frame.maxX <= overview.canvas.bounds.width + 1 })
         }

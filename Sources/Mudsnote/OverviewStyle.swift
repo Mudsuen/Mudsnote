@@ -41,10 +41,19 @@ enum OverviewMapStructure: Int { case balanced, right }
         let paragraph = NSMutableParagraphStyle()
         paragraph.minimumLineHeight = lineHeight; paragraph.maximumLineHeight = lineHeight
         paragraph.lineBreakMode = .byWordWrapping
-        let rect = (text as NSString).boundingRect(with: NSSize(width: max(1, width), height: .greatestFiniteMagnitude),
-                                                  options: [.usesLineFragmentOrigin, .usesFontLeading],
-                                                  attributes: [.font: font(size, weight: weight, map: map), .paragraphStyle: paragraph])
-        return max(lineHeight, ceil(rect.height / lineHeight) * lineHeight)
+        let selectedFont = font(size, weight: weight, map: map)
+        if !text.contains("\n"), !text.contains("\r"),
+           (text as NSString).size(withAttributes: [.font: selectedFont]).width <= max(1, width) { return lineHeight }
+        let storage = NSTextStorage(string: text, attributes: [.font: selectedFont, .paragraphStyle: paragraph])
+        let manager = NSLayoutManager()
+        let container = NSTextContainer(size: NSSize(width: max(1, width), height: .greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        storage.addLayoutManager(manager); manager.addTextContainer(container)
+        manager.ensureLayout(for: container)
+        var lines = 0
+        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { _, _, _, _, _ in lines += 1 }
+        if manager.extraLineFragmentTextContainer === container { lines += 1 }
+        return CGFloat(max(1, lines)) * lineHeight
     }
 }
 

@@ -103,12 +103,13 @@ extension LibraryWindowController {
         switch itemIdentifier {
         case Self.navigationGroupToolbarItemIdentifier:
             let item = NSToolbarItem(itemIdentifier: itemIdentifier)
+            item.isBordered = false
             let back = OverviewActionButton("", symbol: "arrow.left") { [weak self] in self?.navigateLibraryBack() }
             let forward = OverviewActionButton("", symbol: "arrow.right") { [weak self] in self?.navigateLibraryForward() }
             let sidebar = OverviewActionButton("", symbol: "sidebar.left") { [weak self] in _ = self?.toggleSourceListForLibrary() }
             for (button, label) in [(back, "后退"), (forward, "前进"), (sidebar, "展开或收起笔记列表")] {
                 button.isBordered = false; button.toolTip = label; button.setAccessibilityLabel(label)
-                button.image = button.image?.withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
+                button.image = button.image?.withSymbolConfiguration(.init(pointSize: 16, weight: .light))
                 button.widthAnchor.constraint(equalToConstant: 34).isActive = true
                 button.heightAnchor.constraint(equalToConstant: 28).isActive = true
             }

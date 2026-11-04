@@ -1,17 +1,25 @@
 import Foundation
 
 public struct NoteOverview: Codable, Equatable, Sendable {
+    public struct MapPosition: Codable, Equatable, Sendable {
+        public var x: Double
+        public var y: Double
+        public var scope: String
+        public init(x: Double, y: Double, scope: String) { self.x = x; self.y = y; self.scope = scope }
+    }
     public struct Area: Codable, Equatable, Identifiable, Sendable {
         public var id: UUID
         public var title: String
         public var parentID: UUID?
         public var details: String?
+        public var mapPosition: MapPosition?
         public init(title: String, parentID: UUID? = nil) { id = UUID(); self.title = title; self.parentID = parentID }
     }
     public struct Card: Codable, Equatable, Identifiable, Sendable {
         public var id: UUID
         public var url: URL
         public var areaID: UUID?
+        public var mapPosition: MapPosition?
         public init(url: URL, areaID: UUID? = nil) { id = UUID(); self.url = url.standardizedFileURL; self.areaID = areaID }
     }
     public struct Connection: Codable, Equatable, Sendable {

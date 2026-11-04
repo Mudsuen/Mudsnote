@@ -11,6 +11,19 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-04 — Live-reference overview and free canvas
+
+- Problem: the overview did not match the current Mubu outline/map, navigation
+  icons were too heavy, and the map stopped at a fixed canvas boundary.
+- Fix: match the live reference's typography, spacing, neutral palettes and
+  light/dark outline; use thin system icons inspired by the supplied GPT chrome.
+  Add continuous canvas panning, blank-space context creation, persisted free
+  placement, subtree drag, focus breadcrumbs and structural undo/redo. Preserve
+  the normal note list and Markdown editor. Correct menu input focus, drag grab
+  offsets, clipped labels and light-outline guide opacity through real-window QA.
+- Lesson: inspect live states and exercise nested editing, drag and shortcuts;
+  successful layout tests alone do not establish interactive fidelity.
+
 ## 2026-11-04 — Check private application updates on launch
 
 - Problem: Macs could remain on different builds until a periodic delivery

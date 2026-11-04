@@ -61,3 +61,29 @@ map palette and structure belong to overview preferences.
   not alter signing identity, entitlements, installer behavior or update grants.
   Before installation, verify bundled font hashes, font loading and the usual
   candidate signature. The change is isolated on a feature branch for review.
+
+## Free canvas and icon follow-up (2026-11-04)
+
+The supplied chrome screenshot is GPT, not Mubu. Use thin outline SF Symbols for
+existing navigation/search/compose controls and remove the native navigation
+capsule. Keep the library layout and actions; do not invent notification controls.
+
+The map is a continuous world-space canvas. Rebase a three-viewport scroll window
+as the viewport approaches an edge, retaining a fixed backing-view size. Persist
+optional `mapPosition` coordinates on areas/cards, scoped to the focused root.
+Free content is separate from automatic branch layout but keeps its membership
+in the outline. Dropping into a topic clears the free position and reassigns
+ownership. Legacy JSON remains decodable and the recovery snapshot retains these
+optional fields. Canonical note files do not move when their map positions change.
+
+Real drag tracking uses the initial mouse-down point for its grab offset and the
+current event for the drop indicator. The same path handles free placement and
+subtree ownership changes; Escape cancels. AppKit context menus finish closing
+before beginning inline editing. Structural changes preserve overview focus, and
+the library window forwards overview command equivalents only when neither the
+topic editor nor the shared note editor is active.
+
+At an 811-point content width, the outline column begins 52.5 points from the
+content edge. The live wrapper is capped at 872 points, with 105 points total
+horizontal inset. Single-line node heights are exactly 62/50/44 points for root,
+first level and deeper map nodes; wrapped text uses actual layout line counts.
