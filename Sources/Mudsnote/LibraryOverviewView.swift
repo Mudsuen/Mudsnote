@@ -326,10 +326,6 @@ import MudsnoteCore
     let presentationButton = OverviewActionButton("大纲笔记", symbol: "list.bullet", action: {})
     let breadcrumbScroll = NSScrollView()
     let breadcrumb = NSView()
-    let mapTools = OverviewRailView()
-    let zoomValue = OverviewActionButton("100%", action: {})
-    let structureButton = OverviewActionButton("", symbol: "point.3.connected.trianglepath.dotted", action: {})
-    let paletteButton = OverviewActionButton("", symbol: "paintpalette", action: {})
     let unassigned = OverviewActionButton("未归属", action: {})
     let topicEditor = NSTextView()
     let zoomPopover = NSPopover()
@@ -341,7 +337,6 @@ import MudsnoteCore
     }
     var presentation: OverviewPresentation
     var appearanceMode: OverviewAppearance
-    var mapStyle: OverviewMapStyle
     var mapStructure: OverviewMapStructure
     var focusedRoot: OverviewNodeID = .root
     var activeNode: OverviewNodeID?
@@ -369,14 +364,13 @@ import MudsnoteCore
 
     var colors: OverviewColors {
         let dark = appearanceMode == .dark || (appearanceMode == .system && effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)
-        return OverviewColors(dark: dark, mapStyle: mapStyle)
+        return OverviewColors(dark: dark, mapStyle: dark ? .focus : .ink)
     }
 
     init(owner: LibraryWindowController) {
         self.owner = owner
         presentation = OverviewPresentation(rawValue: owner.noteStore.libraryOverviewModeRawValue) ?? .mindMap
         appearanceMode = OverviewAppearance(rawValue: owner.noteStore.libraryOverviewAppearanceRawValue) ?? .system
-        mapStyle = OverviewMapStyle(rawValue: owner.noteStore.libraryOverviewMapStyleRawValue) ?? .ink
         mapStructure = OverviewMapStructure(rawValue: owner.noteStore.libraryOverviewMapStructureRawValue) ?? .balanced
         collapsed = Set(owner.noteStore.libraryOverviewCollapsedNodes.compactMap(OverviewNodeID.init(dragString:)))
         super.init(frame: .zero)
@@ -406,18 +400,7 @@ import MudsnoteCore
         addSubview(scroll)
         breadcrumbScroll.drawsBackground = false; breadcrumbScroll.hasHorizontalScroller = false
         breadcrumbScroll.documentView = breadcrumb
-        mapTools.wantsLayer = true; mapTools.layer?.cornerRadius = 4
-        mapTools.layer?.backgroundColor = NSColor.white.cgColor
-        mapTools.layer?.shadowColor = NSColor.black.cgColor
-        mapTools.layer?.shadowOpacity = 0.08; mapTools.layer?.shadowRadius = 8
-        mapTools.layer?.borderWidth = 0.5; mapTools.layer?.borderColor = NSColor(white: 0.9, alpha: 1).cgColor
-        mapTools.layer?.masksToBounds = false
-        mapTools.clipsToBounds = false
-        mapTools.appearance = NSAppearance(named: .aqua)
-        [zoomValue, structureButton, paletteButton].forEach(mapTools.addSubview)
-        structureButton.image = structureButton.image?.withSymbolConfiguration(.init(pointSize: 22, weight: .regular))
-        paletteButton.image = paletteButton.image?.withSymbolConfiguration(.init(pointSize: 22, weight: .regular))
-        [breadcrumbScroll, presentationButton, mapTools, newNote, add, addArea, appearanceButton].forEach(addSubview)
+        [breadcrumbScroll, presentationButton, newNote, add, addArea, appearanceButton].forEach(addSubview)
         rootHost = OverviewTopicHost(node: .root, content: title)
         canvas.addSubview(rootHost)
         rootHost.addSubview(principles)
@@ -438,15 +421,9 @@ import MudsnoteCore
         presentationButton.invoke = { [weak self] in
             guard let self else { return }; self.setPresentation(self.presentation == .mindMap ? .outline : .mindMap)
         }
-        appearanceButton.invoke = { [weak self] in self?.showAppearanceMenu() }
-        zoomValue.font = .systemFont(ofSize: 14)
-        zoomValue.invoke = { [weak self] in self?.showZoomPopover() }
-        structureButton.invoke = { [weak self] in self?.showStructureMenu() }
-        paletteButton.invoke = { [weak self] in self?.showPaletteMenu() }
-        NotificationCenter.default.addObserver(self, selector: #selector(updateZoomValue), name: NSScrollView.didEndLiveMagnifyNotification, object: scroll)
+        appearanceButton.invoke = { [weak self] in self?.showSettingsMenu() }
         for (button, label) in [(newNote, "新建笔记到总览"), (add, "关联笔记"), (addArea, "添加主题"),
-                                (appearanceButton, "总览外观与操作"), (zoomValue, "缩放比例"),
-                                (structureButton, "导图结构"), (paletteButton, "导图配色")] {
+                                (appearanceButton, "总览设置与操作")] {
             button.toolTip = label; button.setAccessibilityLabel(label)
         }
         newNote.identifier = NSUserInterfaceItemIdentifier("OverviewNewNote")
@@ -558,9 +535,7 @@ import MudsnoteCore
         presentationButton.image = NSImage(systemSymbolName: presentation == .mindMap ? "list.bullet" : "point.3.connected.trianglepath.dotted", accessibilityDescription: nil)?
             .withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
         presentationButton.setAccessibilityLabel(label); presentationButton.toolTip = label
-        mapTools.isHidden = presentation == .outline
     }
-    @objc func updateZoomValue() { zoomValue.title = "\(Int((scroll.magnification * 100).rounded()))%" }
 
     override func layout() {
         super.layout()
@@ -583,10 +558,6 @@ import MudsnoteCore
         if presentation == .outline { presentationButton.contentTintColor = .white }
         scroll.frame = NSRect(x: 0, y: 48, width: width, height: max(1, bounds.height - 48))
         scroll.wantsLayer = true; scroll.layer?.backgroundColor = (presentation == .outline ? colors.outlineBackground : colors.mapBackground).cgColor
-        mapTools.frame = NSRect(x: width - 90, y: 78, width: 60, height: 168)
-        zoomValue.frame = NSRect(x: 0, y: 0, width: 60, height: 56)
-        structureButton.frame = NSRect(x: 0, y: 56, width: 60, height: 56)
-        paletteButton.frame = NSRect(x: 0, y: 112, width: 60, height: 56)
         let viewport = scroll.contentView.frame.size
         var next = OverviewLayout.make(width: viewport.width, height: viewport.height, state: state, selected: selectedID,
             presentation: presentation, collapsed: collapsed, titles: cards.mapValues { $0.heading.stringValue }, root: focusedRoot, structure: mapStructure)

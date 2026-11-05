@@ -11,6 +11,16 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-05 — Consolidate overview controls
+
+- Problem: floating zoom, structure and palette controls occupied the canvas,
+  while overview settings already exposed light and dark appearance choices.
+- Fix: move zoom and map structure into the existing overview settings menu;
+  use its appearance choice for both the map and outline. Keep the zoom slider,
+  percentage readout and center action together in the anchored popover.
+- Lesson: keep related settings in one entry point and share appearance state
+  across overview presentations.
+
 ## 2026-11-04 — Live-reference overview and free canvas
 
 - Problem: the overview did not match the current Mubu outline/map, navigation

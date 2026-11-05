@@ -4,13 +4,12 @@ import MudsnoteCore
 @MainActor final class OverviewZoomController: NSViewController {
     weak var overview: LibraryOverviewView?
     let slider = NSSlider(value: 100, minValue: 20, maxValue: 400, target: nil, action: nil)
+    let valueLabel = NSTextField(labelWithString: "100%")
     init(overview: LibraryOverviewView) { self.overview = overview; super.init(nibName: nil, bundle: nil) }
     required init?(coder: NSCoder) { fatalError() }
     override func loadView() {
-        let container = OverviewRailView(frame: NSRect(x: 0, y: 0, width: 244, height: 44))
-        container.appearance = NSAppearance(named: .aqua)
+        let container = OverviewRailView(frame: NSRect(x: 0, y: 0, width: 296, height: 44))
         container.wantsLayer = true
-        container.layer?.backgroundColor = NSColor.white.cgColor
         container.layer?.cornerRadius = 6
         let center = OverviewActionButton("", symbol: "scope") { [weak overview] in overview?.centerRoot() }
         let minus = OverviewActionButton("", symbol: "minus.magnifyingglass") { [weak self] in self?.overview?.changeZoom(by: -0.1); self?.sync() }
@@ -20,15 +19,23 @@ import MudsnoteCore
         }
         center.frame = NSRect(x: 8, y: 8, width: 28, height: 28)
         minus.frame = NSRect(x: 44, y: 8, width: 28, height: 28)
-        plus.frame = NSRect(x: 208, y: 8, width: 28, height: 28)
+        plus.frame = NSRect(x: 260, y: 8, width: 28, height: 28)
         slider.frame = NSRect(x: 80, y: 10, width: 120, height: 24)
         slider.isContinuous = true; slider.target = self; slider.action = #selector(changed)
         slider.setAccessibilityLabel("导图缩放比例")
+        valueLabel.frame = NSRect(x: 204, y: 14, width: 52, height: 18)
+        valueLabel.font = .monospacedDigitSystemFont(ofSize: 12, weight: .regular)
+        valueLabel.alignment = .center
+        valueLabel.setAccessibilityLabel("当前缩放比例")
+        container.addSubview(valueLabel)
         container.addSubview(slider); view = container
         preferredContentSize = container.frame.size; sync()
     }
-    func sync() { slider.doubleValue = Double((overview?.scroll.magnification ?? 1) * 100) }
-    @objc func changed() { overview?.setZoom(CGFloat(slider.doubleValue) / 100) }
+    func sync() {
+        slider.doubleValue = Double((overview?.scroll.magnification ?? 1) * 100)
+        valueLabel.stringValue = "\(Int(slider.doubleValue.rounded()))%"
+    }
+    @objc func changed() { overview?.setZoom(CGFloat(slider.doubleValue) / 100); sync() }
 }
 
 extension LibraryOverviewView {
@@ -48,15 +55,12 @@ extension LibraryOverviewView {
         appearanceMode = mode; owner?.noteStore.libraryOverviewAppearanceRawValue = mode.rawValue
         applyAppearance(); updateBreadcrumbs()
     }
-    func setMapStyle(_ style: OverviewMapStyle) {
-        mapStyle = style; owner?.noteStore.libraryOverviewMapStyleRawValue = style.rawValue
-        applyAppearance()
-    }
     func setStructure(_ structure: OverviewMapStructure) {
         mapStructure = structure; owner?.noteStore.libraryOverviewMapStructureRawValue = structure.rawValue
         needsLayout = true; layoutSubtreeIfNeeded(); centerRoot()
     }
-    func showAppearanceMenu() {
+    func showSettingsMenu() { showControlMenu(makeSettingsMenu(), from: appearanceButton) }
+    func makeSettingsMenu() -> NSMenu {
         let menu = NSMenu(); menu.autoenablesItems = false
         let appearance = NSMenuItem(title: "外观", action: nil, keyEquivalent: "")
         let choices = NSMenu()
@@ -65,6 +69,12 @@ extension LibraryOverviewView {
             item.state = appearanceMode == mode ? .on : .off; choices.addItem(item)
         }
         appearance.submenu = choices; menu.addItem(appearance)
+        if presentation == .mindMap {
+            let percent = Int((scroll.magnification * 100).rounded())
+            menu.addItem(OverviewMenuItem("缩放（\(percent)%）…") { [weak self] in self?.showZoomPopover() })
+            let structure = NSMenuItem(title: "导图结构", action: nil, keyEquivalent: "")
+            structure.submenu = makeStructureMenu(); menu.addItem(structure)
+        }
         menu.addItem(.separator())
         menu.addItem(OverviewMenuItem("展开全部") { [weak self] in self?.collapsed.removeAll(); self?.needsLayout = true })
         menu.addItem(OverviewMenuItem("折叠全部") { [weak self] in
@@ -78,23 +88,15 @@ extension LibraryOverviewView {
         undo.isEnabled = structuralUndo.canUndo; menu.addItem(undo)
         let redo = OverviewMenuItem("重做") { [weak self] in self?.structuralUndo.redo() }
         redo.isEnabled = structuralUndo.canRedo; menu.addItem(redo)
-        showControlMenu(menu, from: appearanceButton)
+        return menu
     }
-    func showPaletteMenu() {
-        let menu = NSMenu()
-        for (style, label) in [(OverviewMapStyle.ink, "墨稿 · 浅色"), (.focus, "焦点 · 深色")] {
-            let item = OverviewMenuItem(label) { [weak self] in self?.setMapStyle(style) }
-            item.state = mapStyle == style ? .on : .off; menu.addItem(item)
-        }
-        showControlMenu(menu, from: paletteButton)
-    }
-    func showStructureMenu() {
+    func makeStructureMenu() -> NSMenu {
         let menu = NSMenu()
         for (structure, label) in [(OverviewMapStructure.balanced, "思维导图 · 左右展开"), (.right, "逻辑图 · 向右展开")] {
             let item = OverviewMenuItem(label) { [weak self] in self?.setStructure(structure) }
             item.state = mapStructure == structure ? .on : .off; menu.addItem(item)
         }
-        showControlMenu(menu, from: structureButton)
+        return menu
     }
     func showControlMenu(_ menu: NSMenu, from button: NSButton) {
         let location = button.convert(NSPoint(x: 0, y: button.bounds.maxY), to: nil)
@@ -111,9 +113,9 @@ extension LibraryOverviewView {
         if zoomPopover.isShown { zoomPopover.close(); return }
         let controller = OverviewZoomController(overview: self)
         zoomPopover.contentViewController = controller
-        zoomPopover.appearance = NSAppearance(named: .aqua)
+        zoomPopover.appearance = effectiveAppearance
         zoomPopover.behavior = .transient; zoomPopover.animates = false
-        zoomPopover.show(relativeTo: zoomValue.bounds, of: zoomValue, preferredEdge: .minX)
+        zoomPopover.show(relativeTo: appearanceButton.bounds, of: appearanceButton, preferredEdge: .maxY)
     }
     func changeZoom(by delta: CGFloat) { setZoom(scroll.magnification + delta) }
     func setZoom(_ value: CGFloat) {
@@ -124,13 +126,11 @@ extension LibraryOverviewView {
         scroll.magnification = min(scroll.maxMagnification, max(scroll.minMagnification, value))
         updatingViewport = false
         centerWorldPoint(worldCenter)
-        updateZoomValue()
     }
     func centerRoot() {
         guard presentation == .mindMap, let root = plan?.frames[focusedRoot] else { return }
         let offset = plan?.worldOffset ?? .zero
         centerWorldPoint(CGPoint(x: root.midX - offset.x, y: root.midY - offset.y))
-        updateZoomValue()
     }
     func resetViewport() {
         guard selectedID == nil else { return }
@@ -161,7 +161,7 @@ extension LibraryOverviewView {
         if focusedRoot != .root && !ancestors.contains(focusedRoot) { focusedRoot = .root; updateBreadcrumbs() }
         for ancestor in ancestors { collapsed.remove(ancestor) }
         activeNode = .card(id)
-        setZoom(1); updateZoomValue()
+        setZoom(1)
         if let editor = owner?.regularEditorView { prepareEditorAppearance(editor) }
         needsLayout = true; layoutSubtreeIfNeeded()
         if presentation == .mindMap, let frame = plan?.frames[.card(id)], let offset = plan?.worldOffset {
@@ -206,7 +206,7 @@ extension LibraryOverviewView {
     func prepareEditorAppearance(_ editor: NSView) {
         restoreEditorAppearance()
         overriddenEditor = editor; editorAppearance = editor.appearance
-        editor.appearance = NSAppearance(named: presentation == .mindMap ? (mapStyle == .ink ? .aqua : .darkAqua) : colors.dark ? .darkAqua : .aqua)
+        editor.appearance = NSAppearance(named: colors.dark ? .darkAqua : .aqua)
         let background = presentation == .outline ? colors.outlineBackground : colors.mapBackground
         var stack = [editor]
         while let view = stack.popLast() {
