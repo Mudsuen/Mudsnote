@@ -207,7 +207,8 @@ extension LibraryWindowController {
         sourceOutlineView.setAccessibilityLabel("资料库")
         sourceOutlineView.headerView = nil
         sourceOutlineView.backgroundColor = .clear
-        sourceOutlineView.style = .sourceList
+        // The sidebar owns its surface; sourceList adds a separate vibrant backdrop.
+        sourceOutlineView.style = .plain
         sourceOutlineView.selectionHighlightStyle = .regular
         sourceOutlineView.allowsEmptySelection = true
         sourceOutlineView.allowsMultipleSelection = false

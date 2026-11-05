@@ -11,6 +11,12 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-05 — Unify folder sidebar background
+
+- Problem: the folder tree added a tinted translucent backdrop below the solid sidebar heading.
+- Fix: use the plain outline style so the tree shares the sidebar surface.
+- Lesson: custom sidebar surfaces should not also request AppKit source-list material.
+
 ## 2026-11-05 — Consolidate overview controls
 
 - Problem: floating zoom, structure and palette controls occupied the canvas,
