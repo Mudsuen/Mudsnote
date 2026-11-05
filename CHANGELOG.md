@@ -14,7 +14,7 @@ Known open issue:
 ## 2026-11-05 — Unify folder sidebar background
 
 - Problem: the folder tree added a tinted translucent backdrop below the solid sidebar heading.
-- Fix: use the plain outline style so the tree shares the sidebar surface.
+- Fix: give the source outline an opaque sidebar background while preserving its native layout.
 - Lesson: custom sidebar surfaces should not also request AppKit source-list material.
 
 ## 2026-11-05 — Consolidate overview controls

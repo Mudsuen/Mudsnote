@@ -1008,7 +1008,8 @@ extension MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.sourceSymbolWeight == .medium)
         let sourceOutline = controller.sourceOutlineView
         #expect(sourceOutline.identifier?.rawValue == "LibrarySourceOutline")
-        #expect(sourceOutline.style == .plain)
+        #expect(sourceOutline.style == .sourceList)
+        #expect(sourceOutline.backgroundColor == LibraryNotesPalette.sidebarBackground)
         #expect(sourceOutline.allowsEmptySelection)
         #expect(sourceOutline.delegate === controller)
         #expect(sourceOutline.dataSource === controller)

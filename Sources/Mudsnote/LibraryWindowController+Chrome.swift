@@ -206,9 +206,9 @@ extension LibraryWindowController {
         sourceOutlineView.identifier = NSUserInterfaceItemIdentifier("LibrarySourceOutline")
         sourceOutlineView.setAccessibilityLabel("资料库")
         sourceOutlineView.headerView = nil
-        sourceOutlineView.backgroundColor = .clear
-        // The sidebar owns its surface; sourceList adds a separate vibrant backdrop.
-        sourceOutlineView.style = .plain
+        sourceOutlineView.style = .sourceList
+        // An opaque background prevents a separate vibrant backdrop below the heading.
+        sourceOutlineView.backgroundColor = LibraryNotesPalette.sidebarBackground
         sourceOutlineView.selectionHighlightStyle = .regular
         sourceOutlineView.allowsEmptySelection = true
         sourceOutlineView.allowsMultipleSelection = false
