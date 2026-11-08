@@ -282,6 +282,11 @@ extension LibraryWindowController {
             }
         }
         let modifiers = event.modifierFlags.intersection([.command, .option, .control, .shift])
+        if event.keyCode == UInt16(kVK_Escape), modifiers.isEmpty,
+           isShowingOverview, let id = overviewView?.selectedID {
+            toggleOverviewCard(id)
+            return true
+        }
         if event.keyCode == UInt16(kVK_Space),
            modifiers.isEmpty,
            let attachment = textView.fileAttachmentReferenceNearSelection() {

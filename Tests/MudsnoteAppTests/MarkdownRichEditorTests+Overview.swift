@@ -5,6 +5,52 @@ import Testing
 @testable import MudsnoteCore
 
 extension MarkdownRichEditorTests {
+    @Test func overviewNavigationDestinationsFilterTagsAndRestoreSidebar() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.sidebar-destinations." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let work = try store.saveNewNote(title: "Work", body: "Original", tags: ["work"])
+        _ = try store.saveNewNote(title: "Life", body: "Other", tags: ["life"])
+        store.libraryTagsSectionCollapsed = true
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus(); controller.showOverview()
+        #expect(!controller.isSourceListVisibleForLibrary)
+        let rail = try #require(controller.navigationRail)
+        #expect(rail.buttons.map(\.0) == ["总览", "最近笔记", "目录", "标签"])
+        rail.buttons[1].1.performClick(nil)
+        #expect(controller.selectedScope == .recent && !controller.isShowingSidebarTree)
+        #expect(controller.sidebarLibraryTitle.stringValue == "最近笔记")
+        rail.buttons[2].1.performClick(nil)
+        #expect(controller.isShowingSidebarTree && controller.sidebarLibraryTitle.stringValue == "目录")
+        #expect(controller.visibleSourceTitlesForLibrary().contains("收藏"))
+        rail.buttons[3].1.performClick(nil)
+        for _ in 0..<100 where !controller.sourceTagNames.contains("work") { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(controller.sidebarLibraryTitle.stringValue == "标签")
+        #expect(controller.sourceOutlineRootItems.map(\.identifier) == ["group:tags"])
+        let tag = try #require(controller.sourceOutlineItemsByScopeIdentifier[controller.sourceOutlineIdentifier(for: .tag("work"))])
+        let row = controller.sourceOutlineView.row(forItem: tag)
+        try #require(row >= 0)
+        controller.isSynchronizingSourceOutlineSelection = true
+        controller.sourceOutlineView.selectRowIndexes(IndexSet(integer: row), byExtendingSelection: false)
+        controller.isSynchronizingSourceOutlineSelection = false
+        controller.commitCurrentSourceOutlineSelection()
+        #expect(controller.selectedScope == .tag("work"))
+        #expect(controller.notes.map(\.url) == [work])
+        #expect(!controller.isShowingSidebarTree)
+        for _ in 0..<100 where controller.isLoadingInitialNote { try await Task.sleep(for: .milliseconds(10)) }
+        controller.navigateLibraryBack()
+        #expect(controller.sidebarPresentation == .tags && controller.isShowingSidebarTree)
+        controller.navigateLibraryForward()
+        #expect(controller.selectedScope == .tag("work") && !controller.isShowingSidebarTree)
+        rail.buttons[0].1.performClick(nil)
+        #expect(controller.isShowingOverview && !controller.isSourceListVisibleForLibrary)
+        controller.navigateLibraryBack()
+        #expect(controller.isSourceListVisibleForLibrary && controller.selectedScope == .tag("work"))
+    }
+
     @Test func overviewPersistsConnectionsAndKeepsOriginalNotes() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let suite = "mudsnote.overview." + UUID().uuidString
@@ -137,9 +183,29 @@ extension MarkdownRichEditorTests {
         #expect(controller.isShowingOverview)
         #expect(controller.regularEditorView?.superview === controller.overviewView?.cards[id])
         #expect(try store.loadOverview().cards.count == before + 1)
-        controller.applyDocument(title: "Inline", body: "Card body", tags: [])
-        controller.markDirty()
-        controller.toggleOverviewCard(id)
+        #expect(controller.window?.firstResponder === controller.editorTextView)
+        #expect(controller.editorTextView.isEditable)
+        #expect(controller.editorTextView.undoManager !== controller.overviewView?.structuralUndo)
+        let origin = controller.editorTextView.textContainerOrigin
+        #expect(controller.editorTextView.visibleRect.contains(NSPoint(x: origin.x + 1, y: origin.y + 1)))
+        for mode in [OverviewPresentation.mindMap, .outline] {
+            controller.overviewView?.setPresentation(mode)
+            controller.window?.contentView?.layoutSubtreeIfNeeded()
+            controller.overviewView?.layoutSubtreeIfNeeded()
+            let card = try #require(controller.overviewView?.cards[id])
+            #expect(card.bounds.width <= 360 && card.bounds.height <= 240)
+            #expect(controller.editorTextView.enclosingScrollView?.contentSize.height ?? 0 > 120)
+        }
+        controller.editorTextView.insertText("Inline", replacementRange: NSRange(location: NSNotFound, length: 0))
+        controller.editorTextView.insertNewline(nil)
+        controller.editorTextView.insertText("Card body", replacementRange: NSRange(location: NSNotFound, length: 0))
+        #expect(controller.isDirty)
+        let escape = try #require(NSEvent.keyEvent(with: .keyDown, location: .zero, modifierFlags: [], timestamp: 0,
+            windowNumber: controller.window?.windowNumber ?? 0, context: nil, characters: "\u{1b}", charactersIgnoringModifiers: "\u{1b}", isARepeat: false, keyCode: 53))
+        #expect(controller.markdownTextView(controller.editorTextView, handleKeyDown: escape))
+        #expect(controller.overviewView?.selectedID == nil)
+        #expect(!controller.statusLabel.isHidden && !controller.wordCountLabel.isHidden)
+        #expect(!controller.noteLinksView.isSuppressed)
         let url = try #require(controller.overviewState?.cards.first(where: { $0.id == id })?.url)
         #expect(try store.loadNote(at: url).body == "Card body")
     }
@@ -267,6 +333,7 @@ extension MarkdownRichEditorTests {
         }
         #expect(button.accessibilityLabel() == "新建笔记")
         let sidebar = try #require(controller.sourceListView)
+        _ = controller.setSourceListVisibleForLibrary(true)
         let widthBeforeSearch = sidebar.frame.width
         let search = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "LibrarySidebarSearch" })
         search.performClick(nil)

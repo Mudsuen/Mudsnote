@@ -6,6 +6,8 @@ struct LibraryPageState: Equatable {
     var url: URL?
     var scope: LibraryScope
     var query: String
+    var sidebar: LibrarySidebarPresentation
+    var sourceListVisible: Bool
 }
 
 extension LibraryWindowController {
@@ -13,7 +15,8 @@ extension LibraryWindowController {
         let url = isShowingOverview
             ? overviewState?.cards.first(where: { $0.id == overviewView?.selectedID })?.url
             : selectedURL
-        return LibraryPageState(overview: isShowingOverview, url: url, scope: selectedScope, query: searchField.stringValue)
+        return LibraryPageState(overview: isShowingOverview, url: url, scope: selectedScope, query: searchField.stringValue,
+            sidebar: sidebarPresentation, sourceListVisible: isSourceListVisibleForLibrary)
     }
 
     @discardableResult func beginLibraryPageNavigation() -> Bool {
@@ -56,6 +59,7 @@ extension LibraryWindowController {
                 guard leaveOverview() else { return }
                 selectedScope = target.scope
                 searchField.stringValue = target.query
+                setSidebarPresentation(target.sidebar, animated: false)
                 reloadNotes(selecting: target.url, loadFirstIfNeeded: false, refreshCounts: false)
                 if let url = target.url, let loaded {
                     let note = sourceCountSnapshot.first(where: { $0.url == url })
@@ -68,6 +72,11 @@ extension LibraryWindowController {
                     applyDocument(title: "", body: "", tags: []); isDirty = false
                 }
             }
+            _ = setSourceListVisibleForLibrary(target.sourceListVisible)
+            searchField.isHidden = target.query.isEmpty
+            sidebarLibraryTitle.isHidden = !target.query.isEmpty
+            sidebarSearchButton?.isHidden = !target.query.isEmpty
+            updateSidebarScopeButton()
             if back { pageBackStack.removeLast(); pageForwardStack.append(current) }
             else { pageForwardStack.removeLast(); pageBackStack.append(current) }
             updateToolbarActionState()

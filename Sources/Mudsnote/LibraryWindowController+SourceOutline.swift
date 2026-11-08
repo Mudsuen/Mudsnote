@@ -439,6 +439,14 @@ extension LibraryWindowController {
             return
         }
         guard let scope = item.scope else { return }
+        if case .tag = scope {
+            guard beginLibraryPageNavigation() else { return }
+            let wasRestoring = isRestoringLibraryPage
+            isRestoringLibraryPage = true
+            defer { isRestoringLibraryPage = wasRestoring }
+            if !activateSourceScope(scope) { refreshSourceSelection() }
+            return
+        }
         selectedTreeNoteURL = nil
         if scope == .recent || scope == .favorites {
             if !activateSourceScope(scope) {
@@ -474,10 +482,9 @@ extension LibraryWindowController {
                 }
             }
             reloadNotesForNavigation(loadFirstIfNeeded: true)
-            if (scope == .recent || scope == .favorites), sidebarPresentation != .list {
-                sidebarPresentation = .list
-                noteStore.librarySidebarPresentationRawValue = LibrarySidebarPresentation.list.rawValue
-                applySidebarPresentation(
+            let showsTagNotes: Bool = { if case .tag = scope { return true }; return false }()
+            if scope == .recent || scope == .favorites || showsTagNotes {
+                setSidebarPresentation(.list,
                     animated: window?.isVisible == true
                         && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
                 )

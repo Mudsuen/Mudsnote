@@ -93,6 +93,8 @@ struct OverviewLayout {
         let tree = OverviewTree(state)
         let root = requestedRoot == .root || tree.parents[requestedRoot] != nil ? requestedRoot : .root
         let width = max(1, width), height = max(1, height)
+        let editorSize = CGSize(width: min(360, max(280, width * 0.38)),
+                                height: min(240, max(160, height * 0.36)))
         let outlineAvailable = max(120, width - 11.5)
         let outlineWrapper = min(872, outlineAvailable)
         let outlineColumn = max(120, outlineWrapper - 105)
@@ -146,9 +148,10 @@ struct OverviewLayout {
                 let w = max(120, outlineColumn - CGFloat(max(0, depth - 1)) * 28)
                 let h: CGFloat
                 if node == root { h = OverviewTypography.textHeight(label(node), width: w, size: 34, lineHeight: 54.4, weight: .semibold) }
-                else if case .card(let id) = node, id == selected { h = max(280, min(420, height - 48)) }
+                else if case .card(let id) = node, id == selected { h = editorSize.height }
                 else { h = 6 + OverviewTypography.textHeight(label(node), width: w - 31, size: 16, lineHeight: 25.6) + OverviewTypography.detailHeight(details(node), width: w - 31) }
-                size = CGSize(width: w, height: h)
+                let selectedCard: Bool = { if case .card(let id) = node { return id == selected }; return false }()
+                size = CGSize(width: selectedCard ? min(w, editorSize.width) : w, height: h)
             } else {
                 let fontSize: CGFloat = depth == 0 ? 24 : depth == 1 ? 16 : 14
                 let padding: CGFloat = depth == 0 ? 48 : depth == 1 ? 32 : 64
@@ -162,7 +165,7 @@ struct OverviewLayout {
                 var h = OverviewTypography.textHeight(label(node), width: w - padding, size: fontSize, lineHeight: lineHeight, weight: depth == 0 ? .medium : .regular, map: true) + (depth < 2 ? 24 : 22)
                 h += OverviewTypography.detailHeight(details(node), width: w - detailPadding)
                 if case .card(let id) = node, id == selected {
-                    w = max(360, min(600, width - 48)); h = max(280, min(420, height - 48))
+                    w = editorSize.width; h = editorSize.height
                 }
                 size = CGSize(width: w, height: h)
             }

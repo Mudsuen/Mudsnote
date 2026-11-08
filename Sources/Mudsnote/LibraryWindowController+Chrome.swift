@@ -89,6 +89,7 @@ extension LibraryWindowController {
         surface.addSubview(tint)
         sidebarLibraryTitle.font = .systemFont(ofSize: 18, weight: .semibold)
         let searchButton = OverviewActionButton("", symbol: "magnifyingglass", action: {})
+        sidebarSearchButton = searchButton
         searchButton.invoke = { [weak self, weak searchButton] in
             guard let self else { return }
             self.sidebarLibraryTitle.isHidden = true
@@ -152,11 +153,12 @@ extension LibraryWindowController {
         guard presentation != sidebarPresentation else { return }
         sidebarPresentation = presentation
         noteStore.librarySidebarPresentationRawValue = presentation.rawValue
+        sourceTreeNeedsScopeRebuild = true
         applySidebarPresentation(animated: animated)
     }
 
     var isShowingSidebarTree: Bool {
-        sidebarPresentation == .tree
+        sidebarPresentation != .list
             && searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
     }
 
@@ -422,7 +424,15 @@ extension LibraryWindowController {
     }
 
     func updateSidebarScopeButton() {
-        sidebarHeaderView.isHidden = selectedScope == .all && searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        let page: String
+        if isShowingOverview { page = "总览" }
+        else if sidebarPresentation == .tags { page = "标签" }
+        else if sidebarPresentation == .tree { page = "目录" }
+        else if case .tag = selectedScope { page = "标签" }
+        else { page = selectedScope == .recent ? "最近笔记" : "目录" }
+        navigationRail?.select(page)
+        sidebarLibraryTitle.stringValue = page
+        sidebarHeaderView.isHidden = isShowingSidebarTree || (selectedScope == .all && searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
         sidebarAllNotesButton.isHidden = selectedScope == .all
     }
 
@@ -495,6 +505,7 @@ extension LibraryWindowController {
         statusLabel.textColor = panelTertiaryTextColor()
         statusLabel.alignment = .right
         statusLabel.lineBreakMode = .byTruncatingTail
+        wordCountLabel.identifier = NSUserInterfaceItemIdentifier("LibraryEditorWordCount")
         wordCountLabel.setAccessibilityLabel("字数")
         wordCountLabel.font = .monospacedDigitSystemFont(
             ofSize: 11,
@@ -540,11 +551,13 @@ extension LibraryWindowController {
         bodyContainer.identifier = NSUserInterfaceItemIdentifier("LibraryEditorBodyContainer")
         bodyContainer.addSubview(scrollView)
         scrollView.translatesAutoresizingMaskIntoConstraints = false
+        let footerInset = scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -32)
+        editorFooterInsetConstraint = footerInset
         NSLayoutConstraint.activate([
             scrollView.leadingAnchor.constraint(equalTo: bodyContainer.leadingAnchor),
             scrollView.trailingAnchor.constraint(equalTo: bodyContainer.trailingAnchor),
             scrollView.topAnchor.constraint(equalTo: bodyContainer.topAnchor),
-            scrollView.bottomAnchor.constraint(equalTo: bodyContainer.bottomAnchor, constant: -32)
+            footerInset
         ])
 
         let dates = NSStackView(views: [createdDateLabel, statusLabel])

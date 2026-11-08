@@ -2,6 +2,17 @@ import AppKit
 import MudsnoteCore
 
 final class NoteLinksView: NSView {
+    var isSuppressed = false {
+        didSet { updateVisibility() }
+    }
+
+    private func updateVisibility() {
+        let relations = knowledgeRelations
+        isHidden = isSuppressed || (relations.outgoing.isEmpty && relations.incoming.isEmpty
+            && relations.parents.isEmpty && relations.children.isEmpty
+            && relations.related.isEmpty && relations.suggested.isEmpty)
+    }
+
     private final class RelationButton: NSButton {
         let item: KnowledgeRelationItem
 
@@ -290,9 +301,7 @@ final class NoteLinksView: NSView {
         populate(relatedContent, with: legacyRelations, accessibilityPrefix: "打开明确关联笔记")
         populateSuggestions(suggestedContent, with: relations.suggested)
 
-        isHidden = relations.outgoing.isEmpty && relations.incoming.isEmpty
-            && relations.parents.isEmpty && relations.children.isEmpty
-            && relations.related.isEmpty && relations.suggested.isEmpty
+        updateVisibility()
         updateExpandedPresentation()
         if let targetLayer = relations.currentLayer?.nextHigher,
            targetLayer == .line || targetLayer == .plane {

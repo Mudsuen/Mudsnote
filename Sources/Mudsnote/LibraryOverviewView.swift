@@ -151,13 +151,24 @@ import MudsnoteCore
         layer?.borderWidth = editor != nil || (!isCompact && focused) ? 1 : 0
         layer?.borderColor = colors.mapLine.cgColor
         layer?.cornerRadius = isCompact && editor == nil ? 0 : 8
-        if isCompact && editor == nil {
+        if editor != nil {
+            more.isHidden = !isPointerHovered
+            expand.isHidden = !isPointerHovered
+        } else if isCompact {
             more.isHidden = true
             expand.isHidden = true
         } else { more.isHidden = false; expand.isHidden = false }
     }
     override func layout() {
         super.layout()
+        if let editor {
+            heading.isHidden = true; preview.isHidden = true; association.isHidden = true
+            bullet.isHidden = true; underline.isHidden = true
+            editor.frame = bounds.insetBy(dx: 4, dy: 6)
+            expand.frame = NSRect(x: bounds.width - 30, y: bounds.height - 28, width: 24, height: 22)
+            more.frame = NSRect(x: bounds.width - 58, y: bounds.height - 28, width: 24, height: 22)
+            return
+        }
         if isCompact && editor == nil {
             let inset: CGFloat = isOutline ? 31 : mapDepth == 1 ? 16 : 32
             let top: CGFloat = isOutline ? 3 : mapDepth == 1 ? 12 : 11
@@ -217,11 +228,15 @@ import MudsnoteCore
         editor?.removeFromSuperview()
         editor = view
         setAccessibilityElement(view == nil)
-        if let view { view.translatesAutoresizingMaskIntoConstraints = true; view.autoresizingMask = []; view.clipsToBounds = true; addSubview(view) }
+        if let view {
+            view.translatesAutoresizingMaskIntoConstraints = true; view.autoresizingMask = []; view.clipsToBounds = true
+            addSubview(view, positioned: .below, relativeTo: expand)
+        }
         heading.isHidden = view != nil
         preview.isHidden = view != nil
-        expand.title = view == nil ? "" : "收起"
-        expand.imagePosition = view == nil ? .imageOnly : .imageLeading
+        expand.title = ""
+        expand.image = NSImage(systemSymbolName: view == nil ? "square.and.pencil" : "xmark", accessibilityDescription: nil)
+        expand.imagePosition = .imageOnly
         expand.setAccessibilityLabel(view == nil ? "编辑笔记" : "收起")
         expand.toolTip = view == nil ? "编辑笔记" : "收起"
         needsLayout = true
@@ -313,7 +328,9 @@ import MudsnoteCore
 @MainActor final class LibraryOverviewView: NSView {
     override var isFlipped: Bool { true }
     override var acceptsFirstResponder: Bool { true }
-    override var undoManager: UndoManager? { structuralUndo }
+    override var undoManager: UndoManager? {
+        selectedID != nil || topicEdit != nil ? super.undoManager : structuralUndo
+    }
     weak var owner: LibraryWindowController?
     let scroll = NSScrollView()
     let canvas = OverviewCanvas()
@@ -361,6 +378,10 @@ import MudsnoteCore
     var overriddenEditor: NSView?
     var editorLayers: [(NSView, CGColor?)] = []
     var editorClips: [(NSClipView, NSColor)] = []
+    var editorStackInsets: [(NSStackView, NSEdgeInsets)] = []
+    var editorHiddenViews: [(NSView, Bool)] = []
+    var editorFooterInset: CGFloat?
+    var editorRelationsSuppressed: Bool?
 
     var colors: OverviewColors {
         let dark = appearanceMode == .dark || (appearanceMode == .system && effectiveAppearance.bestMatch(from: [.aqua, .darkAqua]) == .darkAqua)

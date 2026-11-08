@@ -24,7 +24,8 @@ final class LibraryWindowController: NSWindowController,
     WindowOpacityAdjusting
 {
     let noteStore: NoteStore
-    let sidebarLibraryTitle = NSTextField(labelWithString: "笔记")
+    let sidebarLibraryTitle = NSTextField(labelWithString: "目录")
+    weak var sidebarSearchButton: NSButton?
     var navigationRail: LibraryNavigationRail?
     weak var pageBackButton: NSButton?
     weak var pageForwardButton: NSButton?
@@ -487,6 +488,7 @@ final class LibraryWindowController: NSWindowController,
     weak var sidebarNoteListView: NSView?
 
     weak var editorStackView: NSStackView?
+    var editorFooterInsetConstraint: NSLayoutConstraint?
 
     var pinnedRelationsWidthConstraint: NSLayoutConstraint?
 

@@ -24,13 +24,9 @@ extension LibraryWindowController {
         sourceOutlineItemsByScopeIdentifier.removeAll(keepingCapacity: true)
         var roots: [LibrarySourceOutlineItem] = []
 
-        let smartGroup = makeSourceOutlineItem(
-            identifier: "group:mudsnote",
-            kind: .group(title: "Mudsnote", section: nil)
-        )
-        smartGroup.append(makeSourceOutlineScopeItem(.recent))
-        smartGroup.append(makeSourceOutlineScopeItem(.favorites))
-        smartGroup.append(makeSourceOutlineScopeItem(.all))
+        // Smart scopes also serve menus and search, even without tree rows.
+        _ = makeSourceOutlineScopeItem(.all)
+        _ = makeSourceOutlineScopeItem(.recent)
         let previewFolders = externalPreviewFolderURLs()
         let filesGroup = makeSourceOutlineItem(
             identifier: "group:files",
@@ -59,6 +55,7 @@ extension LibraryWindowController {
         }
         filesGroup.append(makeSourceOutlineScopeItem(.trash))
         roots.append(filesGroup)
+        roots.append(makeSourceOutlineScopeItem(.favorites))
 
         let tagsGroup = makeSourceOutlineItem(
             identifier: "group:tags",
@@ -69,7 +66,7 @@ extension LibraryWindowController {
         }
         roots.append(tagsGroup)
 
-        sourceOutlineRootItems = roots
+        sourceOutlineRootItems = sidebarPresentation == .tags ? [tagsGroup] : roots
         sourceOutlineView.reloadData()
         restoreSourceOutlineExpansion()
         if hasLoadedSourceCounts {

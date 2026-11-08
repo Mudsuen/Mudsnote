@@ -11,6 +11,20 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-08 — Separate sidebar destinations and compact overview editing
+
+- Problem: the icon rail mixed destinations, page headings all read Notes, and
+  the expanded list and large inline editor crowded the overview canvas.
+- Fix: order the rail as Overview, Recent Notes, Directory, and Tags; give each
+  destination its own heading. Start Overview with the list collapsed, use
+  compact inline cards in both presentations, and restore sidebar state during
+  back/forward navigation. Keep Favorites accessible in Directory. Complete the
+  embedded editor's layout before focusing it, and use text undo while editing.
+  Keep cards content-only, with metadata and relationship panels hidden and
+  compact actions revealed on hover.
+- Lesson: separate browsing destinations while keeping canvas editing compact
+  and preserving the surrounding spatial context.
+
 ## 2026-11-05 — Unify folder sidebar background
 
 - Problem: the folder tree added a tinted translucent backdrop below the solid sidebar heading.

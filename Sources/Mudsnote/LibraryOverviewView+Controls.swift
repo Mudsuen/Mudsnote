@@ -206,11 +206,22 @@ extension LibraryOverviewView {
     func prepareEditorAppearance(_ editor: NSView) {
         restoreEditorAppearance()
         overriddenEditor = editor; editorAppearance = editor.appearance
+        editorFooterInset = owner?.editorFooterInsetConstraint?.constant
+        owner?.editorFooterInsetConstraint?.constant = 0
+        editorRelationsSuppressed = owner?.noteLinksView.isSuppressed
+        owner?.noteLinksView.isSuppressed = true
         editor.appearance = NSAppearance(named: colors.dark ? .darkAqua : .aqua)
         let background = presentation == .outline ? colors.outlineBackground : colors.mapBackground
         var stack = [editor]
         while let view = stack.popLast() {
             stack.append(contentsOf: view.subviews)
+            if let content = view as? NSStackView, content.identifier?.rawValue == "LibraryEditorStack" {
+                editorStackInsets.append((content, content.edgeInsets))
+                content.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+            }
+            if ["LibraryEditorCreatedDateLabel", "LibraryEditorStatusLabel", "LibraryEditorWordCount"].contains(view.identifier?.rawValue ?? "") {
+                editorHiddenViews.append((view, view.isHidden)); view.isHidden = true
+            }
             if let clip = view as? NSClipView { editorClips.append((clip, clip.backgroundColor)); clip.backgroundColor = background }
             if let layer = view.layer, let color = layer.backgroundColor,
                color == LibraryNotesPalette.editorBackground.cgColor || color == LibraryNotesPalette.cardBackground.cgColor {
@@ -222,6 +233,12 @@ extension LibraryOverviewView {
         overriddenEditor?.appearance = editorAppearance
         for (view, color) in editorLayers { view.layer?.backgroundColor = color }
         for (view, color) in editorClips { view.backgroundColor = color }
+        for (view, insets) in editorStackInsets { view.edgeInsets = insets }
+        for (view, hidden) in editorHiddenViews { view.isHidden = hidden }
+        if let editorFooterInset { owner?.editorFooterInsetConstraint?.constant = editorFooterInset }
+        if let editorRelationsSuppressed { owner?.noteLinksView.isSuppressed = editorRelationsSuppressed }
+        editorFooterInset = nil; editorRelationsSuppressed = nil
         editorLayers.removeAll(); editorClips.removeAll(); overriddenEditor = nil; editorAppearance = nil
+        editorStackInsets.removeAll(); editorHiddenViews.removeAll()
     }
 }

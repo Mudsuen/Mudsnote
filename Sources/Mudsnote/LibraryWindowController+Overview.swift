@@ -59,22 +59,15 @@ extension LibraryWindowController {
         rail.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationRail")
         navigationRail = rail
         let actions: [(String, String, () -> Void)] = [
-            ("首页", "house", { [weak self] in self?.showOverview() }),
-            ("资料库", "folder", { [weak self] in
-                guard let self, self.leaveOverview() else { return }
-                _ = self.setSourceListVisibleForLibrary(true)
-                self.setSidebarPresentation(.tree, animated: false)
-                _ = self.activateSourceScope(.all)
-                self.navigationRail?.select("资料库")
-            }),
+            ("总览", "house", { [weak self] in self?.showOverview() }),
             ("最近笔记", "clock", { [weak self] in
-                guard let self, self.leaveOverview() else { return }; _ = self.setSourceListVisibleForLibrary(true); _ = self.activateSourceScope(.recent); self.navigationRail?.select("最近笔记")
+                self?.showLibraryNavigationPage(.list, scope: .recent)
             }),
-            ("收藏", "star", { [weak self] in
-                guard let self, self.leaveOverview() else { return }
-                _ = self.setSourceListVisibleForLibrary(true)
-                _ = self.activateSourceScope(.favorites)
-                self.navigationRail?.select("收藏")
+            ("目录", "folder", { [weak self] in
+                self?.showLibraryNavigationPage(.tree, scope: .all)
+            }),
+            ("标签", "number", { [weak self] in
+                self?.showLibraryNavigationPage(.tags, scope: .all)
             })
         ]
         for item in actions {
@@ -89,6 +82,31 @@ extension LibraryWindowController {
         }
         rail.settings = settings; rail.addSubview(settings)
         return rail
+    }
+
+    func showLibraryNavigationPage(_ presentation: LibrarySidebarPresentation, scope: LibraryScope) {
+        guard beginLibraryPageNavigation(), leaveOverview() else { return }
+        let wasRestoring = isRestoringLibraryPage
+        isRestoringLibraryPage = true
+        defer { isRestoringLibraryPage = wasRestoring }
+        _ = clearSearchFromKeyboard()
+        searchField.isHidden = true
+        sidebarSearchButton?.isHidden = false
+        sidebarLibraryTitle.isHidden = false
+        if presentation == .tags {
+            sourceTagsSectionCollapsed = false
+            noteStore.libraryTagsSectionCollapsed = false
+        }
+        setSidebarPresentation(presentation, animated: false)
+        _ = setSourceListVisibleForLibrary(true)
+        _ = activateSourceScope(scope)
+        if presentation == .tags {
+            if let tags = sourceOutlineItemsByIdentifier["group:tags"] {
+                sourceOutlineView.expandItem(tags)
+            }
+            scheduleDeferredSourceTagLoad()
+        }
+        updateSidebarScopeButton()
     }
 
     @objc func showOverview() {
@@ -108,9 +126,12 @@ extension LibraryWindowController {
         overviewView?.selectedID = nil
         if let editor = regularEditorView { overviewHost?.addSubview(editor) }
         isShowingOverview = true
-        navigationRail?.select("首页")
         updateDocumentTabBar()
-        _ = setSourceListVisibleForLibrary(true)
+        _ = clearSearchFromKeyboard()
+        searchField.isHidden = true
+        sidebarSearchButton?.isHidden = false
+        sidebarLibraryTitle.isHidden = false
+        _ = setSourceListVisibleForLibrary(false)
         overviewView?.isHidden = false
         if overviewView?.selectedID == nil { regularEditorView?.isHidden = true }
         setSidebarPresentation(.list, animated: false)
@@ -129,6 +150,7 @@ extension LibraryWindowController {
         }
         refreshOverview()
         overviewHost?.needsLayout = true
+        window?.contentView?.layoutSubtreeIfNeeded()
         DispatchQueue.main.async { [weak self] in
             guard let self, self.isShowingOverview, self.overviewView?.selectedID == nil else { return }
             self.overviewHost?.layoutSubtreeIfNeeded()
@@ -156,7 +178,7 @@ extension LibraryWindowController {
         if let id = overviewView?.selectedID { overviewView?.cards[id]?.embed(nil) }
         overviewView?.selectedID = nil
         isShowingOverview = false
-        navigationRail?.select(selectedScope == .favorites ? "收藏" : "资料库")
+        updateSidebarScopeButton()
         updateDocumentTabBar()
         overviewView?.isHidden = true
         if let editor = regularEditorView, let host = overviewHost {
@@ -231,6 +253,11 @@ extension LibraryWindowController {
         editor.isHidden = false
         overviewView?.cards[id]?.embed(editor)
         overviewView?.revealCard(id)
+        // The shared editor was measured in the previous pane. Finish its new
+        // card layout before revealing the caret or accepting text input.
+        editor.layoutSubtreeIfNeeded()
+        layoutEditorStatusLabel()
+        editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
         window?.makeFirstResponder(editorTextView)
         return true
     }

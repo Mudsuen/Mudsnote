@@ -65,6 +65,7 @@ enum LibraryScope: Equatable, Sendable {
 enum LibrarySidebarPresentation: Int {
     case tree
     case list
+    case tags
 }
 
 func librarySearchResults(
