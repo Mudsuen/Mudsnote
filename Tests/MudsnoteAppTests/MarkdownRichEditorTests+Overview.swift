@@ -5,6 +5,64 @@ import Testing
 @testable import MudsnoteCore
 
 extension MarkdownRichEditorTests {
+    @Test func sidebarNavigationKeepsCachedContentResponsive() async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.sidebar-performance." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        for index in 0..<80 {
+            _ = try store.saveNewNote(title: "Note \(index)", body: "Cached navigation fixture", tags: ["Tag \(index % 8)"],
+                in: store.notesDirectory.appendingPathComponent("Folder \(index % 8)"))
+        }
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus()
+        controller.loadSourceFoldersForLibrary()
+        for _ in 0..<200 where !controller.sourceTagsLoaded || controller.isLoadingInitialNote { try await Task.sleep(for: .milliseconds(10)) }
+        var results: [LibrarySidebarPresentation: [Double]] = [:]
+        for _ in 0..<3 {
+            for (mode, scope) in [(LibrarySidebarPresentation.tree, LibraryScope.all), (.tags, .all), (.list, .recent)] {
+                let selected = controller.selectedURL
+                let started = ProcessInfo.processInfo.systemUptime
+                controller.showLibraryNavigationPage(mode, scope: scope)
+                controller.window?.contentView?.layoutSubtreeIfNeeded()
+                results[mode, default: []].append((ProcessInfo.processInfo.systemUptime - started) * 1000)
+                #expect(controller.selectedURL == selected)
+                let historyCount = controller.pageBackStack.count
+                controller.showLibraryNavigationPage(mode, scope: scope)
+                #expect(controller.pageBackStack.count == historyCount)
+                await Task.yield()
+            }
+        }
+        for (mode, values) in results {
+            print("sidebar-navigation \(mode) notes=80 median_ms=\(values.sorted()[values.count / 2]) max_ms=\(values.max()!)")
+            #expect(values.sorted()[values.count / 2] < 60)
+        }
+        let selected = try #require(controller.sourceCountSnapshot.first { $0.url == controller.selectedURL })
+        controller.showInitialNoteLoadingShell(for: selected)
+        controller.showLibraryNavigationPage(.tree, scope: .all)
+        for _ in 0..<100 where controller.isLoadingInitialNote { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(!controller.isLoadingInitialNote)
+        #expect(controller.editorTextView.string.contains("Cached navigation fixture"))
+        controller.setNoteListViewModeForLibrary(.gallery)
+        #expect(controller.activateSourceScope(.folder(store.notesDirectory.appendingPathComponent("Folder 0"))))
+        #expect(controller.notes.count == 10)
+        controller.showLibraryNavigationPage(.tree, scope: .all)
+        #expect(controller.notes.count == 80)
+        controller.setNoteListViewModeForLibrary(.list)
+        let discarded = try store.saveNewNote(title: "Discarded", body: "Keep in Trash")
+        let trashedURL = try store.trashNote(at: discarded)
+        let trashed = NoteSearchResult(url: trashedURL, title: "Discarded", snippet: "Keep in Trash", modifiedAt: Date())
+        controller.selectedScope = .trash
+        controller.loadNoteSynchronously(trashed)
+        #expect(!controller.editorTextView.isEditable)
+        controller.showLibraryNavigationPage(.tags, scope: .all)
+        for _ in 0..<100 where controller.isLoadingInitialNote { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(controller.selectedURL != trashedURL && controller.editorTextView.isEditable)
+        #expect(try store.loadNote(at: trashedURL).body == "Keep in Trash")
+    }
+
     @Test func overviewNavigationDestinationsFilterTagsAndRestoreSidebar() async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let suite = "mudsnote.sidebar-destinations." + UUID().uuidString
@@ -38,6 +96,7 @@ extension MarkdownRichEditorTests {
         controller.isSynchronizingSourceOutlineSelection = false
         controller.commitCurrentSourceOutlineSelection()
         #expect(controller.selectedScope == .tag("work"))
+        #expect(controller.sidebarLibraryTitle.stringValue == "#work")
         #expect(controller.notes.map(\.url) == [work])
         #expect(!controller.isShowingSidebarTree)
         for _ in 0..<100 where controller.isLoadingInitialNote { try await Task.sleep(for: .milliseconds(10)) }

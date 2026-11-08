@@ -14,7 +14,7 @@ import AppKit
     var invoke: (() -> Void)?
     var selected = false {
         didSet {
-            image = LibraryRailGlyph.image(symbolName, selected: selected)
+            guard selected != oldValue else { return }
             updateTint()
             needsDisplay = true
             setAccessibilityValue(selected ? "已选中" : "")

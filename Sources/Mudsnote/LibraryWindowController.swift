@@ -272,11 +272,6 @@ final class LibraryWindowController: NSWindowController,
 
     var sidebarPresentationButtons: [NSButton] = []
 
-    var sidebarHeaderView: NSView!
-
-    let sidebarListHeaderContent = NSStackView()
-
-    let sidebarAllNotesButton = NSButton()
 
     var searchResultsGeneration = 0
 
@@ -363,6 +358,8 @@ final class LibraryWindowController: NSWindowController,
     }
 
     var sourceOutlineRootItems: [LibrarySourceOutlineItem] = []
+    var sourceDirectoryRootItems: [LibrarySourceOutlineItem] = []
+    var sourceTreeProjectionScope: LibraryScope = .all
 
     var sourceTreeNeedsScopeRebuild = false
 

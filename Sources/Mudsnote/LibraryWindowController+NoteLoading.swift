@@ -6,6 +6,14 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 extension LibraryWindowController {
+    func resumeSelectedNoteLoadIfNeeded() {
+        guard hasReleasedDeferredLaunchWork, isLoadingInitialNote, noteLoadTask == nil,
+              let url = selectedURL else { return }
+        let note = sourceCountSnapshot.first { $0.url.standardizedFileURL == url.standardizedFileURL }
+            ?? NoteSearchResult(url: url, title: activeDocumentTab.title, snippet: "", modifiedAt: Date())
+        load(note: note)
+    }
+
     func loadSelectedRow() {
         let row = tableView.selectedRow
         guard let note = note(at: row) else {

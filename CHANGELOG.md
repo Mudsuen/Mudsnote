@@ -11,6 +11,18 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-08 — Keep sidebar navigation responsive
+
+- Problem: switching rail destinations rebuilt the folder tree, refreshed a
+  hidden list, and reopened a note. A second scope/count row crowded the sidebar.
+- Fix: reuse cached directory/tag roots, apply the destination scope once, and
+  keep the current editor when browsing. Skip unchanged split-layout and icon
+  work. Remove the redundant scope/count/presentation row; show the selected
+  scope in the primary heading and search scope only while searching. Preserve
+  visible gallery refreshes and resume interrupted note loads when needed.
+- Lesson: switching a browser destination should project cached data without
+  reloading an unchanged document or rebuilding unrelated surfaces.
+
 ## 2026-11-08 — Toggle overview cards in place
 
 - Problem: browsing a title required opening its editor, and expanding a note

@@ -88,6 +88,8 @@ extension LibraryWindowController {
         list.translatesAutoresizingMaskIntoConstraints = false
         surface.addSubview(tint)
         sidebarLibraryTitle.font = .systemFont(ofSize: 18, weight: .semibold)
+        sidebarLibraryTitle.lineBreakMode = .byTruncatingTail
+        sidebarLibraryTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let searchButton = OverviewActionButton("", symbol: "magnifyingglass", action: {})
         sidebarSearchButton = searchButton
         searchButton.invoke = { [weak self, weak searchButton] in
@@ -112,7 +114,7 @@ extension LibraryWindowController {
         heading.orientation = .horizontal; heading.spacing = 4
         heading.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 12)
         heading.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        let sidebarChrome = NSStackView(views: [heading, sidebarHeaderView])
+        let sidebarChrome = NSStackView(views: [heading, searchScopeControl])
         sidebarChrome.orientation = .vertical; sidebarChrome.alignment = .width; sidebarChrome.spacing = 4
         container.addSubview(sidebarChrome)
         sidebarChrome.translatesAutoresizingMaskIntoConstraints = false
@@ -153,7 +155,6 @@ extension LibraryWindowController {
         guard presentation != sidebarPresentation else { return }
         sidebarPresentation = presentation
         noteStore.librarySidebarPresentationRawValue = presentation.rawValue
-        sourceTreeNeedsScopeRebuild = true
         applySidebarPresentation(animated: animated)
     }
 
@@ -175,8 +176,13 @@ extension LibraryWindowController {
         tree.alphaValue = 1
         list.alphaValue = 1
         if showsTree {
+            if sidebarPresentation == .tree, sourceTreeProjectionScope != sourceTreeScopeForCurrentSelection {
+                sourceTreeNeedsScopeRebuild = true
+            }
             if sourceTreeNeedsScopeRebuild {
                 rebuildSourceRows(includeTags: sourceTagsLoaded)
+            } else {
+                applySourceOutlineRootPresentation()
             }
             refreshSourceSelection()
         }
@@ -349,44 +355,6 @@ extension LibraryWindowController {
             noteListEmptyLabel.centerYAnchor.constraint(equalTo: listContainer.centerYAnchor, constant: -20)
         ])
 
-        let listHeaderSpacer = NSView()
-        listHeaderSpacer.setContentHuggingPriority(.defaultLow, for: .horizontal)
-        sidebarListHeaderContent.orientation = .horizontal
-        sidebarListHeaderContent.spacing = 6
-        [noteListTitleLabel, noteListCountLabel, searchScopeControl].forEach {
-            sidebarListHeaderContent.addArrangedSubview($0)
-        }
-        sidebarAllNotesButton.title = "全部笔记"
-        sidebarAllNotesButton.font = .systemFont(ofSize: 12, weight: .medium)
-        sidebarAllNotesButton.isBordered = false
-        sidebarAllNotesButton.contentTintColor = .secondaryLabelColor
-        sidebarAllNotesButton.target = self
-        sidebarAllNotesButton.action = #selector(showAllNotesPressed)
-        sidebarAllNotesButton.identifier = NSUserInterfaceItemIdentifier("LibraryReturnToAllNotes")
-        sidebarAllNotesButton.toolTip = "显示全部笔记"
-        sidebarAllNotesButton.setAccessibilityLabel("显示全部笔记")
-        sidebarAllNotesButton.widthAnchor.constraint(greaterThanOrEqualToConstant: 52).isActive = true
-        sidebarAllNotesButton.heightAnchor.constraint(equalToConstant: 28).isActive = true
-        let presentation = NSButton()
-        presentation.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarPresentationButton")
-        configureSidebarPresentationButton(presentation)
-        sidebarPresentationButtons.append(presentation)
-        presentation.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        presentation.heightAnchor.constraint(equalToConstant: 28).isActive = true
-        let listHeader = NSStackView(views: [
-            sidebarAllNotesButton, sidebarListHeaderContent, listHeaderSpacer, presentation
-        ])
-        sidebarHeaderView = listHeader
-        listHeader.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarListHeader")
-        listHeader.orientation = .horizontal
-        listHeader.alignment = .centerY
-        listHeader.spacing = 6
-        listHeader.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 10)
-        noteListTitleLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
-        noteListCountLabel.setContentHuggingPriority(.required, for: .horizontal)
-        searchScopeControl.setContentHuggingPriority(.required, for: .horizontal)
-        listHeader.heightAnchor.constraint(equalToConstant: 32).isActive = true
-
         let stack = NSStackView(views: [listContainer])
         stack.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListStack")
         stack.orientation = .vertical
@@ -419,10 +387,6 @@ extension LibraryWindowController {
         return sidebar
     }
 
-    @objc func showAllNotesPressed() {
-        _ = activateSourceScope(.all)
-    }
-
     func updateSidebarScopeButton() {
         let page: String
         if isShowingOverview { page = "总览" }
@@ -431,9 +395,9 @@ extension LibraryWindowController {
         else if case .tag = selectedScope { page = "标签" }
         else { page = selectedScope == .recent ? "最近笔记" : "目录" }
         navigationRail?.select(page)
-        sidebarLibraryTitle.stringValue = page
-        sidebarHeaderView.isHidden = isShowingSidebarTree || (selectedScope == .all && searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty)
-        sidebarAllNotesButton.isHidden = selectedScope == .all
+        let title = !isShowingOverview && sidebarPresentation == .list && selectedScope != .all && selectedScope != .recent
+            ? noteListTitle(for: selectedScope) : page
+        if sidebarLibraryTitle.stringValue != title { sidebarLibraryTitle.stringValue = title }
     }
 
     func configureGalleryCollectionView() {

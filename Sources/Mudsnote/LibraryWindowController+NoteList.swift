@@ -13,6 +13,7 @@ extension LibraryWindowController {
         sourceCountIndex: LibrarySourceCountIndex? = nil,
         sourceRecentCount: Int? = nil,
         refreshCounts: Bool = true,
+        preservingCurrentDocument: Bool = false,
         mutationAnimation: LibraryNoteMutationAnimation? = nil
     ) {
         cancelSourceSnapshotValidation()
@@ -49,7 +50,8 @@ extension LibraryWindowController {
         synchronizeGallerySelectionFromTable()
         stabilizeVisualQASelectionIfNeeded()
 
-        if loadFirstIfNeeded, !isShowingOverview, let noteToLoad {
+        if loadFirstIfNeeded, !isShowingOverview, let noteToLoad,
+           !preservingCurrentDocument || selectedURL?.standardizedFileURL != noteToLoad.url.standardizedFileURL {
             load(note: noteToLoad)
         }
         if refreshCounts {
@@ -67,12 +69,14 @@ extension LibraryWindowController {
 
     func reloadNotesForNavigation(
         selecting preferredURL: URL? = nil,
-        loadFirstIfNeeded: Bool
+        loadFirstIfNeeded: Bool,
+        preservingCurrentDocument: Bool = false
     ) {
         reloadNotes(
             selecting: preferredURL,
             loadFirstIfNeeded: loadFirstIfNeeded,
-            refreshCounts: false
+            refreshCounts: false,
+            preservingCurrentDocument: preservingCurrentDocument
         )
         if selectedScope == .trash {
             // Trash lives outside the watched library roots. Keep navigation on

@@ -52,9 +52,8 @@ struct LibraryChromeAblationTests {
                 let selectedBefore = controller.selectedMarkdownFileURLForLibrary()
                 controller.editorTextView.window?.makeFirstResponder(controller.editorTextView)
                 let responderBefore = window.firstResponder
-                let toggle = try #require(views.compactMap { $0 as? NSButton }.first { $0.identifier?.rawValue == "LibrarySidebarPresentationButton" })
-                toggle.performClick(nil)
-                toggle.performClick(nil)
+                controller.toggleSidebarPresentationPressed()
+                controller.toggleSidebarPresentationPressed()
                 #expect(controller.editorTextView.string == contentBefore)
                 #expect(controller.selectedMarkdownFileURLForLibrary() == selectedBefore)
                 #expect(window.firstResponder === responderBefore)

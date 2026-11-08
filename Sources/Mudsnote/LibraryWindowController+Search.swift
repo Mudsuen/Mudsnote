@@ -14,13 +14,17 @@ extension LibraryWindowController {
         scheduleSearchReloadFromTyping()
     }
 
-    func clearSearchFromKeyboard() -> Bool {
+    func clearSearchFromKeyboard(reload: Bool = true) -> Bool {
         guard !searchField.stringValue.isEmpty || activeSearchSession != nil
             || hasPendingSearchReload || isSearchResultReloading || !searchScopeControl.isHidden else { return false }
         searchField.stringValue = ""
         activeSearchSession = nil
         cancelPendingSearchReload()
-        performSearchReload()
+        if reload { performSearchReload() }
+        else {
+            cancelActiveSearchResultReload()
+            searchScopeControl.isHidden = true
+        }
         removeEditorSearchHighlights()
         return true
     }

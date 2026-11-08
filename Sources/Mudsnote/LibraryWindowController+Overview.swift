@@ -85,11 +85,17 @@ extension LibraryWindowController {
     }
 
     func showLibraryNavigationPage(_ presentation: LibrarySidebarPresentation, scope: LibraryScope) {
+        if !isShowingOverview, sidebarPresentation == presentation, selectedScope == scope,
+           isSourceListVisibleForLibrary, searchField.stringValue.isEmpty,
+           !(presentation == .tags && sourceTagsSectionCollapsed) {
+            resumeSelectedNoteLoadIfNeeded()
+            return
+        }
         guard beginLibraryPageNavigation(), leaveOverview() else { return }
         let wasRestoring = isRestoringLibraryPage
         isRestoringLibraryPage = true
         defer { isRestoringLibraryPage = wasRestoring }
-        _ = clearSearchFromKeyboard()
+        _ = clearSearchFromKeyboard(reload: false)
         searchField.isHidden = true
         sidebarSearchButton?.isHidden = false
         sidebarLibraryTitle.isHidden = false
@@ -97,9 +103,8 @@ extension LibraryWindowController {
             sourceTagsSectionCollapsed = false
             noteStore.libraryTagsSectionCollapsed = false
         }
-        setSidebarPresentation(presentation, animated: false)
+        guard activateSourceScope(scope, presentation: presentation) else { return }
         _ = setSourceListVisibleForLibrary(true)
-        _ = activateSourceScope(scope)
         if presentation == .tags {
             if let tags = sourceOutlineItemsByIdentifier["group:tags"] {
                 sourceOutlineView.expandItem(tags)
@@ -127,7 +132,7 @@ extension LibraryWindowController {
         if let editor = regularEditorView { overviewHost?.addSubview(editor) }
         isShowingOverview = true
         updateDocumentTabBar()
-        _ = clearSearchFromKeyboard()
+        _ = clearSearchFromKeyboard(reload: false)
         searchField.isHidden = true
         sidebarSearchButton?.isHidden = false
         sidebarLibraryTitle.isHidden = false
@@ -160,6 +165,8 @@ extension LibraryWindowController {
 
     @discardableResult func commitOverviewEditor() -> Bool {
         guard overviewView?.commitTopicEditing() != false else { return false }
+        // A read-only overview has no embedded editor to serialize or drain.
+        guard !isShowingOverview || overviewView?.selectedID != nil else { return true }
         // End input-method composition before serializing the shared editor.
         if let responder = window?.firstResponder as? NSView,
            let editor = regularEditorView,

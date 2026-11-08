@@ -134,7 +134,7 @@ extension LibraryOverviewView {
         centerWorldPoint(CGPoint(x: root.midX - offset.x, y: root.midY - offset.y))
     }
     func resetViewport() {
-        guard selectedID == nil else { return }
+        guard selectedID == nil, cardTransition == nil else { return }
         if presentation == .mindMap { centerRoot() }
         else { scroll.contentView.scroll(to: .zero); scroll.reflectScrolledClipView(scroll.contentView) }
     }

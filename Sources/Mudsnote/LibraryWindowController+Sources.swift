@@ -6,8 +6,29 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 extension LibraryWindowController {
+    var sourceTreeScopeForCurrentSelection: LibraryScope {
+        selectedScope == .recent || selectedScope == .favorites ? selectedScope : .all
+    }
+
+    func applySourceOutlineRootPresentation() {
+        let roots = sidebarPresentation == .tags
+            ? sourceDirectoryRootItems.filter { $0.identifier == "group:tags" }
+            : sourceDirectoryRootItems
+        guard sourceOutlineRootItems.map(\.identifier) != roots.map(\.identifier) else { return }
+        sourceOutlineRootItems = roots
+        let wasSynchronizing = isSynchronizingSourceOutlineSelection
+        let wasRestoring = isRestoringSourceOutlineExpansion
+        isSynchronizingSourceOutlineSelection = true
+        isRestoringSourceOutlineExpansion = true
+        sourceOutlineView.reloadData()
+        restoreSourceOutlineExpansion()
+        isSynchronizingSourceOutlineSelection = wasSynchronizing
+        isRestoringSourceOutlineExpansion = wasRestoring
+    }
+
     func rebuildSourceRows(includeTags: Bool) {
         sourceTreeNeedsScopeRebuild = false
+        sourceTreeProjectionScope = sourceTreeScopeForCurrentSelection
         let wasSynchronizingSelection = isSynchronizingSourceOutlineSelection
         let wasRestoringExpansion = isRestoringSourceOutlineExpansion
         isSynchronizingSourceOutlineSelection = true
@@ -66,6 +87,7 @@ extension LibraryWindowController {
         }
         roots.append(tagsGroup)
 
+        sourceDirectoryRootItems = roots
         sourceOutlineRootItems = sidebarPresentation == .tags ? [tagsGroup] : roots
         sourceOutlineView.reloadData()
         restoreSourceOutlineExpansion()

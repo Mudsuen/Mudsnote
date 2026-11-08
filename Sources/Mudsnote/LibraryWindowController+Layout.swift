@@ -117,6 +117,7 @@ extension LibraryWindowController {
     @discardableResult
     func setSourceListVisibleForLibrary(_ isVisible: Bool, animated: Bool) -> Bool {
         guard let sourceListView else { return false }
+        guard isSourceListVisibleForLibrary != isVisible else { return isVisible }
         noteStore.librarySourceListVisible = isVisible
         applySourceVisibilityChrome(isVisible)
         if let sourceSplitViewItem {

@@ -651,48 +651,25 @@ extension MarkdownRichEditorTests {
         #expect(splitController.splitViewItems.count == 2)
         #expect(controller.sourceOutlineView.numberOfRows >= 3)
         #expect(controller.sourceTreeNoteTitlesForLibrary().contains("Library Seed"))
-        let treePresentationButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
-        })
-        window.contentView?.layoutSubtreeIfNeeded()
-        let toggleFrameBefore = treePresentationButton.convert(treePresentationButton.bounds, to: nil)
-        let titleFrameBefore = controller.noteListTitleLabel.convert(controller.noteListTitleLabel.bounds, to: nil)
-        #expect(controller.noteListTitleLabel.isHiddenOrHasHiddenAncestor)
+        #expect(window.contentView?.allSubviews.contains {
+            ["LibrarySidebarListHeader", "LibraryReturnToAllNotes"].contains($0.identifier?.rawValue ?? "")
+        } == false)
         window.makeFirstResponder(controller.editorTextView)
         let editorResponderBeforePresentationChange = window.firstResponder
-        #expect(treePresentationButton.toolTip == "切换到列表")
-        treePresentationButton.performClick(nil)
+        controller.setSidebarPresentation(.list, animated: false)
         #expect(store.librarySidebarPresentationRawValue == 1)
         #expect(controller.selectedSourceTitleForLibrary == "全部笔记")
         #expect(window.firstResponder === editorResponderBeforePresentationChange)
-        let listPresentationButton = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSButton }.first {
-            $0.identifier?.rawValue == "LibrarySidebarPresentationButton"
-        })
-        window.contentView?.layoutSubtreeIfNeeded()
-        #expect(listPresentationButton === treePresentationButton)
-        #expect(controller.noteListTitleLabel.isHiddenOrHasHiddenAncestor)
-        #expect(controller.noteListTitleLabel.convert(controller.noteListTitleLabel.bounds, to: nil) == titleFrameBefore)
-        #expect(listPresentationButton.convert(listPresentationButton.bounds, to: nil).origin == toggleFrameBefore.origin)
-        #expect(window.contentView?.allSubviews.contains {
-            $0.identifier?.rawValue == "LibraryListSmartNavigation"
-        } == false)
-        #expect(listPresentationButton.toolTip == "切换到文件树")
         #expect(window.contentView?.allSubviews.first {
             $0.identifier?.rawValue == "LibrarySourceSurface"
         }?.isHidden == true)
-        listPresentationButton.performClick(nil)
+        controller.setSidebarPresentation(.tree, animated: false)
         #expect(store.librarySidebarPresentationRawValue == 0)
+        controller.showLibraryNavigationPage(.list, scope: .recent)
+        #expect(controller.sidebarLibraryTitle.stringValue == "最近笔记")
+        controller.showLibraryNavigationPage(.tree, scope: .all)
         #expect(controller.selectedSourceTitleForLibrary == "全部笔记")
-        #expect(treePresentationButton.toolTip == "切换到列表")
-        let allNotesButton = try #require(window.contentView?.allSubviews.first {
-            $0.identifier?.rawValue == "LibraryReturnToAllNotes"
-        } as? NSButton)
-        #expect(allNotesButton.isHidden)
-        controller.selectRecentScopeForLibrary()
-        #expect(!allNotesButton.isHidden)
-        allNotesButton.performClick(nil)
-        #expect(controller.selectedSourceTitleForLibrary == "全部笔记")
-        #expect(allNotesButton.isHidden)
+        #expect(controller.sidebarLibraryTitle.stringValue == "目录")
         #expect(window.styleMask.contains(.resizable))
         let titlebarSeparators = window.contentView?.allSubviews.compactMap { $0 as? NSBox }.filter {
             $0.identifier?.rawValue.hasSuffix("TitlebarSeparator") == true
@@ -838,16 +815,12 @@ extension MarkdownRichEditorTests {
         #expect(!visibleToolbarItemIDs.contains("mudsnote.library.toolbar.editor-tools"))
         #expect(!visibleToolbarItemIDs.contains("mudsnote.library.toolbar.search"))
         #expect(!visibleToolbarItemIDs.contains("mudsnote.library.toolbar.reveal"))
-        let sidebarListHeader = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSStackView }.first {
+        #expect(window.contentView?.allSubviews.contains {
             $0.identifier?.rawValue == "LibrarySidebarListHeader"
-        })
-        #expect(sidebarListHeader.allSubviews.contains(controller.noteListTitleLabel))
-        #expect(sidebarListHeader.allSubviews.contains(controller.noteListCountLabel))
-        #expect(sidebarListHeader.allSubviews.contains(controller.searchScopeControl))
+        } == false)
+        #expect(controller.searchScopeControl.superview != nil)
         #expect(controller.searchScopeControl.isHidden)
         #expect(controller.searchScopeControl.accessibilityLabel() == "搜索范围")
-        sidebarListHeader.layoutSubtreeIfNeeded()
-        if !controller.noteListTitleLabel.isHiddenOrHasHiddenAncestor { #expect(controller.noteListTitleLabel.frame.width + 1 >= controller.noteListTitleLabel.intrinsicContentSize.width) }
         let libraryToolbar = try #require(window.toolbar)
         let editorToolsItem = try #require(controller.toolbar(
             libraryToolbar,
@@ -945,8 +918,6 @@ extension MarkdownRichEditorTests {
         #expect(!sourceTrackingSeparatorItem.isHidden)
         let expandedImageSize = toggleSourceButton.image?.size
         #expect(toggleSourceButton.image != nil)
-        #expect(treePresentationButton.image != nil)
-        #expect(treePresentationButton.toolTip == "切换到列表")
         toggleSourceButton.performClick(nil)
         #expect(!controller.isSourceListVisibleForLibrary)
         #expect(sourceList.isHidden)
@@ -1039,20 +1010,13 @@ extension MarkdownRichEditorTests {
             $0.identifier?.rawValue == "LibrarySourceTagStatus"
         } == false)
         let sidebarTextFields = window.contentView?.allSubviews.compactMap { $0 as? NSTextField } ?? []
-        let noteListTitle = try #require(sidebarTextFields.first {
-            $0.identifier?.rawValue == "LibraryNoteListTitle"
-        })
-        let noteListCount = try #require(sidebarTextFields.first {
-            $0.identifier?.rawValue == "LibraryNoteListCount"
+        #expect(!sidebarTextFields.contains {
+            ["LibraryNoteListTitle", "LibraryNoteListCount"].contains($0.identifier?.rawValue ?? "")
         })
         let noteListEmpty = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListEmptyLabel"
         })
-        #expect(noteListTitle.stringValue == "全部笔记")
-        #expect(noteListTitle.font?.pointSize == LibraryNotesLayout.noteListHeaderTitleFontSize)
-        #expect(LibraryNotesLayout.noteListHeaderTitleFontSize == 14)
-        #expect(noteListCount.stringValue == "1 条笔记")
-        #expect(noteListCount.font?.pointSize == LibraryNotesLayout.noteListHeaderCountFontSize)
+        #expect(controller.sidebarLibraryTitle.stringValue == "目录")
         #expect(noteListEmpty.isHidden)
         #expect(controller.tableView.numberOfRows == 2)
         #expect(controller.tableView(controller.tableView, isGroupRow: 0))
@@ -1479,7 +1443,7 @@ extension MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func libraryReturnToAllNotesUsesBoundedWork() throws {
+    func libraryDirectoryNavigationUsesBoundedWork() throws {
         let harness = try makeEditorControllerHarness(draftID: "category-performance", showsSaveButton: false)
         defer { harness.tearDown() }
         let root = harness.store.notesDirectory
@@ -1494,18 +1458,14 @@ extension MarkdownRichEditorTests {
             onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
         defer { controller.close() }
         #expect(controller.noteListSearchResultsForLibrary().count == 1_200)
-        let returnButton = try #require(controller.window?.contentView?.allSubviews.first {
-            $0.identifier?.rawValue == "LibraryReturnToAllNotes"
-        } as? NSButton)
         for _ in 0..<3 {
             controller.selectRecentScopeForLibrary()
-            #expect(!returnButton.isHidden)
-            let elapsed = ContinuousClock().measure { returnButton.performClick(nil) }
+            let selected = controller.selectedURL
+            let elapsed = ContinuousClock().measure { controller.showLibraryNavigationPage(.tree, scope: .all) }
             #expect(elapsed < .milliseconds(150))
-            #expect(controller.noteListSearchResultsForLibrary().count == 1_200)
-            #expect(returnButton.isHidden)
+            #expect(controller.sourceTreeNoteTitlesForLibrary().count == 1_200)
+            #expect(controller.selectedURL == selected)
         }
-        #expect(controller.noteListSearchResultsForLibrary().first?.url.lastPathComponent == "category-0.md")
     }
 
     @MainActor

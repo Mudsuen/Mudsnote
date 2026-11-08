@@ -468,27 +468,32 @@ extension LibraryWindowController {
     }
 
     @discardableResult
-    func activateSourceScope(_ scope: LibraryScope) -> Bool {
+    func activateSourceScope(_ scope: LibraryScope, presentation requestedPresentation: LibrarySidebarPresentation? = nil) -> Bool {
         do {
             try saveCurrentNoteIfNeeded(allowBackgroundHandoff: true)
             selectedScope = scope
             lastTreeScope = scope
             lastListScope = scope
-            if scope == .recent || scope == .favorites || scope == .all {
-                // List navigation does not need to recreate the hidden folder tree.
-                sourceTreeNeedsScopeRebuild = true
-                if scope == .all, isShowingSidebarTree {
-                    rebuildSourceRows(includeTags: sourceTagsLoaded)
-                }
-            }
-            reloadNotesForNavigation(loadFirstIfNeeded: true)
             let showsTagNotes: Bool = { if case .tag = scope { return true }; return false }()
-            if scope == .recent || scope == .favorites || showsTagNotes {
-                setSidebarPresentation(.list,
-                    animated: window?.isVisible == true
-                        && !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion
-                )
+            let destination = requestedPresentation
+                ?? (scope == .recent || scope == .favorites || showsTagNotes ? .list : sidebarPresentation)
+            if destination != sidebarPresentation {
+                setSidebarPresentation(destination, animated: false)
+            } else if isShowingSidebarTree {
+                applySidebarPresentation(animated: false)
             }
+            // Directory and tag pickers browse the cached tree. Do not rebuild
+            // the hidden note table or open an unrelated note on every click.
+            let currentDocumentIsTrashed = selectedURL.map(isTrashURL) ?? false
+            if requestedPresentation != nil, isShowingSidebarTree, noteListViewMode != .gallery, !currentDocumentIsTrashed {
+                refreshVisibleSourceOutlinePresentation()
+                resumeSelectedNoteLoadIfNeeded()
+                updateToolbarActionState()
+                return true
+            }
+            reloadNotesForNavigation(selecting: requestedPresentation != nil ? selectedURL : nil,
+                loadFirstIfNeeded: true, preservingCurrentDocument: requestedPresentation != nil)
+            if requestedPresentation != nil { resumeSelectedNoteLoadIfNeeded() }
             refreshVisibleSourceOutlinePresentation()
             return true
         } catch {
