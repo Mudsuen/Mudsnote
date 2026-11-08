@@ -11,6 +11,14 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-08 — Simplify navigation selection
+
+- Problem: the blue selection dots and decorative directory/tag shapes exceeded
+  the reference's intended style.
+- Fix: remove the dots, restore simple folder and number glyphs, and use filled
+  home, clock, and folder glyphs with the rounded selection backplate.
+- Lesson: borrow the reference's visual weight while preserving familiar shapes.
+
 ## 2026-11-08 — Soften navigation glyphs
 
 - Problem: the thin geometric rail icons did not match the supplied reference.
