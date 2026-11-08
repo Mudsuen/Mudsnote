@@ -155,6 +155,7 @@ import AppKit
         return super.hitTest(point)
     }
     override func draw(_ dirtyRect: NSRect) {
+        if let card = content as? OverviewCardView, !card.isCompact { return }
         if map {
             if depth < 2 {
                 (depth == 0 ? colors.mapRoot : colors.mapTopic).setFill()

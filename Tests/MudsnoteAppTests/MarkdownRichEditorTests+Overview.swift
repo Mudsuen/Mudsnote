@@ -193,7 +193,8 @@ extension MarkdownRichEditorTests {
             controller.window?.contentView?.layoutSubtreeIfNeeded()
             controller.overviewView?.layoutSubtreeIfNeeded()
             let card = try #require(controller.overviewView?.cards[id])
-            #expect(card.bounds.width <= 360 && card.bounds.height <= 240)
+            #expect(card.bounds.height <= 240)
+            if mode == .mindMap { #expect(card.bounds.width <= 360) }
             #expect(controller.editorTextView.enclosingScrollView?.contentSize.height ?? 0 > 120)
         }
         controller.editorTextView.insertText("Inline", replacementRange: NSRange(location: NSNotFound, length: 0))

@@ -11,6 +11,18 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-08 — Toggle overview cards in place
+
+- Problem: browsing a title required opening its editor, and expanding a note
+  could obscure the surrounding hierarchy or move the viewport unexpectedly.
+- Fix: single-click or press Space to reveal content; double-click the title to
+  edit. Outline reveals plain inline text; mind map reveals a compact card.
+  Add a toolbar action for all visible notes. Animate neighboring nodes and connectors together while
+  anchoring the clicked card. Keep preview state across map/outline switches
+  and honor Reduce Motion.
+- Lesson: browsing disclosure should preserve spatial context and stay separate
+  from the note's editable state and saved ownership metadata.
+
 ## 2026-11-08 — Separate sidebar destinations and compact overview editing
 
 - Problem: the icon rail mixed destinations, page headings all read Notes, and

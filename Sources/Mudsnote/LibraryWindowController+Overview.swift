@@ -174,6 +174,7 @@ extension LibraryWindowController {
         guard isShowingOverview else { return true }
         guard commitOverviewEditor() else { return false }
         overviewView?.restoreEditorAppearance()
+        overviewView?.finishCardTransition()
         cancelActiveNoteLoad()
         if let id = overviewView?.selectedID { overviewView?.cards[id]?.embed(nil) }
         overviewView?.selectedID = nil
@@ -226,6 +227,7 @@ extension LibraryWindowController {
 
     func openOverviewNote(_ note: NoteSearchResult) {
         guard commitOverviewEditor(), regularEditorView != nil else { return }
+        overviewView?.finishCardTransition()
         cancelActiveNoteLoad()
         let generation = noteLoadGeneration
         let revision = editorContentRevision

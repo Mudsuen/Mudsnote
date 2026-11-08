@@ -145,15 +145,17 @@ import MudsnoteCore
     }
     required init?(coder: NSCoder) { fatalError() }
     override func updateLayer() {
-        let focused = window?.firstResponder === self
-        layer?.backgroundColor = (isPointerHovered && !isCompact ? LibraryNotesPalette.hoverBackground : isCompact && editor == nil ? NSColor.clear
+        layer?.backgroundColor = (isOutline ? NSColor.clear : isPointerHovered && !isCompact ? LibraryNotesPalette.hoverBackground : isCompact && editor == nil ? NSColor.clear
             : isOutline ? colors.outlineBackground : colors.mapBackground).cgColor
-        layer?.borderWidth = editor != nil || (!isCompact && focused) ? 1 : 0
+        layer?.borderWidth = !isOutline && (editor != nil || !isCompact) ? 1 : 0
         layer?.borderColor = colors.mapLine.cgColor
-        layer?.cornerRadius = isCompact && editor == nil ? 0 : 8
+        layer?.cornerRadius = isOutline || (isCompact && editor == nil) ? 0 : 8
         if editor != nil {
             more.isHidden = !isPointerHovered
             expand.isHidden = !isPointerHovered
+        } else if !isCompact {
+            more.isHidden = isOutline || !isPointerHovered
+            expand.isHidden = true
         } else if isCompact {
             more.isHidden = true
             expand.isHidden = true
@@ -191,12 +193,43 @@ import MudsnoteCore
             association.isHidden = true
             return
         }
+        if isOutline {
+            let titleHeight = OverviewTypography.textHeight(heading.stringValue, width: max(1, bounds.width - 31), size: 16, lineHeight: 25.6)
+            heading.isHidden = false; heading.maximumNumberOfLines = 0
+            heading.font = OverviewTypography.font(16); heading.textColor = colors.text
+            let titleStyle = NSMutableParagraphStyle(); titleStyle.minimumLineHeight = 25.6; titleStyle.maximumLineHeight = 25.6
+            heading.attributedStringValue = NSAttributedString(string: heading.stringValue,
+                attributes: [.font: heading.font!, .foregroundColor: colors.text, .paragraphStyle: titleStyle])
+            heading.frame = NSRect(x: 31, y: 3, width: bounds.width - 31, height: titleHeight)
+            preview.isHidden = false; preview.font = OverviewTypography.font(14); preview.textColor = colors.detail
+            preview.maximumNumberOfLines = 5
+            let bodyStyle = NSMutableParagraphStyle(); bodyStyle.minimumLineHeight = 22; bodyStyle.maximumLineHeight = 22
+            preview.attributedStringValue = NSAttributedString(string: preview.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+                attributes: [.font: preview.font!, .foregroundColor: colors.detail, .paragraphStyle: bodyStyle])
+            preview.frame = NSRect(x: 31, y: titleHeight + 9, width: bounds.width - 31, height: max(0, bounds.height - titleHeight - 14))
+            association.isHidden = true; bullet.isHidden = true; underline.isHidden = true
+            return
+        }
         bullet.isHidden = true; underline.isHidden = true
-        heading.frame = NSRect(x: 16, y: 14, width: bounds.width - 32, height: 22)
-        preview.frame = NSRect(x: 16, y: 46, width: bounds.width - 32, height: bounds.height - 92)
+        let headingHeight = min(66, OverviewTypography.textHeight(heading.stringValue, width: max(1, bounds.width - 60), size: 16, lineHeight: 22, weight: .semibold))
+        heading.isHidden = false; heading.maximumNumberOfLines = 3
+        heading.font = .systemFont(ofSize: 16, weight: .semibold)
+        heading.textColor = isOutline ? colors.text : colors.mapText
+        let paragraph = NSMutableParagraphStyle(); paragraph.minimumLineHeight = 22; paragraph.maximumLineHeight = 22
+        heading.attributedStringValue = NSAttributedString(string: heading.stringValue,
+            attributes: [.font: heading.font!, .foregroundColor: heading.textColor!, .paragraphStyle: paragraph])
+        heading.frame = NSRect(x: 16, y: 14, width: bounds.width - 60, height: headingHeight)
+        preview.isHidden = false; preview.font = .systemFont(ofSize: 13)
+        preview.textColor = isOutline ? colors.detail : colors.mapText.withAlphaComponent(0.8)
+        preview.maximumNumberOfLines = 5
+        let bodyParagraph = NSMutableParagraphStyle(); bodyParagraph.minimumLineHeight = 20; bodyParagraph.maximumLineHeight = 20
+        bodyParagraph.lineBreakMode = .byWordWrapping
+        preview.attributedStringValue = NSAttributedString(string: preview.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
+            attributes: [.font: preview.font!, .foregroundColor: preview.textColor!, .paragraphStyle: bodyParagraph])
+        preview.frame = NSRect(x: 16, y: 20 + headingHeight, width: bounds.width - 32, height: max(0, bounds.height - headingHeight - 32))
         expand.frame = NSRect(x: 12, y: bounds.height - 36, width: editor == nil ? 28 : 52, height: 26)
-        more.frame = NSRect(x: bounds.width - 44, y: bounds.height - 36, width: 32, height: 26)
-        association.frame = NSRect(x: editor == nil ? 48 : 72, y: bounds.height - 32, width: max(0, bounds.width - 120), height: 18)
+        more.frame = NSRect(x: bounds.width - 28, y: 8, width: 22, height: 22)
+        association.isHidden = true
         editor?.frame = NSRect(x: 4, y: 10, width: bounds.width - 8, height: bounds.height - 52)
     }
     override func mouseDown(with event: NSEvent) {
@@ -211,10 +244,18 @@ import MudsnoteCore
     }
     override func hitTest(_ point: NSPoint) -> NSView? {
         guard !isHidden, bounds.contains(convert(point, from: superview)) else { return nil }
-        if isCompact && editor == nil { return self }
+        if editor == nil {
+            if isCompact { return self }
+            let p = convert(point, from: superview)
+            for button in [expand, more] where !button.isHidden && button.frame.contains(p) { return button }
+            return self
+        }
         return super.hitTest(point)
     }
-    override func accessibilityPerformPress() -> Bool { expand.invoke?(); return true }
+    override func accessibilityPerformPress() -> Bool {
+        if let selectNode { selectNode() } else { expand.invoke?() }
+        return true
+    }
     override func rightMouseDown(with event: NSEvent) { more.invoke?() }
     override var acceptsFirstResponder: Bool { editor == nil }
     override func becomeFirstResponder() -> Bool { needsDisplay = true; return true }
@@ -341,6 +382,7 @@ import MudsnoteCore
     let addArea = OverviewActionButton("", symbol: "plus", action: {})
     let appearanceButton = OverviewActionButton("", symbol: "ellipsis", action: {})
     let presentationButton = OverviewActionButton("大纲笔记", symbol: "list.bullet", action: {})
+    let cardDisplayButton = OverviewActionButton("", symbol: "rectangle.expand.vertical", action: {})
     let breadcrumbScroll = NSScrollView()
     let breadcrumb = NSView()
     let unassigned = OverviewActionButton("未归属", action: {})
@@ -365,6 +407,9 @@ import MudsnoteCore
     var previewVersions: [UUID: Date] = [:]
     var previewTasks: [UUID: Task<Void, Never>] = [:]
     var selectedID: UUID?
+    var expandedCardIDs = Set<UUID>()
+    var cardTransition: (source: OverviewLayout, progress: CGFloat, visiblePreviews: Set<UUID>, alphas: [UUID: CGFloat])?
+    var cardTransitionTask: Task<Void, Never>?
     var state = NoteOverview()
     var topicEdit: (node: OverviewNodeID, details: Bool)?
     var topicSaveWork: DispatchWorkItem?
@@ -421,7 +466,7 @@ import MudsnoteCore
         addSubview(scroll)
         breadcrumbScroll.drawsBackground = false; breadcrumbScroll.hasHorizontalScroller = false
         breadcrumbScroll.documentView = breadcrumb
-        [breadcrumbScroll, presentationButton, newNote, add, addArea, appearanceButton].forEach(addSubview)
+        [breadcrumbScroll, presentationButton, cardDisplayButton, newNote, add, addArea, appearanceButton].forEach(addSubview)
         rootHost = OverviewTopicHost(node: .root, content: title)
         canvas.addSubview(rootHost)
         rootHost.addSubview(principles)
@@ -442,6 +487,8 @@ import MudsnoteCore
         presentationButton.invoke = { [weak self] in
             guard let self else { return }; self.setPresentation(self.presentation == .mindMap ? .outline : .mindMap)
         }
+        cardDisplayButton.identifier = NSUserInterfaceItemIdentifier("OverviewCardDisplay")
+        cardDisplayButton.invoke = { [weak self] in self?.toggleAllCardPreviews() }
         appearanceButton.invoke = { [weak self] in self?.showSettingsMenu() }
         for (button, label) in [(newNote, "新建笔记到总览"), (add, "关联笔记"), (addArea, "添加主题"),
                                 (appearanceButton, "总览设置与操作")] {
@@ -462,6 +509,7 @@ import MudsnoteCore
         let tree = OverviewTree(state)
         if focusedRoot != .root && tree.parents[focusedRoot] == nil { focusedRoot = .root }
         let valid = Set(state.cards.map(\.id))
+        expandedCardIDs.formIntersection(valid)
         for id in Array(cards.keys) where !valid.contains(id) {
             cards.removeValue(forKey: id)?.removeFromSuperview()
             previewTasks.removeValue(forKey: id)?.cancel(); previews[id] = nil; previewVersions[id] = nil
@@ -489,14 +537,14 @@ import MudsnoteCore
             if let existing = cards[card.id] { view = existing }
             else {
                 view = OverviewCardView(id: card.id, open: { [weak owner] in owner?.toggleOverviewCard(card.id) }, menu: { [weak self] in self?.showTopicMenu(node) })
-                view.selectNode = { [weak self] in self?.select(node) }
+                view.selectNode = { [weak self] in self?.toggleCardPreview(card.id) }
                 view.beginDrag = { [weak self] event, origin in self?.startDrag(node, event: event, origin: origin) }
                 view.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
                 cards[card.id] = view; attachHost(node, content: view)
             }
             let note = notes.first { $0.url.standardizedFileURL == card.url.standardizedFileURL }
             if let note, previewVersions[card.id] != note.modifiedAt { invalidatePreview(card.id); previewVersions[card.id] = note.modifiedAt }
-            view.isCompact = true
+            view.isCompact = !expandedCardIDs.contains(card.id)
             view.association.stringValue = state.areas.first { $0.id == card.areaID }?.title ?? "未归属"
             view.association.isHidden = card.areaID == nil
             view.heading.stringValue = note?.title ?? card.url.deletingPathExtension().lastPathComponent
@@ -509,6 +557,7 @@ import MudsnoteCore
                     self.previewTasks[card.id] = nil
                     self.previews[card.id] = result.map { String($0.prefix(1200)) } ?? "文件暂不可用"
                     self.cards[card.id]?.preview.stringValue = self.previews[card.id] ?? ""
+                    if self.expandedCardIDs.contains(card.id) { self.needsLayout = true }
                 }
             }
         }
@@ -564,14 +613,15 @@ import MudsnoteCore
         updatingViewport = true
         defer { updatingViewport = wasUpdatingViewport }
         let width = max(1, bounds.width)
-        breadcrumbScroll.frame = NSRect(x: 36, y: 16, width: max(1, width - 340), height: 18)
+        breadcrumbScroll.frame = NSRect(x: 36, y: 16, width: max(1, width - 378), height: 18)
         updateBreadcrumbs()
+        cardDisplayButton.frame = NSRect(x: width - 309, y: 10, width: 28, height: 28)
         presentationButton.frame = NSRect(x: width - 271, y: 11, width: 91, height: 26)
         addArea.frame = NSRect(x: width - 166, y: 10, width: 28, height: 28)
         add.frame = NSRect(x: width - 128, y: 10, width: 28, height: 28)
         newNote.frame = NSRect(x: width - 90, y: 10, width: 28, height: 28)
         appearanceButton.frame = NSRect(x: width - 52, y: 10, width: 28, height: 28)
-        for button in [presentationButton, addArea, add, newNote, appearanceButton] { button.contentTintColor = colors.detail }
+        for button in [presentationButton, cardDisplayButton, addArea, add, newNote, appearanceButton] { button.contentTintColor = colors.detail }
         presentationButton.wantsLayer = true; presentationButton.layer?.cornerRadius = 6
         presentationButton.layer?.backgroundColor = (presentation == .outline ? OverviewColors.accent : colors.dark ? OverviewColors.rgb(51, 51, 51) : OverviewColors.rgb(245, 245, 245)).cgColor
         presentationButton.attributedTitle = NSAttributedString(string: presentationButton.title,
@@ -581,7 +631,8 @@ import MudsnoteCore
         scroll.wantsLayer = true; scroll.layer?.backgroundColor = (presentation == .outline ? colors.outlineBackground : colors.mapBackground).cgColor
         let viewport = scroll.contentView.frame.size
         var next = OverviewLayout.make(width: viewport.width, height: viewport.height, state: state, selected: selectedID,
-            presentation: presentation, collapsed: collapsed, titles: cards.mapValues { $0.heading.stringValue }, root: focusedRoot, structure: mapStructure)
+            presentation: presentation, collapsed: collapsed, titles: cards.mapValues { $0.heading.stringValue }, root: focusedRoot, structure: mapStructure,
+            expandedCards: expandedCardIDs, previews: cards.mapValues { $0.preview.stringValue })
         var preserveOrigin: CGPoint?
         if presentation == .mindMap {
             let visible = scroll.contentView.bounds.size
@@ -596,7 +647,9 @@ import MudsnoteCore
                                          y: scroll.contentView.bounds.minY + offset.y - old.worldOffset.y)
             }
         }
+        if let transition = cardTransition { next = next.interpolatingFrames(from: transition.source, progress: transition.progress) }
         plan = next
+        updateCardDisplayChrome()
         let tree = OverviewTree(state)
         rootHost.configure(nodeFrame: next.frames[next.root] ?? .zero, presentation: presentation, depth: 0, side: 1,
             colors: colors, active: activeNode == next.root, folded: false, children: tree.children[next.root, default: []].count,
@@ -635,6 +688,14 @@ import MudsnoteCore
             }
             if case .card(let id) = node, let card = cards[id] {
                 card.isHidden = false; card.isOutline = presentation == .outline; card.mapDepth = depth; card.colors = colors
+                card.isCompact = !expandedCardIDs.contains(id) && !(cardTransition?.visiblePreviews.contains(id) ?? false)
+                let targetAlpha: CGFloat = expandedCardIDs.contains(id) ? 1 : 0
+                if let transition = cardTransition {
+                    let sourceAlpha = transition.alphas[id] ?? targetAlpha
+                    card.preview.alphaValue = sourceAlpha + (targetAlpha - sourceAlpha) * transition.progress
+                } else { card.preview.alphaValue = targetAlpha }
+                card.setAccessibilityValue(expandedCardIDs.contains(id) ? (presentation == .outline ? "正文已展开" : "内容卡片") : "标题")
+                card.setAccessibilityHelp("单击展开或收起，双击标题编辑；右键查看关联与归属")
                 card.nodeActive = activeNode == node; card.needsLayout = true; card.needsDisplay = true
                 host.bullet.setAccessibilityLabel("打开笔记")
             } else { host.bullet.setAccessibilityLabel("进入主题 " + nodeTitle(node)) }
@@ -642,11 +703,19 @@ import MudsnoteCore
         canvas.lines = []; canvas.isOutline = presentation == .outline
         canvas.strokeColor = presentation == .outline ? colors.guide : colors.mapLine
         if presentation == .mindMap {
+            func connectionY(_ node: OverviewNodeID, _ frame: CGRect) -> CGFloat {
+                if (next.depths[node] ?? 0) < 2 { return frame.midY }
+                if case .card(let id) = node {
+                    let amount: CGFloat = selectedID == id ? 1 : (cards[id]?.preview.alphaValue ?? 0)
+                    return frame.maxY + (frame.midY - frame.maxY) * amount
+                }
+                return frame.maxY
+            }
             for (parent, child) in next.links {
                 guard let a = next.frames[parent], let b = next.frames[child] else { continue }
                 let side = next.sides[child] ?? 1
-                let startY = (next.depths[parent] ?? 0) < 2 ? a.midY : a.maxY
-                let endY = (next.depths[child] ?? 0) < 2 ? b.midY : b.maxY
+                let startY = connectionY(parent, a)
+                let endY = connectionY(child, b)
                 let start = NSPoint(x: side > 0 ? a.maxX : a.minX, y: startY)
                 let end = NSPoint(x: side > 0 ? b.minX : b.maxX, y: endY)
                 let bend = (start.x + end.x) / 2

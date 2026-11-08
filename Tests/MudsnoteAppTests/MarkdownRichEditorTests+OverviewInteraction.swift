@@ -200,8 +200,11 @@ extension MarkdownRichEditorTests {
         let point = card.convert(NSPoint(x: card.heading.frame.midX, y: card.heading.frame.midY), to: card.superview)
         #expect(card.hitTest(point) === card)
         #expect(card.accessibilityPerformPress())
+        #expect(overview.expandedCardIDs.contains(id) && overview.selectedID == nil)
+        card.expand.invoke?()
         for _ in 0..<100 where overview.selectedID != id { try await Task.sleep(for: .milliseconds(10)) }
         #expect(overview.selectedID == id)
+        #expect(overview.cardTransitionTask == nil)
         overview.setOverviewAppearance(.light)
         #expect(editor.appearance?.name == .aqua)
         overview.setOverviewAppearance(.dark)

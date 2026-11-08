@@ -28,6 +28,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
 
     @discardableResult func prepareStructureChange() -> Bool {
         guard commitTopicEditing(), owner?.commitOverviewEditor() == true else { return false }
+        finishCardTransition()
         owner?.cancelActiveNoteLoad()
         if let selectedID {
             owner?.toggleOverviewCard(selectedID)
@@ -310,6 +311,9 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
         if !event.modifierFlags.intersection([.option, .control]).isEmpty { return false }
         let node = activeNode ?? focusedRoot
         switch event.keyCode {
+        case 49:
+            if case .card(let id) = node { toggleCardPreview(id); return true }
+            return false
         case 36, 76: createSibling(of: node); return true
         case 48:
             if event.modifierFlags.contains(.shift) { _ = changeIndent(node, outward: true) }

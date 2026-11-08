@@ -89,7 +89,8 @@ struct OverviewLayout {
     @MainActor static func make(width: CGFloat, height: CGFloat, state: NoteOverview, selected: UUID?,
                      presentation: OverviewPresentation = .mindMap, collapsed: Set<OverviewNodeID> = [],
                      titles: [UUID: String] = [:], root requestedRoot: OverviewNodeID = .root,
-                     structure: OverviewMapStructure = .right) -> Self {
+                     structure: OverviewMapStructure = .right, expandedCards: Set<UUID> = [],
+                     previews: [UUID: String] = [:]) -> Self {
         let tree = OverviewTree(state)
         let root = requestedRoot == .root || tree.parents[requestedRoot] != nil ? requestedRoot : .root
         let width = max(1, width), height = max(1, height)
@@ -141,17 +142,37 @@ struct OverviewLayout {
             }
         }
         var nodeSizes: [OverviewNodeID: CGSize] = [:]
+        func isOpenCard(_ node: OverviewNodeID) -> Bool {
+            if case .card(let id) = node { return id == selected || (expandedCards.contains(id) && !previews[id, default: ""].isEmpty) }
+            return false
+        }
+        func spacing(_ previous: OverviewNodeID?, _ next: OverviewNodeID) -> CGFloat {
+            previous.map { isOpenCard($0) || isOpenCard(next) ? (presentation == .outline ? 8 : 12) : 0 } ?? 0
+        }
         func measureNode(_ node: OverviewNodeID, depth: Int) -> CGSize {
             if let cached = nodeSizes[node] { return cached }
             let size: CGSize
-            if presentation == .outline {
+            if case .card(let id) = node, expandedCards.contains(id), id != selected {
+                let available = presentation == .outline ? outlineColumn - CGFloat(max(0, depth - 1)) * 28 : width - 32
+                let body = previews[id, default: ""].trimmingCharacters(in: .whitespacesAndNewlines)
+                if presentation == .outline {
+                    let w = max(120, available)
+                    let titleHeight = OverviewTypography.textHeight(label(node), width: w - 31, size: 16, lineHeight: 25.6)
+                    let bodyHeight = body.isEmpty ? 0 : min(110, OverviewTypography.textHeight(body, width: w - 31, size: 14, lineHeight: 22))
+                    size = CGSize(width: w, height: titleHeight + bodyHeight + (body.isEmpty ? 6 : 14))
+                } else {
+                    let w = min(max(120, available), min(320, max(260, width * 0.34)))
+                    let titleHeight = min(66, OverviewTypography.textHeight(label(node), width: w - 60, size: 16, lineHeight: 22, weight: .semibold))
+                    let bodyHeight = body.isEmpty ? 0 : min(100, OverviewTypography.textHeight(body, width: w - 32, size: 13, lineHeight: 20))
+                    size = CGSize(width: w, height: max(60, titleHeight + bodyHeight + 32))
+                }
+            } else if presentation == .outline {
                 let w = max(120, outlineColumn - CGFloat(max(0, depth - 1)) * 28)
                 let h: CGFloat
                 if node == root { h = OverviewTypography.textHeight(label(node), width: w, size: 34, lineHeight: 54.4, weight: .semibold) }
                 else if case .card(let id) = node, id == selected { h = editorSize.height }
                 else { h = 6 + OverviewTypography.textHeight(label(node), width: w - 31, size: 16, lineHeight: 25.6) + OverviewTypography.detailHeight(details(node), width: w - 31) }
-                let selectedCard: Bool = { if case .card(let id) = node { return id == selected }; return false }()
-                size = CGSize(width: selectedCard ? min(w, editorSize.width) : w, height: h)
+                size = CGSize(width: w, height: h)
             } else {
                 let fontSize: CGFloat = depth == 0 ? 24 : depth == 1 ? 16 : 14
                 let padding: CGFloat = depth == 0 ? 48 : depth == 1 ? 32 : 64
@@ -181,8 +202,11 @@ struct OverviewLayout {
                 frames[node] = CGRect(x: leading + CGFloat(max(0, depth - 1)) * 28, y: y, width: size.width, height: size.height)
                 y += size.height
                 if node == root { y += 18 + OverviewTypography.detailHeight(details(root), width: size.width) }
+                var previous: OverviewNodeID?
                 for child in children(node) {
+                    y += spacing(previous, child)
                     links.append((node, child)); place(child, depth: depth + 1)
+                    previous = child
                 }
             }
             place(root, depth: 0)
@@ -191,7 +215,7 @@ struct OverviewLayout {
             var metrics: [OverviewNodeID: Metrics] = [:]
             func anchorOffset(_ node: OverviewNodeID, depth: Int) -> CGFloat {
                 let h = measureNode(node, depth: depth).height
-                return depth < 2 ? h / 2 : h
+                return depth < 2 || isOpenCard(node) ? h / 2 : h
             }
             @discardableResult func measure(_ node: OverviewNodeID, depth: Int) -> Metrics {
                 depths[node] = depth
@@ -203,9 +227,12 @@ struct OverviewLayout {
                 }
                 var offsets: [(OverviewNodeID, CGFloat)] = []
                 var y: CGFloat = 0
+                var previous: OverviewNodeID?
                 for child in visible {
+                    y += spacing(previous, child)
                     let m = measure(child, depth: depth + 1)
                     offsets.append((child, y)); y += m.span
+                    previous = child
                 }
                 let first = offsets.first!, last = offsets.last!
                 let anchor = (first.1 + metrics[first.0]!.anchor + last.1 + metrics[last.0]!.anchor) / 2
@@ -234,8 +261,11 @@ struct OverviewLayout {
             for (side, nodes) in [(CGFloat(1), Array(visible.prefix(rightCount))), (CGFloat(-1), Array(visible.dropFirst(rightCount)))] {
                 guard !nodes.isEmpty else { continue }
                 var offsets: [(OverviewNodeID, CGFloat)] = []; var y: CGFloat = 0
+                var previous: OverviewNodeID?
                 for child in nodes {
+                    y += spacing(previous, child)
                     let m = measure(child, depth: 1); offsets.append((child, y)); y += m.span
+                    previous = child
                 }
                 let first = offsets.first!, last = offsets.last!
                 let center = (first.1 + metrics[first.0]!.anchor + last.1 + metrics[last.0]!.anchor) / 2
@@ -262,5 +292,19 @@ struct OverviewLayout {
             ? CGSize(width: width * 3, height: height * 3)
             : CGSize(width: max(width, bounds.maxX + 24), height: max(height, bounds.maxY + 48))
         return Self(frames: frames, links: links, size: size, contentBounds: bounds, depths: depths, sides: sides, order: order, root: root, presentation: presentation, worldOffset: worldOffset)
+    }
+
+    func interpolatingFrames(from previous: Self, progress: CGFloat) -> Self {
+        var next = self
+        let dx = worldOffset.x - previous.worldOffset.x, dy = worldOffset.y - previous.worldOffset.y
+        for (node, target) in frames {
+            guard let source = previous.frames[node]?.offsetBy(dx: dx, dy: dy) else { continue }
+            func blend(_ a: CGFloat, _ b: CGFloat) -> CGFloat { a + (b - a) * progress }
+            next.frames[node] = CGRect(x: blend(source.minX, target.minX), y: blend(source.minY, target.minY),
+                width: blend(source.width, target.width), height: blend(source.height, target.height))
+        }
+        next.contentBounds = next.frames.values.reduce(.null) { $0.union($1) }
+        if presentation == .outline { next.size.height = max(size.height, next.contentBounds.maxY + 48) }
+        return next
     }
 }

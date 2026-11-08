@@ -5,6 +5,66 @@ import Testing
 @testable import MudsnoteCore
 
 extension MarkdownRichEditorTests {
+    @Test(arguments: [OverviewPresentation.mindMap, .outline])
+    func overviewCardPreviewToggleAnchorsAndReflowsWithoutChangingNotes(mode: OverviewPresentation) async throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.overview-card-preview." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let first = try store.saveNewNote(title: "Plan", body: "A short preview body")
+        let second = try store.saveNewNote(title: "Next", body: "Another note")
+        var model = NoteOverview(); model.areas = [NoteOverview.Area(title: "Project")]; model.seeded = true
+        let id = model.add(first, areaID: model.areas[0].id)
+        let other = model.add(second, areaID: model.areas[0].id)
+        try store.saveOverview(model)
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus(); controller.showOverview()
+        let view = try #require(controller.overviewView)
+        view.setPresentation(mode); view.layoutSubtreeIfNeeded()
+        for _ in 0..<100 where view.previews[id] == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let collapsed = try #require(view.plan)
+        let rect = try #require(collapsed.cards[id])
+        let origin = view.scroll.contentView.bounds.origin
+        let anchor = CGPoint(x: rect.minX - origin.x, y: rect.minY - origin.y)
+        func settle() async throws {
+            for _ in 0..<100 where view.cardTransitionTask != nil { try await Task.sleep(for: .milliseconds(10)) }
+            view.layoutSubtreeIfNeeded()
+        }
+        func expectNoOverlap() throws {
+            let frames = Array(try #require(view.plan).frames.values)
+            for i in frames.indices { for j in frames.indices where j > i { #expect(!frames[i].intersects(frames[j])) } }
+        }
+        #expect(view.cards[id]?.accessibilityPerformPress() == true)
+        try await settle()
+        let expanded = try #require(view.plan)
+        let frame = try #require(expanded.cards[id])
+        #expect(frame.height > rect.height && view.selectedID == nil)
+        if mode == .outline { #expect(frame.width == rect.width) }
+        else { #expect(frame.width <= 320) }
+        #expect(abs(frame.minX - view.scroll.contentView.bounds.minX - anchor.x) < 2)
+        #expect(abs(frame.minY - view.scroll.contentView.bounds.minY - anchor.y) < 2)
+        try expectNoOverlap()
+        let halfway = expanded.interpolatingFrames(from: collapsed, progress: 0.5)
+        #expect(halfway.cards[id]!.height > rect.height && halfway.cards[id]!.height < frame.height)
+        #expect(view.cards[id]?.accessibilityPerformPress() == true)
+        try await settle()
+        #expect(!view.expandedCardIDs.contains(id) && view.cards[id]?.isCompact == true)
+        view.cardDisplayButton.performClick(nil); try await settle()
+        #expect(view.expandedCardIDs.isSuperset(of: [id, other]))
+        try expectNoOverlap()
+        view.cardDisplayButton.performClick(nil); try await settle()
+        #expect(view.expandedCardIDs.isEmpty)
+        // Interrupt an in-flight expansion with a second click.
+        view.toggleCardPreview(id); view.toggleCardPreview(id); try await settle()
+        #expect(view.expandedCardIDs.isEmpty && view.selectedID == nil)
+        try expectNoOverlap()
+        #expect(try store.loadOverview() == model)
+        #expect(try store.loadNote(at: first).body == "A short preview body")
+        #expect(try store.loadNote(at: second).body == "Another note")
+    }
+
     @Test func overviewCanvasPansFarInEveryDirectionWithoutGrowingBackingView() throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
         let suite = "mudsnote.infinite-canvas." + UUID().uuidString

@@ -41,6 +41,7 @@ import MudsnoteCore
 extension LibraryOverviewView {
     func setPresentation(_ next: OverviewPresentation) {
         guard presentation != next, owner?.commitOverviewEditor() == true else { return }
+        finishCardTransition()
         presentation = next; owner?.noteStore.libraryOverviewModeRawValue = next.rawValue
         zoomPopover.close()
         scroll.magnification = 1; scroll.allowsMagnification = next == .mindMap
@@ -147,6 +148,7 @@ extension LibraryOverviewView {
     }
     func toggleBranch(_ node: OverviewNodeID) {
         guard node != focusedRoot, commitTopicEditing() else { return }
+        finishCardTransition()
         if !collapsed.contains(node), let selectedID, OverviewTree(state).ancestors(of: .card(selectedID)).contains(node) {
             owner?.toggleOverviewCard(selectedID)
             guard self.selectedID == nil else { return }
@@ -217,7 +219,7 @@ extension LibraryOverviewView {
             stack.append(contentsOf: view.subviews)
             if let content = view as? NSStackView, content.identifier?.rawValue == "LibraryEditorStack" {
                 editorStackInsets.append((content, content.edgeInsets))
-                content.edgeInsets = NSEdgeInsets(top: 0, left: 12, bottom: 0, right: 12)
+                content.edgeInsets = NSEdgeInsets(top: 0, left: presentation == .outline ? 26 : 12, bottom: 0, right: 12)
             }
             if ["LibraryEditorCreatedDateLabel", "LibraryEditorStatusLabel", "LibraryEditorWordCount"].contains(view.identifier?.rawValue ?? "") {
                 editorHiddenViews.append((view, view.isHidden)); view.isHidden = true
