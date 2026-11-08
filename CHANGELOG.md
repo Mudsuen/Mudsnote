@@ -11,6 +11,14 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-08 — Soften navigation glyphs
+
+- Problem: the thin geometric rail icons did not match the supplied reference.
+- Fix: use cached vector glyphs with rounded, gently irregular outlines, a
+  filled selected home, a blue selection mark, and an ellipsis settings entry.
+- Lesson: keep glyph geometry, selection feedback, and optical weight consistent
+  while retaining the destinations and accessible labels.
+
 ## 2026-11-08 — Keep sidebar navigation responsive
 
 - Problem: switching rail destinations rebuilt the folder tree, refreshed a

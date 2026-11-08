@@ -75,7 +75,7 @@ extension LibraryWindowController {
             button.identifier = NSUserInterfaceItemIdentifier("OverviewRail-" + item.1)
             rail.buttons.append((item.0, button)); rail.addSubview(button)
         }
-        let settings = LibraryRailButton(title: "设置", symbol: "gearshape") {
+        let settings = LibraryRailButton(title: "设置", symbol: "ellipsis") {
             if let item = NSApp.mainMenu?.items.first?.submenu?.items.first(where: { $0.title.hasPrefix("设置") }), let selector = item.action {
                 NSApp.sendAction(selector, to: item.target, from: item)
             }
