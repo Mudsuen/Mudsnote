@@ -11,6 +11,16 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-13 — Browse the overview and drill into the knowledge graph
+
+- Problem: drilling into overview topics required a secondary action, and the
+  knowledge graph could only be opened from an individual note.
+- Fix: click a topic to focus its branch in either presentation and use its
+  fold control to expand it in place. Open the whole library graph from the
+  overview, click a note to inspect its local links, then locate it in the map.
+- Lesson: keep topic ownership and actual note links separate. Load full card
+  previews on demand so a large overview can open without reading every note.
+
 ## 2026-11-08 — Simplify navigation selection
 
 - Problem: the blue selection dots and decorative directory/tag shapes exceeded

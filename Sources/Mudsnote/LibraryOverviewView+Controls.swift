@@ -164,7 +164,7 @@ extension LibraryOverviewView {
         for ancestor in ancestors { collapsed.remove(ancestor) }
         activeNode = .card(id)
         setZoom(1)
-        if let editor = owner?.regularEditorView { prepareEditorAppearance(editor) }
+        if selectedID == id, let editor = owner?.regularEditorView { prepareEditorAppearance(editor) }
         needsLayout = true; layoutSubtreeIfNeeded()
         if presentation == .mindMap, let frame = plan?.frames[.card(id)], let offset = plan?.worldOffset {
             centerWorldPoint(CGPoint(x: frame.midX - offset.x, y: frame.midY - offset.y))

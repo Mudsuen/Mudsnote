@@ -27,13 +27,14 @@ struct OverviewTree {
 
     init(_ state: NoteOverview) {
         let areaIDs = Set(state.areas.map(\.id))
+        let areasByParent = Dictionary(grouping: state.areas, by: \.parentID)
         var visited = Set<UUID>()
         func append(_ area: NoteOverview.Area, to parent: OverviewNodeID) {
             guard visited.insert(area.id).inserted else { return }
             let node = OverviewNodeID.area(area.id)
             children[parent, default: []].append(node)
             parents[node] = parent
-            for child in state.areas where child.parentID == area.id { append(child, to: node) }
+            for child in areasByParent[area.id] ?? [] { append(child, to: node) }
         }
         for area in state.areas where area.parentID == nil || !areaIDs.contains(area.parentID!) || area.parentID == area.id {
             append(area, to: .root)
@@ -106,11 +107,13 @@ struct OverviewLayout {
         var sides: [OverviewNodeID: CGFloat] = [:]
         var order: [OverviewNodeID] = []
         var worldOffset = CGPoint.zero
+        let areasByID = Dictionary(state.areas.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let cardsByID = Dictionary(state.cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
         let floating = Dictionary(uniqueKeysWithValues: tree.descendants(of: root).compactMap { node -> (OverviewNodeID, NoteOverview.MapPosition)? in
             let position: NoteOverview.MapPosition?
             switch node {
-            case .area(let id): position = state.areas.first { $0.id == id }?.mapPosition
-            case .card(let id): position = state.cards.first { $0.id == id }?.mapPosition
+            case .area(let id): position = areasByID[id]?.mapPosition
+            case .card(let id): position = cardsByID[id]?.mapPosition
             default: position = nil
             }
             guard let position, position.scope == root.dragString,
@@ -120,15 +123,15 @@ struct OverviewLayout {
         func label(_ node: OverviewNodeID) -> String {
             switch node {
             case .root: return state.title ?? "我的生活"
-            case .area(let id): return state.areas.first { $0.id == id }?.title ?? ""
+            case .area(let id): return areasByID[id]?.title ?? ""
             case .unassigned: return "未归属"
-            case .card(let id): return titles[id] ?? state.cards.first { $0.id == id }?.url.deletingPathExtension().lastPathComponent ?? ""
+            case .card(let id): return titles[id] ?? cardsByID[id]?.url.deletingPathExtension().lastPathComponent ?? ""
             }
         }
         func details(_ node: OverviewNodeID) -> String {
             switch node {
             case .root: return state.principles
-            case .area(let id): return state.areas.first { $0.id == id }?.details ?? ""
+            case .area(let id): return areasByID[id]?.details ?? ""
             default: return ""
             }
         }

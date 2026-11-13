@@ -380,6 +380,7 @@ import MudsnoteCore
     let newNote = OverviewActionButton("", symbol: "square.and.pencil", action: {})
     let add = OverviewActionButton("", symbol: "link", action: {})
     let addArea = OverviewActionButton("", symbol: "plus", action: {})
+    let graphButton = OverviewActionButton("", symbol: "point.3.filled.connected.trianglepath.dotted", action: {})
     let appearanceButton = OverviewActionButton("", symbol: "ellipsis", action: {})
     let presentationButton = OverviewActionButton("大纲笔记", symbol: "list.bullet", action: {})
     let cardDisplayButton = OverviewActionButton("", symbol: "rectangle.expand.vertical", action: {})
@@ -466,7 +467,7 @@ import MudsnoteCore
         addSubview(scroll)
         breadcrumbScroll.drawsBackground = false; breadcrumbScroll.hasHorizontalScroller = false
         breadcrumbScroll.documentView = breadcrumb
-        [breadcrumbScroll, presentationButton, cardDisplayButton, newNote, add, addArea, appearanceButton].forEach(addSubview)
+        [breadcrumbScroll, presentationButton, cardDisplayButton, graphButton, newNote, add, addArea, appearanceButton].forEach(addSubview)
         rootHost = OverviewTopicHost(node: .root, content: title)
         canvas.addSubview(rootHost)
         rootHost.addSubview(principles)
@@ -489,9 +490,11 @@ import MudsnoteCore
         }
         cardDisplayButton.identifier = NSUserInterfaceItemIdentifier("OverviewCardDisplay")
         cardDisplayButton.invoke = { [weak self] in self?.toggleAllCardPreviews() }
+        graphButton.identifier = NSUserInterfaceItemIdentifier("OverviewKnowledgeGraph")
+        graphButton.invoke = { [weak owner] in owner?.showOverviewKnowledgeGraph() }
         appearanceButton.invoke = { [weak self] in self?.showSettingsMenu() }
         for (button, label) in [(newNote, "新建笔记到总览"), (add, "关联笔记"), (addArea, "添加主题"),
-                                (appearanceButton, "总览设置与操作")] {
+                                (graphButton, "知识图谱"), (appearanceButton, "总览设置与操作")] {
             button.toolTip = label; button.setAccessibilityLabel(label)
         }
         newNote.identifier = NSUserInterfaceItemIdentifier("OverviewNewNote")
@@ -514,14 +517,15 @@ import MudsnoteCore
             cards.removeValue(forKey: id)?.removeFromSuperview()
             previewTasks.removeValue(forKey: id)?.cancel(); previews[id] = nil; previewVersions[id] = nil
         }
-        let areaIDs = Set(state.areas.map(\.id))
+        let titlesByArea = Dictionary(state.areas.map { ($0.id, $0.title) }, uniquingKeysWith: { first, _ in first })
+        let notesByPath = Dictionary(notes.map { ($0.url.standardizedFileURL.path, $0) }, uniquingKeysWith: { first, _ in first })
+        let areaIDs = Set(titlesByArea.keys)
         for id in Array(areas.keys) where !areaIDs.contains(id) { areas.removeValue(forKey: id)?.removeFromSuperview() }
         for area in state.areas {
             let node = OverviewNodeID.area(area.id)
             if areas[area.id] == nil {
                 let button = OverviewActionButton(area.title) { [weak self] in self?.topicPressed(node) }
                 button.drawsHoverBackground = false
-                button.doubleClick = { [weak self] _ in self?.beginTopicEdit(node) }
                 button.beginDrag = { [weak self] event, origin in self?.startDrag(node, event: event, origin: origin) }
                 button.contextAction = { [weak self] in self?.showTopicMenu(node) }
                 button.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
@@ -529,6 +533,7 @@ import MudsnoteCore
                 attachHost(node, content: button)
             }
             areas[area.id]?.title = area.title
+            areas[area.id]?.toolTip = "进入 " + area.title
         }
         if hosts[.unassigned] == nil { attachHost(.unassigned, content: unassigned) }
         for card in state.cards {
@@ -542,24 +547,15 @@ import MudsnoteCore
                 view.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
                 cards[card.id] = view; attachHost(node, content: view)
             }
-            let note = notes.first { $0.url.standardizedFileURL == card.url.standardizedFileURL }
+            let note = notesByPath[card.url.standardizedFileURL.path]
             if let note, previewVersions[card.id] != note.modifiedAt { invalidatePreview(card.id); previewVersions[card.id] = note.modifiedAt }
             view.isCompact = !expandedCardIDs.contains(card.id)
-            view.association.stringValue = state.areas.first { $0.id == card.areaID }?.title ?? "未归属"
+            view.association.stringValue = card.areaID.flatMap { titlesByArea[$0] } ?? "未归属"
             view.association.isHidden = card.areaID == nil
             view.heading.stringValue = note?.title ?? card.url.deletingPathExtension().lastPathComponent
             view.setAccessibilityLabel(view.heading.stringValue)
             view.preview.stringValue = previews[card.id] ?? note?.snippet ?? ""
-            if previews[card.id] == nil && previewTasks[card.id] == nil, let store = owner?.noteStore {
-                previewTasks[card.id] = Task { [weak self] in
-                    let result = await Task.detached { try? store.loadNoteDocument(at: card.url).body }.value
-                    guard !Task.isCancelled, let self else { return }
-                    self.previewTasks[card.id] = nil
-                    self.previews[card.id] = result.map { String($0.prefix(1200)) } ?? "文件暂不可用"
-                    self.cards[card.id]?.preview.stringValue = self.previews[card.id] ?? ""
-                    if self.expandedCardIDs.contains(card.id) { self.needsLayout = true }
-                }
-            }
+            if expandedCardIDs.contains(card.id) { loadCardPreview(card) }
         }
         let validNodes = Set(state.areas.map { OverviewNodeID.area($0.id) } + state.cards.map { .card($0.id) } + [.unassigned])
         for node in Array(hosts.keys) where !validNodes.contains(node) { hosts.removeValue(forKey: node)?.removeFromSuperview() }
@@ -576,6 +572,20 @@ import MudsnoteCore
         host.contextAction = { [weak self] in self?.showTopicMenu(node) }
         host.addChild.invoke = { [weak self] in self?.createTopic(parent: node) }
         hosts[node] = host; canvas.addSubview(host)
+    }
+    func loadCardPreview(_ card: NoteOverview.Card) {
+        let id = card.id
+        guard previews[id] == nil, previewTasks[id] == nil, let store = owner?.noteStore else { return }
+        previewTasks[id] = Task { [weak self] in
+            let result = await Task.detached {
+                (try? store.loadNoteDocument(at: card.url).body).map { String($0.prefix(1200)) }
+            }.value
+            guard !Task.isCancelled, let self else { return }
+            self.previewTasks[id] = nil
+            self.previews[id] = result ?? "文件暂不可用"
+            self.cards[id]?.preview.stringValue = self.previews[id] ?? ""
+            if self.expandedCardIDs.contains(id) { self.needsLayout = true }
+        }
     }
     func invalidatePreview(_ id: UUID) { previews[id] = nil; previewTasks.removeValue(forKey: id)?.cancel() }
     func nodeTitle(_ node: OverviewNodeID) -> String {
@@ -617,11 +627,12 @@ import MudsnoteCore
         updateBreadcrumbs()
         cardDisplayButton.frame = NSRect(x: width - 309, y: 10, width: 28, height: 28)
         presentationButton.frame = NSRect(x: width - 271, y: 11, width: 91, height: 26)
+        graphButton.frame = NSRect(x: width - 347, y: 10, width: 28, height: 28)
         addArea.frame = NSRect(x: width - 166, y: 10, width: 28, height: 28)
         add.frame = NSRect(x: width - 128, y: 10, width: 28, height: 28)
         newNote.frame = NSRect(x: width - 90, y: 10, width: 28, height: 28)
         appearanceButton.frame = NSRect(x: width - 52, y: 10, width: 28, height: 28)
-        for button in [presentationButton, cardDisplayButton, addArea, add, newNote, appearanceButton] { button.contentTintColor = colors.detail }
+        for button in [presentationButton, cardDisplayButton, graphButton, addArea, add, newNote, appearanceButton] { button.contentTintColor = colors.detail }
         presentationButton.wantsLayer = true; presentationButton.layer?.cornerRadius = 6
         presentationButton.layer?.backgroundColor = (presentation == .outline ? OverviewColors.accent : colors.dark ? OverviewColors.rgb(51, 51, 51) : OverviewColors.rgb(245, 245, 245)).cgColor
         presentationButton.attributedTitle = NSAttributedString(string: presentationButton.title,

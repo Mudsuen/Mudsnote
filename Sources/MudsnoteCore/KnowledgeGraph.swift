@@ -238,6 +238,7 @@ extension NoteStore {
     public func knowledgeGraphSnapshot(
         scope: KnowledgeGraphScope,
         roots: [URL]? = nil,
+        includesUnlinkedAndArchivedNotes: Bool = false,
         cancellationCheck: @Sendable () -> Bool = { false }
     ) -> KnowledgeGraphSnapshot {
         guard !cancellationCheck(),
@@ -247,7 +248,7 @@ extension NoteStore {
               ) else {
             return .empty
         }
-        let entries = knowledgeEligibleEntries(readView.entries)
+        let entries = includesUnlinkedAndArchivedNotes ? readView.entries : knowledgeEligibleEntries(readView.entries)
 
         let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
             ($0.url.standardizedFileURL.path, $0)
@@ -281,7 +282,7 @@ extension NoteStore {
         switch scope {
         case .global:
             focusedURL = nil
-            includedPaths = Set(allEdges.flatMap {
+            includedPaths = includesUnlinkedAndArchivedNotes ? Set(entriesByPath.keys) : Set(allEdges.flatMap {
                 [$0.sourceURL.standardizedFileURL.path, $0.targetURL.standardizedFileURL.path]
             })
         case .local(let focus, let requestedDepth):

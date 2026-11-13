@@ -361,6 +361,9 @@ extension LibraryWindowController {
         guard let state = overviewState, let anchor = overviewView?.cards[id] else { return }
         let menu = NSMenu()
         menu.addItem(OverviewMenuItem(overviewView?.selectedID == id ? "收起笔记" : "编辑笔记") { [weak self] in self?.toggleOverviewCard(id) })
+        if let url = state.cards.first(where: { $0.id == id })?.url {
+            menu.addItem(OverviewMenuItem("查看局部图谱") { [weak self] in self?.showOverviewKnowledgeGraph(focusedOn: url) })
+        }
         menu.addItem(OverviewMenuItem("关联笔记…") { [weak self] in self?.pickOverviewNote(area: nil, connecting: id) })
         let areaItem = NSMenuItem(title: "归属", action: nil, keyEquivalent: "")
         let areaMenu = NSMenu()

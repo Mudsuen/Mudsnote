@@ -54,6 +54,9 @@ extension LibraryOverviewView {
         }
         owner?.cancelActiveNoteLoad()
         change(&expandedCardIDs)
+        for card in state.cards where expandedCardIDs.contains(card.id) {
+            loadCardPreview(card)
+        }
         activeNode = anchor
         window?.makeFirstResponder(self)
         needsLayout = true; layoutSubtreeIfNeeded()

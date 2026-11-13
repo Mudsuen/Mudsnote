@@ -133,7 +133,7 @@ import AppKit
         updateTrackingAreas()
     }
     func updateActions() {
-        fold.isHidden = depth == 0 || !hasChildren || (!folded && !hovered && !active)
+        fold.isHidden = depth == 0 || !hasChildren
         more.isHidden = map || (!hovered && !active) || depth == 0
         addChild.isHidden = !map || !allowsChild || (!hovered && !active)
     }

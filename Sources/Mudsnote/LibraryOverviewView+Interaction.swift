@@ -22,8 +22,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
     }
 
     func topicPressed(_ node: OverviewNodeID) {
-        guard select(node) else { return }
-        if presentation == .outline, node != .unassigned { beginTopicEdit(node) }
+        focus(node)
     }
 
     @discardableResult func prepareStructureChange() -> Bool {
@@ -40,7 +39,9 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
     func focus(_ node: OverviewNodeID) {
         if case .card(let id) = node { owner?.toggleOverviewCard(id); return }
         guard prepareStructureChange() else { return }
-        focusedRoot = node; activeNode = node; collapsed.remove(node)
+        focusedRoot = node; activeNode = node
+        // The focused topic is expanded by the layout. Keep its fold state
+        // for when the user returns to its parent.
         updateBreadcrumbs(); needsLayout = true; layoutSubtreeIfNeeded(); resetViewport()
         window?.makeFirstResponder(self)
     }

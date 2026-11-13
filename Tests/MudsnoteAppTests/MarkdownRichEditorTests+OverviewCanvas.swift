@@ -23,7 +23,7 @@ extension MarkdownRichEditorTests {
         controller.showWindowAndFocus(); controller.showOverview()
         let view = try #require(controller.overviewView)
         view.setPresentation(mode); view.layoutSubtreeIfNeeded()
-        for _ in 0..<100 where view.previews[id] == nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(view.previews[id] == nil)
         let collapsed = try #require(view.plan)
         let rect = try #require(collapsed.cards[id])
         let origin = view.scroll.contentView.bounds.origin
@@ -38,6 +38,8 @@ extension MarkdownRichEditorTests {
         }
         #expect(view.cards[id]?.accessibilityPerformPress() == true)
         try await settle()
+        for _ in 0..<100 where view.previews[id] == nil { try await Task.sleep(for: .milliseconds(10)) }
+        view.layoutSubtreeIfNeeded()
         let expanded = try #require(view.plan)
         let frame = try #require(expanded.cards[id])
         #expect(frame.height > rect.height && view.selectedID == nil)

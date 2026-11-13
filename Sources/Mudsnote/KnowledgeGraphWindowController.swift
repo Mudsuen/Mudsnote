@@ -98,11 +98,13 @@ final class KnowledgeGraphWindowController: NSWindowController, NSWindowDelegate
     private let countLabel = NSTextField(labelWithString: "")
     private let loadingIndicator = NSProgressIndicator()
     private var rootURL: URL?
+    private var includesAllLibraryNotes = false
     private var snapshot = KnowledgeGraphSnapshot.empty
     private var refreshTask: Task<Void, Never>?
     private var refreshGeneration = 0
 
     var onOpenNode: ((URL) -> Void)?
+    var overviewNodesProvider: (() -> [KnowledgeGraphNode])?
     var onClose: (() -> Void)?
 
     init(noteStore: NoteStore, rootsProvider: @escaping () -> [URL]) {
@@ -127,21 +129,28 @@ final class KnowledgeGraphWindowController: NSWindowController, NSWindowDelegate
         fatalError("init(coder:) has not been implemented")
     }
 
-    func show(rootURL: URL?) {
-        setRoot(rootURL, reload: true)
+    func show(rootURL: URL?, fromOverview: Bool = false) {
+        includesAllLibraryNotes = fromOverview
+        scopeControl.selectedSegment = rootURL == nil ? 1 : 0
+        depthControl.isHidden = scopeControl.selectedSegment == 1
+        searchField.stringValue = ""
+        updateRoot(rootURL)
+        refresh()
         showWindow(nil)
         window?.makeKeyAndOrderFront(nil)
         NSApp.activate(ignoringOtherApps: true)
     }
 
-    func setRoot(_ url: URL?, reload: Bool) {
-        let next = url?.standardizedFileURL
-        guard rootURL != next || reload else { return }
-        rootURL = next
+    func followLibrarySelection(_ url: URL?) {
+        guard !includesAllLibraryNotes else { return }
+        updateRoot(url)
+        if scopeControl.selectedSegment == 0 { refresh() }
+    }
+
+    private func updateRoot(_ url: URL?) {
+        rootURL = url?.standardizedFileURL
+        scopeControl.setEnabled(rootURL != nil || scopeControl.selectedSegment == 0, forSegment: 0)
         updateWindowTitle()
-        if reload, scopeControl.selectedSegment != 1 {
-            refresh()
-        }
     }
 
     func reload() {
@@ -169,7 +178,7 @@ final class KnowledgeGraphWindowController: NSWindowController, NSWindowDelegate
         scopeControl.target = self
         scopeControl.action = #selector(scopeChanged(_:))
         scopeControl.setAccessibilityLabel("图谱范围")
-        scopeControl.toolTip = "切换当前笔记局部图或全部已确认关系"
+        scopeControl.toolTip = "切换局部图或全局图"
 
         depthControl.identifier = NSUserInterfaceItemIdentifier("KnowledgeGraphDepthControl")
         depthControl.selectedSegment = 0
@@ -204,6 +213,11 @@ final class KnowledgeGraphWindowController: NSWindowController, NSWindowDelegate
         searchCaption.font = .systemFont(ofSize: 11, weight: .semibold)
         searchCaption.textColor = .secondaryLabelColor
 
+        let open = graphButton(
+            symbolName: "arrow.up.forward.square",
+            label: "在资料库中定位",
+            action: #selector(openSelectedNode(_:))
+        )
         let zoomOut = graphButton(
             symbolName: "minus.magnifyingglass",
             label: "缩小图谱",
@@ -239,6 +253,7 @@ final class KnowledgeGraphWindowController: NSWindowController, NSWindowDelegate
             spacer,
             countLabel,
             loadingIndicator,
+            open,
             zoomOut,
             fit,
             zoomIn
@@ -263,7 +278,9 @@ final class KnowledgeGraphWindowController: NSWindowController, NSWindowDelegate
             guard let self else { return }
             scopeControl.selectedSegment = 0
             depthControl.isHidden = false
-            setRoot(url, reload: true)
+            searchField.stringValue = ""
+            updateRoot(url)
+            refresh()
         }
 
         let stack = NSStackView(views: [toolbar, canvasView])
@@ -320,6 +337,11 @@ final class KnowledgeGraphWindowController: NSWindowController, NSWindowDelegate
     }
 
     @objc
+    private func openSelectedNode(_ sender: NSButton) {
+        if let url = canvasView.selectedURL { onOpenNode?(url) }
+    }
+
+    @objc
     private func zoomOutPressed(_ sender: NSButton) {
         canvasView.zoom(by: 0.82)
     }
@@ -349,8 +371,9 @@ final class KnowledgeGraphWindowController: NSWindowController, NSWindowDelegate
         refreshGeneration += 1
         let generation = refreshGeneration
         let root = rootURL
+        let isGlobal = scopeControl.selectedSegment == 1
         let scope: KnowledgeGraphScope
-        if scopeControl.selectedSegment == 1 {
+        if isGlobal {
             scope = .global
         } else if let root {
             scope = .local(focus: root, depth: depthControl.selectedSegment + 1)
@@ -359,20 +382,31 @@ final class KnowledgeGraphWindowController: NSWindowController, NSWindowDelegate
         }
         let roots = rootsProvider()
         let noteStore = noteStore
+        let includesAllLibraryNotes = includesAllLibraryNotes
+        let overviewNodes = includesAllLibraryNotes ? overviewNodesProvider?() ?? [] : []
         loadingIndicator.startAnimation(nil)
         countLabel.stringValue = "正在构建…"
         canvasView.setLoading(true)
         let task = Task.detached(priority: .userInitiated) { [weak self] in
-            let result = noteStore.knowledgeGraphSnapshot(
+            let indexed = noteStore.knowledgeGraphSnapshot(
                 scope: scope,
                 roots: roots,
+                includesUnlinkedAndArchivedNotes: includesAllLibraryNotes,
                 cancellationCheck: { Task.isCancelled }
             )
             guard !Task.isCancelled else { return }
+            var knownPaths = Set(indexed.nodes.map { $0.url.standardizedFileURL.path })
+            let extra = overviewNodes.filter { node in
+                (isGlobal || node.url == root) && knownPaths.insert(node.url.standardizedFileURL.path).inserted
+            }
+            let result = KnowledgeGraphSnapshot(
+                nodes: indexed.nodes + extra, edges: indexed.edges,
+                focusedURL: indexed.focusedURL ?? (isGlobal ? nil : root), sourceRevision: indexed.sourceRevision
+            )
             await MainActor.run {
                 guard let self,
                       generation == self.refreshGeneration,
-                      self.rootURL == root else {
+                      isGlobal || self.rootURL == root else {
                     return
                 }
                 self.refreshTask = nil
@@ -450,7 +484,7 @@ final class KnowledgeGraphCanvasView: NSView {
 
     private var snapshot = KnowledgeGraphSnapshot.empty
     private var presentations: [NodePresentation] = []
-    private var selectedURL: URL?
+    private(set) var selectedURL: URL?
     private var hoveredURL: URL?
     private var scale: CGFloat = 1
     private var panOffset = CGPoint.zero
@@ -509,7 +543,11 @@ final class KnowledgeGraphCanvasView: NSView {
     }
 
     func zoom(by factor: CGFloat) {
-        scale = min(max(scale * factor, 0.45), 2.2)
+        let nextScale = min(max(scale * factor, 0.04), 2.2)
+        let center = CGPoint(x: bounds.midX, y: bounds.midY)
+        panOffset = CGPoint(x: center.x - (center.x - panOffset.x) * nextScale / scale,
+                            y: center.y - (center.y - panOffset.y) * nextScale / scale)
+        scale = nextScale
         notifyAccessibilityLayoutChanged()
         needsDisplay = true
     }
@@ -551,10 +589,13 @@ final class KnowledgeGraphCanvasView: NSView {
         window?.makeFirstResponder(self)
         let point = convert(event.locationInWindow, from: nil)
         if let hit = node(at: point) {
+            guard !isLoading else { return }
             selectedURL = hit.node.url
             updateAccessibilitySelection()
-            if event.clickCount >= 2 {
+            if event.clickCount >= 2, snapshot.focusedURL == hit.node.url {
                 onOpenNode?(hit.node.url)
+            } else if snapshot.focusedURL != hit.node.url {
+                onFocusNode?(hit.node.url)
             }
             needsDisplay = true
             return
@@ -667,24 +708,28 @@ final class KnowledgeGraphCanvasView: NSView {
         let horizontalInset: CGFloat = 50
         let verticalInset: CGFloat = 48
 
-        for (laneIndex, layer) in laneOrder.enumerated() {
+        let columns = max(8, Int(ceil(sqrt(Double(snapshot.nodes.count)) * 0.8)))
+        var laneY = verticalInset
+        for layer in laneOrder {
             let nodes = (grouped[layer] ?? []).sorted {
                 if $0.linkCount == $1.linkCount {
                     return $0.title.localizedCaseInsensitiveCompare($1.title) == .orderedAscending
                 }
                 return $0.linkCount > $1.linkCount
             }
+            guard !nodes.isEmpty else { continue }
             for (index, node) in nodes.enumerated() {
                 result.append(NodePresentation(
                     node: node,
                     frame: NSRect(
-                        x: horizontalInset + CGFloat(index) * (nodeWidth + horizontalGap),
-                        y: verticalInset + CGFloat(laneIndex) * (nodeHeight + verticalGap),
+                        x: horizontalInset + CGFloat(index % columns) * (nodeWidth + horizontalGap),
+                        y: laneY + CGFloat(index / columns) * (nodeHeight + 22),
                         width: nodeWidth,
                         height: nodeHeight
                     )
                 ))
             }
+            laneY += CGFloat((nodes.count - 1) / columns) * (nodeHeight + 22) + nodeHeight + verticalGap
         }
         presentations = result
     }
@@ -747,13 +792,13 @@ final class KnowledgeGraphCanvasView: NSView {
             element.setAccessibilityLabel(
                 "\(node.title)，\(layerName)层，\(node.linkCount) 条关系"
             )
-            element.setAccessibilityHelp("按下可在资料库中打开，并将它设为图谱中心")
+            element.setAccessibilityHelp("按下进入局部图谱；回车在资料库中定位")
             element.setAccessibilityIdentifier("KnowledgeGraphNode-\(path)")
             element.pressHandler = { [weak self] in
                 self?.selectedURL = node.url
                 self?.updateAccessibilitySelection()
                 self?.needsDisplay = true
-                self?.onOpenNode?(node.url)
+                self?.onFocusNode?(node.url)
             }
             updated[path] = element
         }

@@ -120,6 +120,15 @@ extension LibraryWindowController {
 
     func showKnowledgeGraphForLibrary() {
         guard let selectedURL else { return }
+        showKnowledgeGraph(rootURL: selectedURL, fromOverview: false)
+    }
+
+    func showOverviewKnowledgeGraph(focusedOn url: URL? = nil) {
+        guard commitOverviewEditor() else { return }
+        showKnowledgeGraph(rootURL: url, fromOverview: true)
+    }
+
+    private func showKnowledgeGraph(rootURL: URL?, fromOverview: Bool) {
         let controller: KnowledgeGraphWindowController
         if let existing = knowledgeGraphWindowController {
             controller = existing
@@ -131,8 +140,11 @@ extension LibraryWindowController {
                     noteStore.preferredDirectories
                 }
             )
-            created.onOpenNode = { [weak self] url in
-                self?.openKnowledgeRelation(at: url)
+            created.overviewNodesProvider = { [weak self] in
+                self?.overviewState?.cards.map { card in
+                    KnowledgeGraphNode(url: card.url.standardizedFileURL, title: card.url.deletingPathExtension().lastPathComponent,
+                                       layer: nil, linkCount: 0)
+                } ?? []
             }
             created.onClose = { [weak self, weak created] in
                 guard self?.knowledgeGraphWindowController === created else { return }
@@ -141,7 +153,26 @@ extension LibraryWindowController {
             knowledgeGraphWindowController = created
             controller = created
         }
-        controller.show(rootURL: selectedURL)
+        controller.onOpenNode = { [weak self] url in
+            guard let self else { return }
+            if fromOverview, self.revealNoteInOverviewMap(url) { return }
+            self.openKnowledgeRelation(at: url)
+        }
+        controller.show(rootURL: rootURL, fromOverview: fromOverview)
+    }
+
+    private func revealNoteInOverviewMap(_ url: URL) -> Bool {
+        guard let card = overviewState?.cards.first(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) else {
+            return false
+        }
+        if !isShowingOverview { showOverview() }
+        guard isShowingOverview, let overview = overviewView, overview.prepareStructureChange(),
+              let parent = OverviewTree(overview.state).parents[.card(card.id)] else { return true }
+        overview.setPresentation(.mindMap)
+        overview.focus(parent)
+        if overview.select(.card(card.id)) { overview.revealCard(card.id) }
+        window?.makeKeyAndOrderFront(nil)
+        return true
     }
 
     @objc func goBackInKnowledgeRelations() {
@@ -224,7 +255,7 @@ extension LibraryWindowController {
             noteLinksView.update(.empty)
         }
         selectedURL = nextURL
-        knowledgeGraphWindowController?.setRoot(nextURL, reload: true)
+        knowledgeGraphWindowController?.followLibrarySelection(nextURL)
     }
 
     func generateHigherLayerDraft(targetLayer: KnowledgeLayer) {

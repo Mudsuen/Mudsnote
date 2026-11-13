@@ -1354,6 +1354,31 @@ struct MudsnoteCoreTests {
     }
 
     @Test
+    func overviewKnowledgeGraphIncludesArchivedAndUnlinkedNotes() throws {
+        let harness = try TestHarness()
+        let store = harness.store
+        let notes = harness.root.appendingPathComponent("Notes", isDirectory: true)
+        let archive = notes.appendingPathComponent("Archive", isDirectory: true)
+        store.configurePreferredDirectories([notes], defaultDirectory: notes)
+        store.includesArchivedNotesInSearchAndKnowledge = false
+        let isolated = try store.saveNewNote(title: "Unlinked", body: "A note", in: notes)
+        let archived = try store.saveNewNote(title: "Archived", body: "An older note", in: archive)
+        let linked = try store.saveNewNote(
+            title: "Linked", body: "[[Archive/\(archived.deletingPathExtension().lastPathComponent)]]", in: notes
+        )
+
+        let global = store.knowledgeGraphSnapshot(scope: .global, roots: [notes], includesUnlinkedAndArchivedNotes: true)
+        #expect(Set(global.nodes.map(\.url)) == Set([isolated, archived, linked].map(\.standardizedFileURL)))
+        #expect(global.edges.count == 1)
+
+        let local = store.knowledgeGraphSnapshot(
+            scope: .local(focus: archived, depth: 1), roots: [notes], includesUnlinkedAndArchivedNotes: true
+        )
+        #expect(Set(local.nodes.map(\.url)) == Set([archived, linked].map(\.standardizedFileURL)))
+        #expect(store.knowledgeGraphSnapshot(scope: .global, roots: [notes]).nodes.isEmpty)
+    }
+
+    @Test
     func ordinaryMarkdownLinksDoNotFallBackToSameNamedNotes() throws {
         let harness = try TestHarness()
         let store = harness.store
