@@ -758,7 +758,10 @@ import MudsnoteCore
         layoutTopicEditor()
         if initialViewport, bounds.width > 0, bounds.height > 48 {
             initialViewport = false
-            DispatchQueue.main.async { [weak self] in self?.resetViewport() }
+            DispatchQueue.main.async { [weak self] in
+                guard let self, self.activeNode == nil else { return }
+                self.resetViewport()
+            }
         }
     }
     func isCard(_ node: OverviewNodeID) -> Bool { if case .card = node { return true }; return false }

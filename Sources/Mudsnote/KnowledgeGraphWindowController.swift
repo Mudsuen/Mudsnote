@@ -789,8 +789,9 @@ final class KnowledgeGraphCanvasView: NSView {
             let layerName = node.layer?.displayName ?? "未分层"
             element.setAccessibilityRole(.button)
             element.setAccessibilityParent(self)
+            element.setAccessibilityEnabled(true)
             element.setAccessibilityLabel(
-                "\(node.title)，\(layerName)层，\(node.linkCount) 条关系"
+                "\(node.title)，\(node.layer == nil ? layerName : layerName + "层")，\(node.linkCount) 条关系"
             )
             element.setAccessibilityHelp("按下进入局部图谱；回车在资料库中定位")
             element.setAccessibilityIdentifier("KnowledgeGraphNode-\(path)")
@@ -911,6 +912,22 @@ final class KnowledgeGraphCanvasView: NSView {
         let isHovered = hoveredURL?.standardizedFileURL == node.url.standardizedFileURL
         let isFocused = snapshot.focusedURL?.standardizedFileURL == node.url.standardizedFileURL
         let color = color(for: node.layer)
+        if scale < 0.5 {
+            let radius = min(frame.height * 0.42, 3.5 + sqrt(CGFloat(node.linkCount)))
+            let dot = NSBezierPath(ovalIn: NSRect(x: frame.midX - radius, y: frame.midY - radius,
+                                                   width: radius * 2, height: radius * 2))
+            color.withAlphaComponent(isSelected || isHovered || isFocused ? 1 : 0.58).setFill()
+            dot.fill()
+            if isHovered {
+                let title = NSAttributedString(string: node.title, attributes: [
+                    .font: NSFont.systemFont(ofSize: 11, weight: .medium), .foregroundColor: NSColor.labelColor,
+                    .backgroundColor: NSColor.controlBackgroundColor
+                ])
+                title.draw(at: CGPoint(x: min(frame.midX + radius + 4, bounds.maxX - title.size().width - 6),
+                                       y: frame.midY - title.size().height / 2))
+            }
+            return
+        }
         let path = nodePath(for: node.layer, frame: frame)
         color.withAlphaComponent(isHovered ? 0.25 : 0.16).setFill()
         path.fill()

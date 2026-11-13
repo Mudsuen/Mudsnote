@@ -129,6 +129,7 @@ extension LibraryWindowController {
         cancelActiveNoteLoad()
         if let id = overviewView?.selectedID { overviewView?.cards[id]?.embed(nil) }
         overviewView?.selectedID = nil
+        overviewView?.activeNode = nil
         if let editor = regularEditorView { overviewHost?.addSubview(editor) }
         isShowingOverview = true
         updateDocumentTabBar()
@@ -157,9 +158,10 @@ extension LibraryWindowController {
         overviewHost?.needsLayout = true
         window?.contentView?.layoutSubtreeIfNeeded()
         DispatchQueue.main.async { [weak self] in
-            guard let self, self.isShowingOverview, self.overviewView?.selectedID == nil else { return }
+            guard let self, self.isShowingOverview, let overview = self.overviewView,
+                  overview.activeNode == nil else { return }
             self.overviewHost?.layoutSubtreeIfNeeded()
-            self.overviewView?.resetViewport()
+            overview.resetViewport()
         }
     }
 
