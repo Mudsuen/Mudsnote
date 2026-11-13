@@ -499,7 +499,7 @@ extension MarkdownRichEditorTests {
         try #require(overview.selectedID == id)
         controller.applyDocument(title: "Plan", body: "Before switch 中文", tags: []); controller.markDirty()
         overview.setPresentation(.outline)
-        #expect(overview.presentation == .outline && overview.presentationButton.title == "思维导图")
+        #expect(overview.presentation == .outline && overview.presentationButton.accessibilityLabel() == "思维导图")
         #expect(store.libraryOverviewModeRawValue == 1)
         #expect(try store.loadNote(at: url).body == "Before switch 中文")
         #expect(controller.regularEditorView?.superview === overview.cards[id])

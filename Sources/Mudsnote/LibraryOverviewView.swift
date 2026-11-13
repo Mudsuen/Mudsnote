@@ -382,7 +382,7 @@ import MudsnoteCore
     let addArea = OverviewActionButton("", symbol: "plus", action: {})
     let graphButton = OverviewActionButton("", symbol: "point.3.filled.connected.trianglepath.dotted", action: {})
     let appearanceButton = OverviewActionButton("", symbol: "ellipsis", action: {})
-    let presentationButton = OverviewActionButton("大纲笔记", symbol: "list.bullet", action: {})
+    let presentationButton = OverviewActionButton("", symbol: "list.bullet", action: {})
     let cardDisplayButton = OverviewActionButton("", symbol: "rectangle.expand.vertical", action: {})
     let breadcrumbScroll = NSScrollView()
     let breadcrumb = NSView()
@@ -611,9 +611,8 @@ import MudsnoteCore
     }
     func updatePresentationChrome() {
         let label = presentation == .mindMap ? "大纲笔记" : "思维导图"
-        presentationButton.title = label
         presentationButton.image = NSImage(systemSymbolName: presentation == .mindMap ? "list.bullet" : "point.3.connected.trianglepath.dotted", accessibilityDescription: nil)?
-            .withSymbolConfiguration(.init(pointSize: 16, weight: .regular))
+            .withSymbolConfiguration(.init(pointSize: 14, weight: .regular))
         presentationButton.setAccessibilityLabel(label); presentationButton.toolTip = label
     }
 
@@ -623,21 +622,16 @@ import MudsnoteCore
         updatingViewport = true
         defer { updatingViewport = wasUpdatingViewport }
         let width = max(1, bounds.width)
-        breadcrumbScroll.frame = NSRect(x: 36, y: 16, width: max(1, width - 378), height: 18)
+        breadcrumbScroll.frame = NSRect(x: 36, y: 16, width: max(1, width - 315), height: 18)
         updateBreadcrumbs()
-        cardDisplayButton.frame = NSRect(x: width - 309, y: 10, width: 28, height: 28)
-        presentationButton.frame = NSRect(x: width - 271, y: 11, width: 91, height: 26)
-        graphButton.frame = NSRect(x: width - 347, y: 10, width: 28, height: 28)
+        cardDisplayButton.frame = NSRect(x: width - 242, y: 10, width: 28, height: 28)
+        presentationButton.frame = NSRect(x: width - 204, y: 10, width: 28, height: 28)
+        graphButton.frame = NSRect(x: width - 280, y: 10, width: 28, height: 28)
         addArea.frame = NSRect(x: width - 166, y: 10, width: 28, height: 28)
         add.frame = NSRect(x: width - 128, y: 10, width: 28, height: 28)
         newNote.frame = NSRect(x: width - 90, y: 10, width: 28, height: 28)
         appearanceButton.frame = NSRect(x: width - 52, y: 10, width: 28, height: 28)
         for button in [presentationButton, cardDisplayButton, graphButton, addArea, add, newNote, appearanceButton] { button.contentTintColor = colors.detail }
-        presentationButton.wantsLayer = true; presentationButton.layer?.cornerRadius = 6
-        presentationButton.layer?.backgroundColor = (presentation == .outline ? OverviewColors.accent : colors.dark ? OverviewColors.rgb(51, 51, 51) : OverviewColors.rgb(245, 245, 245)).cgColor
-        presentationButton.attributedTitle = NSAttributedString(string: presentationButton.title,
-            attributes: [.font: NSFont.systemFont(ofSize: 14), .foregroundColor: presentation == .outline ? NSColor.white : colors.text])
-        if presentation == .outline { presentationButton.contentTintColor = .white }
         scroll.frame = NSRect(x: 0, y: 48, width: width, height: max(1, bounds.height - 48))
         scroll.wantsLayer = true; scroll.layer?.backgroundColor = (presentation == .outline ? colors.outlineBackground : colors.mapBackground).cgColor
         let viewport = scroll.contentView.frame.size

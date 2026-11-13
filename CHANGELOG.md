@@ -16,7 +16,8 @@ Known open issue:
 - Problem: drilling into overview topics required a secondary action, and the
   knowledge graph could only be opened from an individual note.
 - Fix: click a topic to focus its branch in either presentation and use its
-  fold control to expand it in place. Open the whole library graph from the
+  fold control to expand it in place. Switch presentations with a compact icon.
+  Open the whole library graph from the
   overview, click a note to inspect its local links, then locate it in the map.
 - Lesson: keep topic ownership and actual note links separate. Load full card
   previews on demand so a large overview can open without reading every note.
