@@ -558,9 +558,13 @@ extension LibraryWindowController {
 
     func rebuildNoteListRowsForDisplayOptions(
         mutationAnimation: LibraryNoteMutationAnimation? = nil,
-        refreshedNotePaths: Set<String> = []
+        refreshedNotePaths: Set<String> = [],
+        selectionPathReplacements: [String: String] = [:]
     ) {
-        let selectedPaths = Set(selectedMarkdownFileURLsForLibrary().map { $0.standardizedFileURL.path })
+        let selectedPaths = Set(selectedMarkdownFileURLsForLibrary().map {
+            let path = $0.standardizedFileURL.path
+            return selectionPathReplacements[path] ?? path
+        })
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
         let previousRows = listRows
         if query.isEmpty {

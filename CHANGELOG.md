@@ -20,7 +20,8 @@ Known open issue:
 - Fix: share search presentation across buttons, shortcuts and history, show
   result counts only during search, and let Escape clear then dismiss search.
   Restore search scope and focused topics with Back/Forward, reveal the current
-  list selection after navigation, and improve count/empty-state readability.
+  list selection after navigation, keep it through save-driven file renames,
+  and improve count/empty-state readability.
   Fit the map on entry and expose zoom, fit and center controls. Display a
   fallback for blank topics without rewriting their stored text.
 - Lesson: content indexing, geometry measurement and viewport movement have

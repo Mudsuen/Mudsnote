@@ -12,6 +12,9 @@ Search presentation now has one controller entry point. Page history includes
 the search scope and focused overview root. Escape clears a query before
 dismissing the search field; native cancel keeps the field available for reuse.
 Selection is revealed after deliberate navigation, not background refreshes.
+Save-driven renames remap the selected path before rebuilding rows, preserving
+selection for both explicit saves and background autosaves. The save refresh
+also reuses the row builder's scope projection instead of computing it twice.
 
 `OverviewContentIndex` owns lookup dictionaries and the ownership tree.
 `LibraryOverviewView+Layout` owns geometry caching and presentation. The cache

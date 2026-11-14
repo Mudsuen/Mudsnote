@@ -560,16 +560,14 @@ extension LibraryWindowController {
             return
         }
 
-        notes = notesForSelectedScope(
-            limit: Self.noteListResultLimit,
-            allNotes: sourceCountSnapshot
-        )
         let refreshedPaths = isNewNote
             ? Set<String>()
             : Set([previousURL, savedURL].compactMap { $0?.path })
+        let replacements = previousURL.map { [$0.standardizedFileURL.path: savedURL.standardizedFileURL.path] } ?? [:]
         rebuildNoteListRowsForDisplayOptions(
             mutationAnimation: isNewNote ? .insertion : nil,
-            refreshedNotePaths: refreshedPaths
+            refreshedNotePaths: refreshedPaths,
+            selectionPathReplacements: replacements
         )
         if isNewNote,
            let row = rowIndex(for: savedURL.path) {
