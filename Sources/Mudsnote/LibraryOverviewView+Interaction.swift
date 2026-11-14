@@ -38,7 +38,8 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
 
     func focus(_ node: OverviewNodeID) {
         if case .card(let id) = node { owner?.toggleOverviewCard(id); return }
-        guard prepareStructureChange() else { return }
+        guard node == focusedRoot || owner?.beginLibraryPageNavigation() != false,
+              prepareStructureChange() else { return }
         focusedRoot = node; activeNode = node
         // The focused topic is expanded by the layout. Keep its fold state
         // for when the user returns to its parent.
@@ -47,10 +48,13 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
     }
 
     func updateBreadcrumbs() {
-        breadcrumb.subviews.forEach { $0.removeFromSuperview() }
-        let tree = OverviewTree(state)
+        let tree = contentIndex.tree
         let path = focusedRoot == .root ? [OverviewNodeID.root] : tree.ancestors(of: focusedRoot).reversed() + [focusedRoot]
         let available = max(100, breadcrumbScroll.bounds.width)
+        let key = OverviewBreadcrumbKey(path: path, titles: path.map(nodeTitle), width: available, dark: colors.dark)
+        guard breadcrumbKey != key else { return }
+        breadcrumbKey = key
+        breadcrumb.subviews.forEach { $0.removeFromSuperview() }
         var x: CGFloat = 0
         func append(_ label: String, current: Bool, action: @escaping () -> Void) {
             let button = OverviewActionButton(label, action: action)
@@ -96,12 +100,12 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
             owner?.createNoteInOverview(area: state.cards.first { $0.id == id }?.areaID)
             return
         }
-        let parent = node == focusedRoot ? focusedRoot : OverviewTree(state).parents[node] ?? .root
+        let parent = node == focusedRoot ? focusedRoot : contentIndex.tree.parents[node] ?? .root
         createTopic(parent: parent == .unassigned ? .root : parent, after: node)
     }
 
     @discardableResult func changeIndent(_ node: OverviewNodeID, outward: Bool) -> Bool {
-        let tree = OverviewTree(state)
+        let tree = contentIndex.tree
         guard node != focusedRoot, let parent = tree.parents[node] else { return false }
         let destination: OverviewNodeID
         if outward {
@@ -118,7 +122,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
     }
 
     func canMove(_ node: OverviewNodeID, to parent: OverviewNodeID, relativeTo target: OverviewNodeID? = nil) -> Bool {
-        let tree = OverviewTree(state)
+        let tree = contentIndex.tree
         guard tree.parents[node] != nil, node != parent, node != target, !isCard(parent),
               parent == .root || tree.parents[parent] != nil else { return false }
         if case .area = node {
@@ -157,7 +161,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
 
     func removeTopic(_ node: OverviewNodeID) {
         guard node != .root, node != .unassigned, prepareStructureChange() else { return }
-        let tree = OverviewTree(state)
+        let tree = contentIndex.tree
         let removed = Set([node] + tree.descendants(of: node))
         let cardIDs = Set(removed.compactMap { if case .card(let id) = $0 { return id }; return nil })
         _ = owner?.changeOverview { state in
@@ -199,7 +203,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
         guard prepareStructureChange() else { return }
         activeNode = node
         topicEdit = (node, details)
-        let value = details ? nodeDetails(node) : nodeTitle(node)
+        let value = details ? nodeDetails(node) : rawNodeTitle(node)
         topicEditor.string = ""
         topicEditor.isHidden = false
         needsLayout = true; layoutSubtreeIfNeeded(); layoutTopicEditor()
@@ -245,7 +249,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
     func saveTopicText() -> Bool {
         guard let edit = topicEdit, !topicEditor.hasMarkedText() else { return topicEdit == nil }
         let value = topicEditor.string
-        guard value != (edit.details ? nodeDetails(edit.node) : nodeTitle(edit.node)) else { return true }
+        guard value != (edit.details ? nodeDetails(edit.node) : rawNodeTitle(edit.node)) else { return true }
         return owner?.changeOverview { state in
             switch edit.node {
             case .root:
@@ -326,7 +330,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
         case 53: if focusedRoot != .root { focus(.root) }; return true
         case 123, 124:
             let forward = event.keyCode == 124
-            let tree = OverviewTree(state)
+            let tree = contentIndex.tree
             if forward {
                 if collapsed.contains(node) { toggleBranch(node) }
                 else if let child = tree.children[node]?.first { _ = select(child) }
@@ -382,7 +386,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
     }
     func handleDrop(_ node: OverviewNodeID, point: NSPoint, perform: Bool) -> Bool {
         guard let plan else { return false }
-        let tree = OverviewTree(state)
+        let tree = contentIndex.tree
         let hit = plan.order.first { plan.frames[$0]?.contains(point) == true }
         if presentation == .mindMap, hit == nil {
             let origin = CGPoint(x: point.x - dragOffset.x, y: point.y - dragOffset.y)

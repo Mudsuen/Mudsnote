@@ -392,6 +392,12 @@ extension MarkdownRichEditorTests {
             #expect(button.hitTest(point) === button)
         }
         #expect(button.accessibilityLabel() == "新建笔记")
+        let titleItem = try #require(window.toolbar?.items.first { $0.itemIdentifier == LibraryWindowController.pageTitleToolbarItemIdentifier })
+        #expect(!titleItem.isBordered && titleItem.isEnabled && !titleItem.autovalidates)
+        #expect(titleItem.view === controller.toolbarPageTitle)
+        #expect(controller.toolbarPageTitle.bounds.width <= 160)
+        #expect(controller.toolbarPageTitle.accessibilityRole() == .staticText)
+        #expect(controller.toolbarPageTitle.accessibilityLabel() == "总览")
         let sidebar = try #require(controller.sourceListView)
         _ = controller.setSourceListVisibleForLibrary(true)
         let widthBeforeSearch = sidebar.frame.width
@@ -400,12 +406,7 @@ extension MarkdownRichEditorTests {
         window.contentView?.layoutSubtreeIfNeeded()
         #expect(abs(sidebar.frame.width - widthBeforeSearch) < 1)
         #expect(!controller.searchField.isHidden && !button.isHidden)
-        let titleItem = try #require(window.toolbar?.items.first { $0.itemIdentifier == LibraryWindowController.pageTitleToolbarItemIdentifier })
-        #expect(!titleItem.isBordered && titleItem.isEnabled && !titleItem.autovalidates)
-        #expect(titleItem.view === controller.toolbarPageTitle)
-        #expect(controller.toolbarPageTitle.bounds.width <= 160)
-        #expect(controller.toolbarPageTitle.accessibilityRole() == .staticText)
-        #expect(controller.toolbarPageTitle.accessibilityLabel() == "总览")
+        #expect(!controller.isShowingOverview)
     }
 
     @Test func codexShellSidebarActionKeepsHoverAndActivation() throws {

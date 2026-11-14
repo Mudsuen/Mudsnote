@@ -5,6 +5,56 @@ import Testing
 @testable import MudsnoteCore
 
 extension MarkdownRichEditorTests {
+    @Test func librarySearchShortcutRevealsInputFromEveryNavigationPage() throws {
+        let suite = "mudsnote.library-search-entry.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil,
+                              appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        _ = try store.saveNewNote(title: "Alpha", body: "Search fixture")
+        let controller = LibraryWindowController(
+            noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {}
+        )
+        defer { controller.close() }
+        controller.showWindowAndFocus()
+        for presentation in [LibrarySidebarPresentation.list, .tree, .tags] {
+            controller.showLibraryNavigationPage(presentation, scope: .all)
+            _ = controller.setSourceListVisibleForLibrary(false)
+            controller.focusSearchForLibrary()
+            #expect(controller.isSourceListVisibleForLibrary)
+            #expect(!controller.searchField.isHiddenOrHasHiddenAncestor)
+            #expect(controller.searchField.currentEditor() === controller.window?.firstResponder)
+            #expect(controller.sidebarPresentation == presentation)
+            controller.searchForLibrary(query: "Alpha", allNotes: true)
+            #expect(controller.sidebarSearchStatusView?.isHidden == false)
+            #expect(controller.noteListCountLabel.stringValue == "1 条结果")
+            #expect(controller.clearSearchFromKeyboard())
+            #expect(controller.sidebarSearchStatusView?.isHidden == true)
+            #expect(!controller.searchField.isHidden)
+            #expect(controller.clearSearchFromKeyboard())
+            #expect(controller.searchField.isHidden)
+            #expect(!controller.sidebarLibraryTitle.isHidden)
+        }
+        controller.showOverview()
+        controller.focusSearchForLibrary()
+        #expect(!controller.isShowingOverview)
+        #expect(!controller.searchField.isHiddenOrHasHiddenAncestor)
+        #expect(controller.searchField.currentEditor() === controller.window?.firstResponder)
+        #expect(controller.currentLibraryPage.scope == .all)
+        controller.searchForLibrary(query: "Alpha", allNotes: true)
+        controller.showLibraryNavigationPage(.list, scope: .recent)
+        controller.searchForLibrary(query: "Alpha", allNotes: false)
+        controller.navigateLibraryBack()
+        #expect(controller.searchScopeControl.selectedSegment == 1)
+        #expect(controller.searchField.stringValue == "Alpha")
+        #expect(!controller.searchField.isHiddenOrHasHiddenAncestor)
+    }
+
     @Test func nativeSearchCancelRestoresLibraryAndCancelsPendingQuery() async throws {
         let suite = "mudsnote.library-native-search-cancel.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

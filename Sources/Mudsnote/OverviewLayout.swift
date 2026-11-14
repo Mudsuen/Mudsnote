@@ -91,8 +91,9 @@ struct OverviewLayout {
                      presentation: OverviewPresentation = .mindMap, collapsed: Set<OverviewNodeID> = [],
                      titles: [UUID: String] = [:], root requestedRoot: OverviewNodeID = .root,
                      structure: OverviewMapStructure = .right, expandedCards: Set<UUID> = [],
-                     previews: [UUID: String] = [:]) -> Self {
-        let tree = OverviewTree(state)
+                     previews: [UUID: String] = [:], index: OverviewContentIndex? = nil) -> Self {
+        let index = index ?? OverviewContentIndex(state)
+        let tree = index.tree
         let root = requestedRoot == .root || tree.parents[requestedRoot] != nil ? requestedRoot : .root
         let width = max(1, width), height = max(1, height)
         let editorSize = CGSize(width: min(360, max(280, width * 0.38)),
@@ -107,8 +108,8 @@ struct OverviewLayout {
         var sides: [OverviewNodeID: CGFloat] = [:]
         var order: [OverviewNodeID] = []
         var worldOffset = CGPoint.zero
-        let areasByID = Dictionary(state.areas.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
-        let cardsByID = Dictionary(state.cards.map { ($0.id, $0) }, uniquingKeysWith: { first, _ in first })
+        let areasByID = index.areas
+        let cardsByID = index.cards
         let floating = Dictionary(uniqueKeysWithValues: tree.descendants(of: root).compactMap { node -> (OverviewNodeID, NoteOverview.MapPosition)? in
             let position: NoteOverview.MapPosition?
             switch node {
@@ -122,8 +123,8 @@ struct OverviewLayout {
         })
         func label(_ node: OverviewNodeID) -> String {
             switch node {
-            case .root: return state.title ?? "我的生活"
-            case .area(let id): return areasByID[id]?.title ?? ""
+            case .root: return OverviewContentIndex.displayTitle(state.title, fallback: "我的生活")
+            case .area(let id): return OverviewContentIndex.displayTitle(areasByID[id]?.title, fallback: "未命名主题")
             case .unassigned: return "未归属"
             case .card(let id): return titles[id] ?? cardsByID[id]?.url.deletingPathExtension().lastPathComponent ?? ""
             }

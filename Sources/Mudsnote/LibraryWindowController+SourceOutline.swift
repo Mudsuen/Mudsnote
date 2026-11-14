@@ -239,7 +239,7 @@ extension LibraryWindowController {
         cell.countLabel.stringValue = sourceCountText(item.count, for: scope)
         cell.countLabel.textColor = isSelected
             ? LibrarySourceSelectionPalette.selectedCountColor
-            : panelTertiaryTextColor()
+            : panelSecondaryTextColor()
         (sourceOutlineView.rowView(
             atRow: row,
             makeIfNecessary: false

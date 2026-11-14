@@ -92,13 +92,7 @@ extension LibraryWindowController {
         sidebarLibraryTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let searchButton = OverviewActionButton("", symbol: "magnifyingglass", action: {})
         sidebarSearchButton = searchButton
-        searchButton.invoke = { [weak self, weak searchButton] in
-            guard let self else { return }
-            self.sidebarLibraryTitle.isHidden = true
-            searchButton?.isHidden = true
-            self.searchField.isHidden = false
-            self.window?.makeFirstResponder(self.searchField)
-        }
+        searchButton.invoke = { [weak self] in self?.focusSearchForLibrary() }
         searchButton.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarSearch")
         searchButton.isBordered = false
         searchButton.toolTip = "搜索笔记"
@@ -114,7 +108,16 @@ extension LibraryWindowController {
         heading.orientation = .horizontal; heading.spacing = 4
         heading.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 12)
         heading.heightAnchor.constraint(equalToConstant: 40).isActive = true
-        let sidebarChrome = NSStackView(views: [heading, searchScopeControl])
+        let searchStatus = NSStackView(views: [noteListCountLabel, NSView(), searchScopeControl])
+        searchStatus.orientation = .horizontal; searchStatus.alignment = .centerY
+        searchStatus.spacing = 4
+        searchStatus.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 4, right: 12)
+        searchStatus.isHidden = true
+        sidebarSearchStatusView = searchStatus
+        noteListCountLabel.textColor = panelSecondaryTextColor()
+        searchScopeControl.setContentHuggingPriority(.required, for: .horizontal)
+        searchScopeControl.setContentCompressionResistancePriority(.required, for: .horizontal)
+        let sidebarChrome = NSStackView(views: [heading, searchStatus])
         sidebarChrome.orientation = .vertical; sidebarChrome.alignment = .width; sidebarChrome.spacing = 4
         container.addSubview(sidebarChrome)
         sidebarChrome.translatesAutoresizingMaskIntoConstraints = false
@@ -327,7 +330,7 @@ extension LibraryWindowController {
 
         noteListEmptyLabel.identifier = NSUserInterfaceItemIdentifier("LibraryNoteListEmptyLabel")
         noteListEmptyLabel.font = .systemFont(ofSize: 13, weight: .medium)
-        noteListEmptyLabel.textColor = panelTertiaryTextColor()
+        noteListEmptyLabel.textColor = panelSecondaryTextColor()
         noteListEmptyLabel.alignment = .center
         noteListEmptyLabel.lineBreakMode = .byWordWrapping
         noteListEmptyLabel.maximumNumberOfLines = 2

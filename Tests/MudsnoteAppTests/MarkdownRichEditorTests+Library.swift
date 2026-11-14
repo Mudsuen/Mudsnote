@@ -806,7 +806,7 @@ extension MarkdownRichEditorTests {
         let toolbarSearchField = controller.searchField
         #expect(!toolbarSearchField.isHidden)
         #expect(toolbarSearchField.font?.pointSize == 14)
-        #expect(toolbarSearchField.placeholderString == "搜索")
+        #expect(toolbarSearchField.placeholderString == "搜索全部笔记")
         #expect(toolbarSearchField.accessibilityLabel() == "搜索笔记")
         #expect(toolbarSearchField.currentEditor() != nil)
         let visibleToolbarItemIDs = Set((window.toolbar?.visibleItems ?? []).map(\.itemIdentifier.rawValue))
@@ -1012,6 +1012,7 @@ extension MarkdownRichEditorTests {
         let sidebarTextFields = window.contentView?.allSubviews.compactMap { $0 as? NSTextField } ?? []
         #expect(!sidebarTextFields.contains {
             ["LibraryNoteListTitle", "LibraryNoteListCount"].contains($0.identifier?.rawValue ?? "")
+                && !$0.isHiddenOrHasHiddenAncestor
         })
         let noteListEmpty = try #require(window.contentView?.allSubviews.compactMap { $0 as? NSTextField }.first {
             $0.identifier?.rawValue == "LibraryNoteListEmptyLabel"

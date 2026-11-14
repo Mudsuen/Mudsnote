@@ -5,6 +5,51 @@ import Testing
 @testable import MudsnoteCore
 
 extension MarkdownRichEditorTests {
+    @Test func overviewFitsVisibleContentAndKeepsEmptyTopicsReachable() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.overview-fit." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        var state = NoteOverview(); state.seeded = true; state.areas = []; state.title = "  "
+        let parent = NoteOverview.Area(title: "项目")
+        state.areas.append(parent)
+        for index in 0..<8 { state.areas.append(.init(title: index == 0 ? "  " : "阶段 \(index)", parentID: parent.id)) }
+        try store.saveOverview(state)
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus(); controller.showOverview()
+        let view = try #require(controller.overviewView)
+        view.setPresentation(.mindMap); view.layoutSubtreeIfNeeded()
+        view.viewportControls.fit.performClick(nil)
+        let content = try #require(view.plan?.contentBounds)
+        #expect(view.scroll.contentView.bounds.insetBy(dx: -1, dy: -1).contains(content))
+        #expect(!view.viewportControls.isHidden)
+        #expect(view.title.stringValue == "我的生活")
+        let blank = OverviewNodeID.area(state.areas[1].id)
+        #expect(view.nodeTitle(blank) == "未命名主题")
+        #expect(view.areas[state.areas[1].id]?.title == "未命名主题")
+        view.beginTopicEdit(blank)
+        #expect(view.topicEditor.string == "  ")
+        view.topicEditor.string = "已命名"
+        #expect(view.commitTopicEditing())
+        view.layoutSubtreeIfNeeded()
+        #expect(view.nodeTitle(blank) == "已命名")
+        let builds = view.layoutBuildCount
+        view.toggleBranch(.area(parent.id))
+        #expect(view.layoutBuildCount > builds)
+        #expect(view.plan?.frames[blank] == nil)
+        view.setPresentation(.outline)
+        #expect(view.viewportControls.isHidden)
+        #expect(try store.loadOverview().areas[1].title == "已命名")
+        view.focus(.area(parent.id))
+        #expect(view.focusedRoot == .area(parent.id))
+        controller.navigateLibraryBack()
+        #expect(view.focusedRoot == .root)
+        controller.navigateLibraryForward()
+        #expect(view.focusedRoot == .area(parent.id))
+    }
+
     @Test(arguments: [OverviewPresentation.mindMap, .outline])
     func overviewCardPreviewToggleAnchorsAndReflowsWithoutChangingNotes(mode: OverviewPresentation) async throws {
         let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
@@ -83,6 +128,8 @@ extension MarkdownRichEditorTests {
         let rootBefore = try #require(initial.frames[.root]).offsetBy(dx: -initial.worldOffset.x, dy: -initial.worldOffset.y)
         let visible = view.scroll.contentView.bounds.size
         let canvasSize = view.canvas.frame.size
+        let layoutBuilds = view.layoutBuildCount
+        let breadcrumbs = view.breadcrumb.subviews.map(ObjectIdentifier.init)
         let worldBefore = CGPoint(x: view.scroll.contentView.bounds.minX - initial.worldOffset.x,
                                   y: view.scroll.contentView.bounds.minY - initial.worldOffset.y)
         for _ in 0..<80 {
@@ -95,6 +142,8 @@ extension MarkdownRichEditorTests {
         #expect(abs(worldAfter.x - worldBefore.x + visible.width * 136) < 0.1)
         #expect(abs(worldAfter.y - worldBefore.y - visible.height * 72) < 0.1)
         #expect(view.canvas.frame.size == canvasSize)
+        #expect(view.layoutBuildCount == layoutBuilds)
+        #expect(view.breadcrumb.subviews.map(ObjectIdentifier.init) == breadcrumbs)
         #expect(try #require(after.frames[.root]).offsetBy(dx: -after.worldOffset.x, dy: -after.worldOffset.y) == rootBefore)
         view.centerRoot()
         let centered = try #require(view.plan?.frames[.root])

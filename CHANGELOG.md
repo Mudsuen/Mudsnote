@@ -11,6 +11,22 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-14 — Repair search entry and make overview navigation predictable
+
+- Problem: the search shortcut could focus a hidden field; search counts were
+  detached from the sidebar, navigation lost search scope and focused topics,
+  and the map opened with branches outside the viewport. Empty topic names could
+  become invisible, while every pan rebuilt geometry and breadcrumb controls.
+- Fix: share search presentation across buttons, shortcuts and history, show
+  result counts only during search, and let Escape clear then dismiss search.
+  Restore search scope and focused topics with Back/Forward, reveal the current
+  list selection after navigation, and improve count/empty-state readability.
+  Fit the map on entry and expose zoom, fit and center controls. Display a
+  fallback for blank topics without rewriting their stored text.
+- Lesson: content indexing, geometry measurement and viewport movement have
+  different lifetimes. Cache the ownership index and measured layout, retain
+  unchanged breadcrumbs, and compute outline branch extents in one pass.
+
 ## 2026-11-13 — Browse the overview and drill into the knowledge graph
 
 - Problem: drilling into overview topics required a secondary action, and the

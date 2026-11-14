@@ -117,6 +117,7 @@ extension LibraryOverviewView {
     }
 
     @objc func canvasViewportChanged() {
+        viewportControls.sync(overview: self)
         guard presentation == .mindMap, !updatingViewport, let plan else { return }
         let clip = scroll.contentView
         let size = clip.bounds.size

@@ -8,6 +8,8 @@ struct LibraryPageState: Equatable {
     var query: String
     var sidebar: LibrarySidebarPresentation
     var sourceListVisible: Bool
+    var searchesAllNotes: Bool
+    var overviewRoot: OverviewNodeID
 }
 
 extension LibraryWindowController {
@@ -16,7 +18,9 @@ extension LibraryWindowController {
             ? overviewState?.cards.first(where: { $0.id == overviewView?.selectedID })?.url
             : selectedURL
         return LibraryPageState(overview: isShowingOverview, url: url, scope: selectedScope, query: searchField.stringValue,
-            sidebar: sidebarPresentation, sourceListVisible: isSourceListVisibleForLibrary)
+            sidebar: sidebarPresentation, sourceListVisible: isSourceListVisibleForLibrary,
+            searchesAllNotes: searchScopeControl.selectedSegment == 1,
+            overviewRoot: isShowingOverview ? overviewView?.focusedRoot ?? .root : .root)
     }
 
     @discardableResult func beginLibraryPageNavigation() -> Bool {
@@ -47,9 +51,11 @@ extension LibraryWindowController {
             isRestoringLibraryPage = true
             defer { isRestoringLibraryPage = false }
             cancelActiveNoteLoad()
+            cancelPendingSearchReload()
             if target.overview {
                 showOverview()
                 guard isShowingOverview else { return }
+                overviewView?.focus(target.overviewRoot)
                 if let url = target.url, let loaded {
                     let note = sourceCountSnapshot.first(where: { $0.url == url })
                         ?? NoteSearchResult(url: url, title: loaded.title, snippet: loaded.body, modifiedAt: Date())
@@ -59,6 +65,7 @@ extension LibraryWindowController {
                 guard leaveOverview() else { return }
                 selectedScope = target.scope
                 searchField.stringValue = target.query
+                searchScopeControl.selectedSegment = target.searchesAllNotes ? 1 : 0
                 setSidebarPresentation(target.sidebar, animated: false)
                 reloadNotes(selecting: target.url, loadFirstIfNeeded: false, refreshCounts: false)
                 if let url = target.url, let loaded {
@@ -73,10 +80,9 @@ extension LibraryWindowController {
                 }
             }
             _ = setSourceListVisibleForLibrary(target.sourceListVisible)
-            searchField.isHidden = target.query.isEmpty
-            sidebarLibraryTitle.isHidden = !target.query.isEmpty
-            sidebarSearchButton?.isHidden = !target.query.isEmpty
+            setSidebarSearchPresented(!target.query.isEmpty)
             updateSidebarScopeButton()
+            revealSelectedNoteInBrowser()
             if back { pageBackStack.removeLast(); pageForwardStack.append(current) }
             else { pageForwardStack.removeLast(); pageBackStack.append(current) }
             updateToolbarActionState()

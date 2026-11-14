@@ -194,6 +194,12 @@ extension LibraryWindowController {
 
     func updateNoteListHeader(query: String) {
         updateSidebarScopeButton()
+        if !query.isEmpty { setSidebarSearchPresented(true) }
+        sidebarSearchStatusView?.isHidden = query.isEmpty
+        let scopeTitle = noteListTitle(for: selectedScope)
+        searchField.placeholderString = "搜索" + scopeTitle
+        searchScopeControl.setToolTip("搜索" + scopeTitle, forSegment: 0)
+        searchScopeControl.setToolTip("搜索所有笔记", forSegment: 1)
         // Search results must be visible even when the persisted presentation
         // is the file tree. Clearing the query restores that preference.
         if let tree = sidebarTreeView, tree.isHidden == isShowingSidebarTree {

@@ -1,6 +1,53 @@
 import AppKit
 import MudsnoteCore
 
+@MainActor final class OverviewViewportControls: NSStackView {
+    let zoomOut = OverviewActionButton("", symbol: "minus", action: {})
+    let zoomValue = OverviewActionButton("100%", action: {})
+    let zoomIn = OverviewActionButton("", symbol: "plus", action: {})
+    let fit = OverviewActionButton("", symbol: "arrow.up.left.and.arrow.down.right", action: {})
+    let center = OverviewActionButton("", symbol: "scope", action: {})
+
+    init() {
+        super.init(frame: .zero)
+        orientation = .horizontal; alignment = .centerY; spacing = 2
+        edgeInsets = NSEdgeInsets(top: 4, left: 4, bottom: 4, right: 4)
+        wantsLayer = true; layer?.cornerRadius = 8; layer?.borderWidth = 1
+        identifier = NSUserInterfaceItemIdentifier("OverviewViewportControls")
+        for (button, label, width) in [(zoomOut, "缩小", 26.0), (zoomValue, "缩放比例", 48.0),
+                                       (zoomIn, "放大", 26.0), (fit, "适应全部内容", 28.0), (center, "回到中心主题", 28.0)] {
+            button.setAccessibilityLabel(label); button.toolTip = label
+            addArrangedSubview(button)
+            button.widthAnchor.constraint(equalToConstant: width).isActive = true
+            button.heightAnchor.constraint(equalToConstant: 26).isActive = true
+        }
+        zoomValue.font = .monospacedDigitSystemFont(ofSize: 11, weight: .medium)
+    }
+    required init?(coder: NSCoder) { fatalError() }
+
+    func bind(to overview: LibraryOverviewView) {
+        zoomOut.invoke = { [weak overview] in overview?.changeZoom(by: -0.1) }
+        zoomValue.invoke = { [weak overview] in overview?.showZoomPopover() }
+        zoomIn.invoke = { [weak overview] in overview?.changeZoom(by: 0.1) }
+        fit.invoke = { [weak overview] in overview?.fitToWindow() }
+        center.invoke = { [weak overview] in overview?.centerRoot() }
+    }
+
+    func sync(overview: LibraryOverviewView) {
+        isHidden = overview.presentation != .mindMap
+        let scroll = overview.scroll
+        let label = "\(Int((scroll.magnification * 100).rounded()))%"
+        if zoomValue.title != label { zoomValue.title = label }
+        zoomValue.setAccessibilityValue(label)
+        zoomOut.isEnabled = scroll.magnification > scroll.minMagnification + 0.001
+        zoomIn.isEnabled = scroll.magnification < scroll.maxMagnification - 0.001
+        let colors = overview.colors
+        layer?.backgroundColor = colors.outlineBackground.cgColor
+        layer?.borderColor = colors.guide.cgColor
+        for button in [zoomOut, zoomValue, zoomIn, fit, center] { button.contentTintColor = colors.text }
+    }
+}
+
 @MainActor final class OverviewZoomController: NSViewController {
     weak var overview: LibraryOverviewView?
     let slider = NSSlider(value: 100, minValue: 20, maxValue: 400, target: nil, action: nil)
@@ -80,7 +127,7 @@ extension LibraryOverviewView {
         menu.addItem(OverviewMenuItem("展开全部") { [weak self] in self?.collapsed.removeAll(); self?.needsLayout = true })
         menu.addItem(OverviewMenuItem("折叠全部") { [weak self] in
             guard let self, self.prepareStructureChange() else { return }
-            self.collapsed = Set(OverviewTree(self.state).children.keys.filter { $0 != self.focusedRoot })
+            self.collapsed = Set(self.contentIndex.tree.children.keys.filter { $0 != self.focusedRoot })
             self.needsLayout = true
         })
         if focusedRoot != .root { menu.addItem(OverviewMenuItem("返回总览") { [weak self] in self?.focus(.root) }) }
@@ -116,10 +163,11 @@ extension LibraryOverviewView {
         zoomPopover.contentViewController = controller
         zoomPopover.appearance = effectiveAppearance
         zoomPopover.behavior = .transient; zoomPopover.animates = false
-        zoomPopover.show(relativeTo: appearanceButton.bounds, of: appearanceButton, preferredEdge: .maxY)
+        zoomPopover.show(relativeTo: viewportControls.zoomValue.bounds, of: viewportControls.zoomValue, preferredEdge: .minY)
     }
     func changeZoom(by delta: CGFloat) { setZoom(scroll.magnification + delta) }
     func setZoom(_ value: CGFloat) {
+        guard presentation == .mindMap else { return }
         let clip = scroll.contentView
         let offset = plan?.worldOffset ?? .zero
         let worldCenter = CGPoint(x: clip.bounds.midX - offset.x, y: clip.bounds.midY - offset.y)
@@ -135,10 +183,11 @@ extension LibraryOverviewView {
     }
     func resetViewport() {
         guard selectedID == nil, cardTransition == nil else { return }
-        if presentation == .mindMap { centerRoot() }
+        if presentation == .mindMap { fitToWindow() }
         else { scroll.contentView.scroll(to: .zero); scroll.reflectScrolledClipView(scroll.contentView) }
     }
     func fitToWindow() {
+        layoutSubtreeIfNeeded()
         guard presentation == .mindMap, let content = plan?.contentBounds else { return }
         let offset = plan?.worldOffset ?? .zero
         let center = CGPoint(x: content.midX - offset.x, y: content.midY - offset.y)
@@ -149,7 +198,7 @@ extension LibraryOverviewView {
     func toggleBranch(_ node: OverviewNodeID) {
         guard node != focusedRoot, commitTopicEditing() else { return }
         finishCardTransition()
-        if !collapsed.contains(node), let selectedID, OverviewTree(state).ancestors(of: .card(selectedID)).contains(node) {
+        if !collapsed.contains(node), let selectedID, contentIndex.tree.ancestors(of: .card(selectedID)).contains(node) {
             owner?.toggleOverviewCard(selectedID)
             guard self.selectedID == nil else { return }
         }
@@ -158,7 +207,7 @@ extension LibraryOverviewView {
         activeNode = node; needsLayout = true; layoutSubtreeIfNeeded()
     }
     func revealCard(_ id: UUID) {
-        let tree = OverviewTree(state)
+        let tree = contentIndex.tree
         let ancestors = tree.ancestors(of: .card(id))
         if focusedRoot != .root && !ancestors.contains(focusedRoot) { focusedRoot = .root; updateBreadcrumbs() }
         for ancestor in ancestors { collapsed.remove(ancestor) }
@@ -188,7 +237,7 @@ extension LibraryOverviewView {
         if node != focusedRoot {
             menu.addItem(.separator())
             menu.addItem(OverviewMenuItem("进入主题") { [weak self] in self?.focus(node) })
-            if OverviewTree(state).children[node]?.isEmpty == false {
+            if contentIndex.tree.children[node]?.isEmpty == false {
                 menu.addItem(OverviewMenuItem(collapsed.contains(node) ? "展开主题" : "折叠主题") { [weak self] in self?.toggleBranch(node) })
             }
             if node != .unassigned {

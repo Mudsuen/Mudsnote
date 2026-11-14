@@ -96,9 +96,7 @@ extension LibraryWindowController {
         isRestoringLibraryPage = true
         defer { isRestoringLibraryPage = wasRestoring }
         _ = clearSearchFromKeyboard(reload: false)
-        searchField.isHidden = true
-        sidebarSearchButton?.isHidden = false
-        sidebarLibraryTitle.isHidden = false
+        setSidebarSearchPresented(false)
         if presentation == .tags {
             sourceTagsSectionCollapsed = false
             noteStore.libraryTagsSectionCollapsed = false
@@ -112,6 +110,7 @@ extension LibraryWindowController {
             scheduleDeferredSourceTagLoad()
         }
         updateSidebarScopeButton()
+        revealSelectedNoteInBrowser()
     }
 
     @objc func showOverview() {
@@ -134,9 +133,7 @@ extension LibraryWindowController {
         isShowingOverview = true
         updateDocumentTabBar()
         _ = clearSearchFromKeyboard(reload: false)
-        searchField.isHidden = true
-        sidebarSearchButton?.isHidden = false
-        sidebarLibraryTitle.isHidden = false
+        setSidebarSearchPresented(false)
         _ = setSourceListVisibleForLibrary(false)
         overviewView?.isHidden = false
         if overviewView?.selectedID == nil { regularEditorView?.isHidden = true }

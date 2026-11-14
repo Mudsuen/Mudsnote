@@ -26,6 +26,7 @@ final class LibraryWindowController: NSWindowController,
     let noteStore: NoteStore
     let sidebarLibraryTitle = NSTextField(labelWithString: "目录")
     weak var sidebarSearchButton: NSButton?
+    weak var sidebarSearchStatusView: NSStackView?
     var navigationRail: LibraryNavigationRail?
     weak var pageBackButton: NSButton?
     weak var pageForwardButton: NSButton?

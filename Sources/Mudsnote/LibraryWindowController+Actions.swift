@@ -172,14 +172,6 @@ extension LibraryWindowController {
         }
     }
 
-    func focusSearchForLibrary() {
-        window?.makeFirstResponder(searchField)
-        DispatchQueue.main.async { [weak self] in
-            guard let self else { return }
-            self.window?.makeFirstResponder(self.searchField)
-        }
-    }
-
     @objc
     func savePressed() {
         do {

@@ -6,6 +6,27 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 extension LibraryWindowController {
+    // Every entry point (button, shortcut and history) shares the same chrome.
+    // Focusing a hidden NSSearchField silently leaves input in the old responder.
+    func setSidebarSearchPresented(_ presented: Bool) {
+        sidebarLibraryTitle.isHidden = presented
+        sidebarSearchButton?.isHidden = presented
+        searchField.isHidden = !presented
+        sidebarSearchStatusView?.isHidden = !presented || searchField.stringValue.isEmpty
+    }
+
+    func focusSearchForLibrary() {
+        if isShowingOverview {
+            showLibraryNavigationPage(.list, scope: .all)
+            guard !isShowingOverview else { return }
+        }
+        _ = setSourceListVisibleForLibrary(true)
+        setSidebarSearchPresented(true)
+        window?.contentView?.layoutSubtreeIfNeeded()
+        window?.makeFirstResponder(searchField)
+        searchField.selectText(nil)
+    }
+
     @objc func searchFieldAction(_ sender: NSSearchField) {
         // The native cancel button sends the control action after clearing the
         // field, without necessarily sending a text-editing notification.
@@ -15,15 +36,25 @@ extension LibraryWindowController {
     }
 
     func clearSearchFromKeyboard(reload: Bool = true) -> Bool {
-        guard !searchField.stringValue.isEmpty || activeSearchSession != nil
-            || hasPendingSearchReload || isSearchResultReloading || !searchScopeControl.isHidden else { return false }
+        let hasSearch = !searchField.stringValue.isEmpty || activeSearchSession != nil
+            || hasPendingSearchReload || isSearchResultReloading || !searchScopeControl.isHidden
+        guard hasSearch else {
+            guard !searchField.isHidden else { return false }
+            setSidebarSearchPresented(false)
+            window?.makeFirstResponder(isShowingSidebarTree ? sourceOutlineView : tableView)
+            return true
+        }
         searchField.stringValue = ""
         activeSearchSession = nil
         cancelPendingSearchReload()
-        if reload { performSearchReload() }
+        if reload {
+            performSearchReload()
+            revealSelectedNoteInBrowser()
+        }
         else {
             cancelActiveSearchResultReload()
             searchScopeControl.isHidden = true
+            sidebarSearchStatusView?.isHidden = true
         }
         removeEditorSearchHighlights()
         return true
@@ -43,6 +74,7 @@ extension LibraryWindowController {
         }
 
         hasPendingSearchReload = true
+        setSidebarSearchPresented(true)
         searchScopeControl.isHidden = false
         updateNoteListHeader(query: query)
         updateNoteListEmptyState(query: query)

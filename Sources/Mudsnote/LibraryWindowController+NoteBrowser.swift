@@ -6,6 +6,19 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 extension LibraryWindowController {
+    /// Reveal selection only after deliberate navigation, never on a background
+    /// refresh: users must be able to browse away from the currently open note.
+    func revealSelectedNoteInBrowser() {
+        guard !isShowingSidebarTree, tableView.selectedRow >= 0 else { return }
+        window?.contentView?.layoutSubtreeIfNeeded()
+        if noteListViewMode == .gallery {
+            let paths = galleryCollectionView.selectionIndexPaths
+            if !paths.isEmpty { galleryCollectionView.scrollToItems(at: paths, scrollPosition: .nearestVerticalEdge) }
+        } else {
+            tableView.scrollRowToVisible(tableView.selectedRow)
+        }
+    }
+
     func numberOfRows(in tableView: NSTableView) -> Int {
         listRows.count
     }
