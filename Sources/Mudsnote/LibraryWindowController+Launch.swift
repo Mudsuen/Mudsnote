@@ -139,13 +139,14 @@ extension LibraryWindowController {
     }
 
     func loadInitialNoteAfterLaunch(_ note: NoteSearchResult) {
-        let noteStore = noteStore
+        let generation = noteLoadGeneration
+        let revision = editorContentRevision
+        let noteLoader = noteLoader
         DispatchQueue.global(qos: .userInitiated).async { [weak self] in
-            let result = Result<LoadedLibraryNote, Error> {
-                try noteStore.loadNoteDocument(at: note.url)
-            }
+            let result = Result<LoadedLibraryNote, Error> { try noteLoader(note.url) }
             DispatchQueue.main.async {
-                guard let self else { return }
+                guard let self, generation == self.noteLoadGeneration,
+                      revision == self.editorContentRevision else { return }
                 self.applyInitialNoteLoadResult(result, for: note)
             }
         }

@@ -376,6 +376,7 @@ enum LibraryFormatCommand: Int {
 }
 
 struct LibraryFormattingUndoSnapshot {
+    let documentIdentity: UUID
     let content: NSAttributedString
     let selection: NSRange
 }

@@ -13,6 +13,8 @@ extension LibraryWindowController {
         renderedBody: NSAttributedString? = nil,
         preservedSelection: NSRange? = nil
     ) {
+        documentIdentity = UUID()
+        editorTextView.undoManager?.removeAllActions()
         editorMetricsRefreshTask?.cancel()
         editorMetricsRefreshTask = nil
         editorSearchHighlightRefreshTask?.cancel()

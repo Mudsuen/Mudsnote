@@ -390,6 +390,10 @@ extension LibraryWindowController {
                 rootsProvider: { [weak self] in
                     self?.noteStore.preferredDirectories ?? []
                 },
+                inventoryLoader: { [noteStore] roots in
+                    LibraryAttachmentInventory.build(roots: roots,
+                        protectedSources: try noteStore.protectedAttachmentReferenceSources())
+                },
                 onOpenNote: { [weak self] url in
                     do {
                         try self?.openMarkdownDocumentForLibrary(at: url)

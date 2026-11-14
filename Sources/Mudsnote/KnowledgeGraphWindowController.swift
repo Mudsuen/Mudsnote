@@ -531,11 +531,12 @@ final class KnowledgeGraphCanvasView: NSView {
     }
 
     func update(_ snapshot: KnowledgeGraphSnapshot) {
+        let shouldFit = presentations.isEmpty || self.snapshot.focusedURL != snapshot.focusedURL
         self.snapshot = snapshot
         layoutNodes()
         selectedURL = snapshot.focusedURL ?? presentations.first?.node.url
         synchronizeAccessibilityElements()
-        fitGraph()
+        if shouldFit { fitGraph() } else { needsDisplay = true }
         setAccessibilityLabel(
             "知识图谱，\(snapshot.nodes.count) 个节点，\(snapshot.edges.count) 条关系"
         )

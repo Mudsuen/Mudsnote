@@ -3,6 +3,7 @@ import Foundation
 public enum NoteTagMutationError: LocalizedError {
     case invalidTag
     case tagNotFound
+    case partialMutation(completed: Int, reason: String)
 
     public var errorDescription: String? {
         switch self {
@@ -10,6 +11,8 @@ public enum NoteTagMutationError: LocalizedError {
             return "标签无效"
         case .tagNotFound:
             return "未找到该标签"
+        case let .partialMutation(completed, reason):
+            return "已更新 \(completed) 篇笔记，其余未完成：\(reason)"
         }
     }
 }
@@ -57,33 +60,21 @@ extension NoteStore {
         in roots: [URL]
     ) throws -> InlineTagLibraryMigration {
         let preview = try inlineTagMigrationPreview(in: roots)
-        var backups: [(url: URL, contents: String)] = []
+        var committedURLs: [URL] = []
 
         do {
             for file in preview.files {
                 let source = try String(contentsOf: file.url, encoding: .utf8)
                 let migration = inlineTagSourceMigration(from: source)
                 guard migration.occurrenceCount > 0 else { continue }
-                guard try String(contentsOf: file.url, encoding: .utf8) == source else {
-                    throw CocoaError(.fileWriteFileExists)
-                }
-
-                backups.append((file.url, source))
-                try migration.source.write(
-                    to: file.url,
-                    atomically: true,
-                    encoding: .utf8
-                )
+                try replaceTagMutationContents(at: file.url, expected: source, replacement: migration.source)
+                committedURLs.append(file.url)
             }
         } catch {
-            for backup in backups.reversed() {
-                try? backup.contents.write(
-                    to: backup.url,
-                    atomically: true,
-                    encoding: .utf8
-                )
+            markSearchIndexDirty(at: committedURLs)
+            if !committedURLs.isEmpty {
+                throw NoteTagMutationError.partialMutation(completed: committedURLs.count, reason: error.localizedDescription)
             }
-            markSearchIndexDirty(at: backups.map(\.url))
             throw error
         }
 
@@ -158,31 +149,28 @@ extension NoteStore {
             note.tags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
         }.map(\.url)
         let urls = Set((matches + additionalNoteURLs).map(\.standardizedFileURL))
-        var backups: [(url: URL, contents: String)] = []
+        var committedURLs: [URL] = []
         var changedURLs: [URL] = []
 
         do {
-            for url in urls {
+            for url in urls.sorted(by: { $0.path < $1.path }) {
                 let document = try loadNoteDocument(at: url)
                 let tags = MarkdownEditorDocument.normalizedTags(document.tags.compactMap { existing in
                     existing.localizedCaseInsensitiveCompare(tag) == .orderedSame ? replacement : existing
                 })
                 guard tags != document.tags else { continue }
 
-                backups.append((url, document.sourceContents))
-                _ = try updateNoteInPlace(
-                    at: url,
-                    title: document.title,
-                    body: document.body,
-                    tags: tags
-                )
+                let written = storedNoteContent(title: document.title, body: document.body,
+                    tags: tags, preservingFrontMatterFrom: document.sourceContents)
+                try replaceTagMutationContents(at: url, expected: document.sourceContents, replacement: written)
+                committedURLs.append(url)
                 changedURLs.append(url)
             }
         } catch {
-            for backup in backups.reversed() {
-                try? backup.contents.write(to: backup.url, atomically: true, encoding: .utf8)
+            markSearchIndexDirty(at: committedURLs)
+            if !committedURLs.isEmpty {
+                throw NoteTagMutationError.partialMutation(completed: committedURLs.count, reason: error.localizedDescription)
             }
-            markSearchIndexDirty(at: backups.map(\.url))
             throw error
         }
 
@@ -190,4 +178,21 @@ extension NoteStore {
         markSearchIndexDirty(at: changedURLs)
         return changedURLs.count
     }
+    func replaceTagMutationContents(at url: URL, expected: String, replacement: String) throws {
+        noteMutationLock.lock()
+        defer { noteMutationLock.unlock() }
+        var coordinationError: NSError?
+        var writeError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: url, options: .forMerging, error: &coordinationError) { coordinated in
+            do {
+                guard try String(contentsOf: coordinated, encoding: .utf8) == expected else {
+                    throw CocoaError(.fileWriteFileExists, userInfo: [NSFilePathErrorKey: url.path])
+                }
+                try replacement.write(to: coordinated, atomically: true, encoding: .utf8)
+            } catch { writeError = error }
+        }
+        if let error = coordinationError ?? (writeError as NSError?) { throw error }
+    }
+
+
 }

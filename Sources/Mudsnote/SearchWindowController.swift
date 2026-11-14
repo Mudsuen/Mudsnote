@@ -91,7 +91,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     }
 
     func windowWillClose(_ notification: Notification) {
-        searchController.cancel(invalidateSession: true)
+        searchController.cancel()
         onClose()
     }
 
@@ -262,7 +262,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
 
     @objc
     private func searchOptionsChanged(_ sender: Any?) {
-        searchController.cancel(invalidateSession: true)
+        searchController.cancel()
         scheduleSearch(delay: .zero)
     }
 

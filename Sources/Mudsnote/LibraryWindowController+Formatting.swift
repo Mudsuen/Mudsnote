@@ -49,7 +49,7 @@ extension LibraryWindowController {
     }
 
     func interpretTypedMarkdownIfNeeded() {
-        guard let storage = editorTextView.textStorage else { return }
+        guard !editorTextView.hasMarkedText(), let storage = editorTextView.textStorage else { return }
 
         let currentLineRange = visibleLineRangeForSelection()
         let currentText = (storage.string as NSString).substring(with: currentLineRange)
@@ -58,7 +58,10 @@ extension LibraryWindowController {
         let selection = editorTextView.selectedRange()
         let selectionStartOffset = max(selection.location - currentLineRange.location, 0)
         let selectionEndOffset = max(NSMaxRange(selection) - currentLineRange.location, 0)
-        let rendered = MarkdownRichTextCodec.renderLine(currentText, theme: theme)
+        if currentLineRange.length > 0,
+           storage.attribute(MarkdownRichTextCodec.literalMarkdownKey, at: currentLineRange.location, effectiveRange: nil) as? Bool == true { return }
+        let markdown = MarkdownRichTextCodec.serialize(storage.attributedSubstring(from: currentLineRange), theme: theme)
+        let rendered = MarkdownRichTextCodec.renderLine(markdown, theme: theme, baseURL: selectedURL)
         let clampedStart = min(selectionStartOffset, rendered.length)
         let clampedEnd = min(selectionEndOffset, rendered.length)
 
@@ -72,7 +75,7 @@ extension LibraryWindowController {
     }
 
     func normalizeCurrentLineAfterListPrefixEdit() -> Bool {
-        guard let storage = editorTextView.textStorage else { return false }
+        guard !editorTextView.hasMarkedText(), let storage = editorTextView.textStorage else { return false }
 
         let lineRange = visibleLineRangeForSelection()
         guard MarkdownRichTextCodec.needsParagraphResetAfterListPrefixEdit(range: lineRange, in: storage) else {
@@ -370,6 +373,7 @@ extension LibraryWindowController {
     func libraryFormattingUndoSnapshot() -> LibraryFormattingUndoSnapshot? {
         guard let storage = editorTextView.textStorage else { return nil }
         return LibraryFormattingUndoSnapshot(
+            documentIdentity: documentIdentity,
             content: NSAttributedString(attributedString: storage),
             selection: editorTextView.selectedRange()
         )
@@ -394,6 +398,7 @@ extension LibraryWindowController {
         inverse: LibraryFormattingUndoSnapshot,
         actionName: String
     ) {
+        guard snapshot.documentIdentity == documentIdentity else { return }
         editorTextView.undoManager?.registerUndo(withTarget: self) { target in
             target.restoreLibraryFormattingSnapshot(inverse, inverse: snapshot, actionName: actionName)
         }

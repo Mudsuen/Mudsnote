@@ -563,6 +563,29 @@ extension NoteStore {
         return trashedURL
     }
 
+    public func protectedAttachmentReferenceSources() throws -> [(url: URL, markdown: String)] {
+        var sources: [(url: URL, markdown: String)] = []
+        let metadata = storedTrashedNotesMetadata()
+        for url in markdownFiles(in: trashDirectory()) {
+            guard let original = resolvedTrashedNoteMetadata(for: url, in: metadata) else {
+                throw CocoaError(.fileReadCorruptFile)
+            }
+            sources.append((URL(fileURLWithPath: original.originalPath), try String(contentsOf: url, encoding: .utf8)))
+        }
+        let drafts = appSupportDirectory.appendingPathComponent("Drafts", isDirectory: true)
+        if fileManager.fileExists(atPath: drafts.path) {
+            let decoder = JSONDecoder()
+            decoder.dateDecodingStrategy = .iso8601
+            for url in try fileManager.contentsOfDirectory(at: drafts, includingPropertiesForKeys: nil) where url.pathExtension == "json" {
+                let draft = try decoder.decode(DraftSnapshot.self, from: Data(contentsOf: url))
+                let noteURL = draft.sourcePath.map { URL(fileURLWithPath: $0) }
+                    ?? URL(fileURLWithPath: draft.selectedDirectoryPath).appendingPathComponent(".draft.md")
+                sources.append((noteURL, draft.body))
+            }
+        }
+        return sources
+    }
+
     public func restoreTrashedNote(at url: URL) throws -> URL {
         let standardizedTrashURL = url.standardizedFileURL
         var metadata = storedTrashedNotesMetadata()
@@ -677,7 +700,7 @@ extension NoteStore {
             .write(to: url, atomically: true, encoding: .utf8)
     }
 
-    private func storedNoteContent(
+    func storedNoteContent(
         title: String,
         body: String,
         tags: [String],
@@ -698,7 +721,8 @@ extension NoteStore {
 
         if let existingText,
            let frontMatter = frontMatterLines(in: existingText) {
-            let updatedLines = updatingFrontMatterTags(frontMatter, tags: normalizedTags)
+            let updatedLines = frontMatterTags(in: frontMatter) == normalizedTags
+                ? frontMatter : updatingFrontMatterTags(frontMatter, tags: normalizedTags)
             return "---\n\(updatedLines.joined(separator: "\n"))\n---\n\n\(content)"
         }
 
@@ -930,7 +954,10 @@ extension NoteStore {
                     destinationURL.path.dropFirst(destinationDirectory.path.count + 1)
                 )
                 let encodedPath = markdownEncodedPath(relativePath)
-                let value = target.isAngleBracketed ? "<\(encodedPath)>" : encodedPath
+                let suffix = target.value.firstIndex(where: { $0 == "?" || $0 == "#" })
+                    .map { String(target.value[$0...]) } ?? ""
+                let relocatedTarget = encodedPath + suffix
+                let value = target.isAngleBracketed ? "<\(relocatedTarget)>" : relocatedTarget
                 let replacementStart = markdown.index(
                     capturedRange.lowerBound,
                     offsetBy: target.replacementOffset

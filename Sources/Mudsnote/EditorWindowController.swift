@@ -8,6 +8,10 @@ import MudsnoteCore
 @MainActor
 final class EditorWindowController: NSWindowController, NSWindowDelegate, WindowOpacityAdjusting, MarkdownTextViewCommands, NSTextViewDelegate {
 
+    var documentIdentity = UUID()
+    var aiTask: Task<Void, Never>?
+    var aiRequestID = UUID()
+
     enum InlineSuggestionContext {
         case tags(query: String, replacementRange: NSRange, items: [String])
         case notes(query: String, replacementRange: NSRange, items: [NoteLinkItem])
@@ -315,6 +319,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     func windowWillClose(_ notification: Notification) {
         didCloseWindow = true
+        aiTask?.cancel()
+        aiTask = nil
+        aiRequestID = UUID()
         tagSuggestionTask?.cancel()
         tagSuggestionTask = nil
         noteSuggestionTask?.cancel()

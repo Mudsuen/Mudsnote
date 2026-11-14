@@ -36,6 +36,7 @@ extension LibraryWindowController {
     }
 
     func removeRegisteredLibraryFolderForLibrary(at directory: URL) throws {
+        _ = try saveCurrentNote(force: false)
         let candidate = directory.standardizedFileURL
         if candidate.path == noteStore.notesDirectory.standardizedFileURL.path {
             throw LibraryActionError.cannotRemoveDefaultLibraryFolder
@@ -221,9 +222,14 @@ extension LibraryWindowController {
 
     @discardableResult
     func renameLibraryFolder(at folderURL: URL, to name: String) throws -> URL {
+        _ = try saveCurrentNote(force: false)
         let renamedURL = try noteStore.renamePreferredDirectory(folderURL, to: name)
         recordInternalFileSystemChanges(for: [folderURL, renamedURL])
         remapSourceSnapshotFolder(from: folderURL, to: renamedURL)
+        setSelectedURLForLibrary(remappedLibraryURL(selectedURL, from: folderURL, to: renamedURL))
+        for index in documentTabs.indices {
+            documentTabs[index].url = remappedLibraryURL(documentTabs[index].url, from: folderURL, to: renamedURL)
+        }
         activeSearchSession = nil
         reloadPersistedSourceDisclosureState()
         selectedScope = .folder(renamedURL)
@@ -237,6 +243,7 @@ extension LibraryWindowController {
     }
 
     func deleteSelectedFolderForLibrary() throws {
+        _ = try saveCurrentNote(force: false)
         guard case .folder(let folderURL) = selectedScope else {
             throw LibraryActionError.noFolderSelected
         }
@@ -273,7 +280,9 @@ extension LibraryWindowController {
         activeSearchSession = nil
         reloadPersistedSourceDisclosureState()
         selectedScope = .folder(noteStore.notesDirectory)
-        clearCurrentDocumentAfterRemoval()
+        if let selectedURL, selectedURL.standardizedFileURL.path.hasPrefix(folderPath + "/") {
+            clearCurrentDocumentAfterRemoval()
+        }
         projectSourceFolderTreeRows(LibraryFolderTreeProjection.removing(
             folderURL,
             from: sourceFolderTreeRows

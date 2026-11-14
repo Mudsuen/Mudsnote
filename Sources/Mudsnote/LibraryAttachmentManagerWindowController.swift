@@ -13,7 +13,7 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
     }
 
     private let rootsProvider: () -> [URL]
-    private let inventoryLoader: @Sendable ([URL]) -> [LibraryAttachmentItem]
+    private let inventoryLoader: @Sendable ([URL]) throws -> [LibraryAttachmentItem]
     private let onOpenNote: (URL) -> Void
     private let quickLookController = AttachmentQuickLookController()
     private let tableView = NSTableView()
@@ -36,7 +36,7 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
 
     init(
         rootsProvider: @escaping () -> [URL],
-        inventoryLoader: @escaping @Sendable ([URL]) -> [LibraryAttachmentItem] = {
+        inventoryLoader: @escaping @Sendable ([URL]) throws -> [LibraryAttachmentItem] = {
             LibraryAttachmentInventory.build(roots: $0)
         },
         onOpenNote: @escaping (URL) -> Void
@@ -170,12 +170,20 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         summaryLabel.stringValue = "正在扫描…"
         let loader = inventoryLoader
         Task.detached(priority: .userInitiated) { [weak self] in
-            let items = loader(roots)
+            let result = Result { try loader(roots) }
             await MainActor.run {
                 guard let self, generation == self.loadGeneration else { return }
                 self.refreshButton.isEnabled = true
-                self.allItems = items
-                self.applyFilter(preserving: nil)
+                switch result {
+                case .success(let items):
+                    self.allItems = items
+                    self.applyFilter(preserving: nil)
+                case .failure(let error):
+                    self.allItems = []
+                    self.applyFilter(preserving: nil)
+                    self.summaryLabel.stringValue = "扫描失败，请重试"
+                    self.summaryLabel.toolTip = error.localizedDescription
+                }
             }
         }
     }
@@ -205,6 +213,7 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         let missing = allItems.filter { $0.state == .missing }.count
         let unreferenced = allItems.filter { $0.state == .unreferenced }.count
         summaryLabel.stringValue = "\(allItems.count) 个附件 · \(unreferenced) 个未引用 · \(missing) 个缺失"
+        summaryLabel.toolTip = nil
         emptyLabel.isHidden = !visibleItems.isEmpty
         updateSelectionActions()
     }
@@ -322,6 +331,12 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
         do {
+            guard try inventoryLoader(rootsProvider()).contains(where: {
+                $0.url.standardizedFileURL == item.url.standardizedFileURL && $0.state == .unreferenced
+            }) else {
+                refresh()
+                return
+            }
             try FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
             refresh()
         } catch {
@@ -358,7 +373,7 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
             filterControl.selectedSegment = 2
         case .missing:
             filterControl.selectedSegment = 3
-        case nil:
+        case nil, .unknown:
             filterControl.selectedSegment = 0
         }
         applyFilter(preserving: nil)

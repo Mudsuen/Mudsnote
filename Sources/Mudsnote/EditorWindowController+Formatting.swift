@@ -2,6 +2,7 @@ import AppKit
 import Carbon.HIToolbox
 
 private struct FormattingUndoSnapshot {
+    let documentIdentity: UUID
     let content: NSAttributedString
     let selection: NSRange
 }
@@ -798,6 +799,7 @@ extension EditorWindowController {
     private func formattingUndoSnapshot() -> FormattingUndoSnapshot? {
         guard let storage = editorTextView.textStorage else { return nil }
         return FormattingUndoSnapshot(
+            documentIdentity: documentIdentity,
             content: NSAttributedString(attributedString: storage),
             selection: editorTextView.selectedRange()
         )
@@ -822,6 +824,7 @@ extension EditorWindowController {
         inverseSnapshot: FormattingUndoSnapshot,
         actionName: String
     ) {
+        guard snapshot.documentIdentity == documentIdentity else { return }
         editorTextView.undoManager?.registerUndo(withTarget: self) { target in
             target.restoreFormattingSnapshot(inverseSnapshot, inverseSnapshot: snapshot, actionName: actionName)
         }

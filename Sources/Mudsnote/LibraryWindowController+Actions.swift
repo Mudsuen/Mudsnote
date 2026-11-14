@@ -294,6 +294,8 @@ extension LibraryWindowController {
     func toggleEditorSourceModePressed() {
         guard canEditCurrentDocument, let storage = editorTextView.textStorage else { return }
         let selection = editorTextView.selectedRange()
+        documentIdentity = UUID()
+        editorTextView.undoManager?.removeAllActions()
         suppressEditorChanges = true
         if isEditorShowingMarkdownSource {
             let markdown = storage.string

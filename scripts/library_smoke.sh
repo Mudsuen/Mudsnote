@@ -2,7 +2,10 @@
 set -euo pipefail
 
 APP_PATH="${MUDSNOTE_APP_PATH:-/Applications/Mudsnote.app}"
-OUTPUT_DIR="${1:-$(mktemp -d /tmp/mudsnote-library-smoke.XXXXXX)}"
+OUTPUT_PARENT="${1:-/tmp}"
+mkdir -p "$OUTPUT_PARENT"
+OUTPUT_DIR="$(mktemp -d "$OUTPUT_PARENT/mudsnote-library-smoke.XXXXXX")"
+FIXTURE_PID=""
 NOTES_DIR="$OUTPUT_DIR/Notes"
 APP_SUPPORT_DIR="$OUTPUT_DIR/AppSupport"
 MOVE_FOLDER="$NOTES_DIR/Smoke Folder"
@@ -16,31 +19,50 @@ if [[ ! -d "$APP_PATH" ]]; then
   exit 1
 fi
 
-rm -rf "$OUTPUT_DIR"
+touch "$OUTPUT_DIR/.mudsnote-smoke-owned"
 mkdir -p "$NOTES_DIR" "$APP_SUPPORT_DIR" "$MOVE_FOLDER"
 printf '# Existing Seed\n\nUnrelated body\n' >"$NOTES_DIR/Existing Seed.md"
 printf 'Installed attachment fixture\n' >"$ATTACHMENT_SOURCE"
 defaults delete "$DEFAULTS_SUITE" >/dev/null 2>&1 || true
 
+stop_fixture() {
+  [[ -n "$FIXTURE_PID" ]] || return 0
+  if ps -p "$FIXTURE_PID" -o command= | grep -F -- "$APP_SUPPORT_DIR" >/dev/null; then
+    kill -TERM "$FIXTURE_PID" 2>/dev/null || true
+    wait "$FIXTURE_PID" 2>/dev/null || true
+  fi
+  FIXTURE_PID=""
+}
+
+launch_fixture() {
+  stop_fixture
+  "$APP_PATH/Contents/MacOS/Mudsnote" --library \
+    --visual-qa-defaults-suite "$DEFAULTS_SUITE" \
+    --visual-qa-notes-dir "$NOTES_DIR" \
+    --visual-qa-app-support-dir "$APP_SUPPORT_DIR" >"$OUTPUT_DIR/app.log" 2>&1 &
+  FIXTURE_PID=$!
+  export MUDSNOTE_SMOKE_PID="$FIXTURE_PID"
+}
+
+ensure_fixture() {
+  if [[ -z "$FIXTURE_PID" ]] || ! kill -0 "$FIXTURE_PID" 2>/dev/null; then
+    launch_fixture
+  fi
+}
+
 cleanup() {
   local exit_code=$?
   trap - EXIT
-  pkill -x Mudsnote >/dev/null 2>&1 || true
+  stop_fixture
   defaults delete "$DEFAULTS_SUITE" >/dev/null 2>&1 || true
   exit "$exit_code"
 }
 trap cleanup EXIT
 
-pkill -x Mudsnote >/dev/null 2>&1 || true
-sleep 0.5
-open -n "$APP_PATH" --args \
-  --library \
-  --visual-qa-defaults-suite "$DEFAULTS_SUITE" \
-  --visual-qa-notes-dir "$NOTES_DIR" \
-  --visual-qa-app-support-dir "$APP_SUPPORT_DIR"
+launch_fixture
 
 for _ in {1..30}; do
-  if osascript -e 'tell application "System Events" to return exists application process "Mudsnote"' 2>/dev/null \
+  if osascript -e 'tell application "System Events" to return exists (application processes whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))' 2>/dev/null \
     | grep -q true; then
     break
   fi
@@ -52,7 +74,7 @@ sleep "${MUDSNOTE_LIBRARY_SMOKE_LAUNCH_DELAY:-3}"
 UI_READY=false
 for _ in {1..30}; do
   if osascript <<'APPLESCRIPT' 2>/dev/null | grep -q true
-tell application "System Events" to tell process "Mudsnote"
+tell application "System Events" to tell (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))
   if (count windows) = 0 then return false
   set foundEditor to false
   set elements to entire contents of window 1
@@ -77,7 +99,7 @@ if [[ "$UI_READY" != true ]]; then
   exit 1
 fi
 
-open "$APP_PATH"
+ensure_fixture
 sleep 0.3
 
 osascript - "$NOTE_TITLE" "$NOTE_BODY" <<'APPLESCRIPT'
@@ -85,9 +107,9 @@ on run arguments
   set noteTitle to item 1 of arguments
   set noteBody to item 2 of arguments
 
-  tell application "Mudsnote" to activate
+  tell application "System Events" to set frontmost of (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer)) to true
   tell application "System Events"
-    tell process "Mudsnote"
+    tell (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))
       set frontmost to true
       repeat 30 times
         if (count windows) > 0 then exit repeat
@@ -156,7 +178,7 @@ APPLESCRIPT
 SEARCH_EVIDENCE=""
 for _ in {1..30}; do
   SEARCH_EVIDENCE="$(osascript <<'APPLESCRIPT' 2>/dev/null || true
-tell application "System Events" to tell process "Mudsnote"
+tell application "System Events" to tell (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))
   set evidence to ""
   set elements to entire contents of window 1
   repeat with index from 1 to count elements
@@ -210,8 +232,8 @@ if grep -Fq "Existing Seed" <<<"$SEARCH_EVIDENCE"; then
 fi
 
 osascript <<'APPLESCRIPT' >/dev/null
-tell application "Mudsnote" to activate
-tell application "System Events" to tell process "Mudsnote"
+tell application "System Events" to set frontmost of (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer)) to true
+tell application "System Events" to tell (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))
   set frontmost to true
   key code 125
   key code 36
@@ -234,8 +256,8 @@ if [[ -z "$TRASHED_NOTE" || -e "$SAVED_NOTE" ]]; then
 fi
 
 osascript <<'APPLESCRIPT' >/dev/null
-tell application "Mudsnote" to activate
-tell application "System Events" to tell process "Mudsnote"
+tell application "System Events" to set frontmost of (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer)) to true
+tell application "System Events" to tell (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))
   set frontmost to true
   set trashCellIndex to 0
   set elements to entire contents of window 1
@@ -270,8 +292,8 @@ if [[ ! -e "$SAVED_NOTE" || -e "$TRASHED_NOTE" ]]; then
 fi
 
 osascript <<'APPLESCRIPT' >/dev/null
-tell application "Mudsnote" to activate
-tell application "System Events" to tell process "Mudsnote"
+tell application "System Events" to set frontmost of (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer)) to true
+tell application "System Events" to tell (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))
   set frontmost to true
   click menu bar item "文件" of menu bar 1
   delay 0.3
@@ -294,15 +316,15 @@ if [[ ! -e "$MOVED_NOTE" || -e "$SAVED_NOTE" ]]; then
   exit 1
 fi
 
-open "$APP_PATH"
+ensure_fixture
 sleep 0.3
 
 osascript - "$ATTACHMENT_SOURCE" <<'APPLESCRIPT' >/dev/null
 on run arguments
   set attachmentPath to item 1 of arguments
   set the clipboard to POSIX file attachmentPath
-  tell application "Mudsnote" to activate
-  tell application "System Events" to tell process "Mudsnote"
+  tell application "System Events" to set frontmost of (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer)) to true
+  tell application "System Events" to tell (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))
     set frontmost to true
     set elements to entire contents of window 1
     set bodyIndex to 0
@@ -346,7 +368,7 @@ fi
 
 OBJECT_REPLACEMENT_CHARACTER=$'\xEF\xBF\xBC'
 ATTACHMENT_UI_EVIDENCE="$(osascript <<'APPLESCRIPT'
-tell application "System Events" to tell process "Mudsnote"
+tell application "System Events" to tell (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))
   set bodyValue to ""
   set hasAttachmentIndicator to false
   set elements to entire contents of window 1
@@ -370,20 +392,14 @@ if [[ "$ATTACHMENT_UI_EVIDENCE" != *"$OBJECT_REPLACEMENT_CHARACTER"* ]] \
   exit 1
 fi
 
-pkill -x Mudsnote >/dev/null 2>&1 || true
-sleep 0.5
-open -n "$APP_PATH" --args \
-  --library \
-  --visual-qa-defaults-suite "$DEFAULTS_SUITE" \
-  --visual-qa-notes-dir "$NOTES_DIR" \
-  --visual-qa-app-support-dir "$APP_SUPPORT_DIR"
+launch_fixture
 sleep "${MUDSNOTE_LIBRARY_SMOKE_RELAUNCH_DELAY:-3}"
 
 RELOADED_ATTACHMENT_EVIDENCE="$(osascript - "$NOTE_TITLE" <<'APPLESCRIPT'
 on run arguments
   set noteTitle to item 1 of arguments
-  tell application "Mudsnote" to activate
-  tell application "System Events" to tell process "Mudsnote"
+  tell application "System Events" to set frontmost of (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer)) to true
+  tell application "System Events" to tell (first application process whose unix id is ((system attribute "MUDSNOTE_SMOKE_PID") as integer))
     set frontmost to true
     repeat 30 times
       if (count windows) > 0 then exit repeat

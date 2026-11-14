@@ -24,7 +24,7 @@ extension EditorWindowController {
     }
 
     func interpretTypedMarkdownIfNeeded() {
-        guard let storage = editorTextView.textStorage else { return }
+        guard !editorTextView.hasMarkedText(), let storage = editorTextView.textStorage else { return }
 
         let currentLineRange = visibleLineRangeForSelection()
         let currentText = (storage.string as NSString).substring(with: currentLineRange)
@@ -33,7 +33,10 @@ extension EditorWindowController {
         let selection = editorTextView.selectedRange()
         let selectionStartOffset = max(selection.location - currentLineRange.location, 0)
         let selectionEndOffset = max(NSMaxRange(selection) - currentLineRange.location, 0)
-        let rendered = MarkdownRichTextCodec.renderLine(currentText, theme: theme)
+        if currentLineRange.length > 0,
+           storage.attribute(MarkdownRichTextCodec.literalMarkdownKey, at: currentLineRange.location, effectiveRange: nil) as? Bool == true { return }
+        let markdown = MarkdownRichTextCodec.serialize(storage.attributedSubstring(from: currentLineRange), theme: theme)
+        let rendered = MarkdownRichTextCodec.renderLine(markdown, theme: theme, baseURL: activeFloatingNoteURL ?? fileURL)
         let clampedStart = min(selectionStartOffset, rendered.length)
         let clampedEnd = min(selectionEndOffset, rendered.length)
         let newSelection = NSRange(
@@ -48,7 +51,7 @@ extension EditorWindowController {
     }
 
     func normalizeCurrentLineAfterListPrefixEdit() -> Bool {
-        guard let storage = editorTextView.textStorage else { return false }
+        guard !editorTextView.hasMarkedText(), let storage = editorTextView.textStorage else { return false }
 
         let lineRange = visibleLineRangeForSelection()
         guard MarkdownRichTextCodec.needsParagraphResetAfterListPrefixEdit(range: lineRange, in: storage) else {
@@ -138,7 +141,8 @@ extension EditorWindowController {
     }
 
     func replaceText(in range: NSRange, with replacement: String, attributes: [NSAttributedString.Key: Any]? = nil) {
-        guard let storage = editorTextView.textStorage else { return }
+        guard let storage = editorTextView.textStorage, range.location >= 0, range.length >= 0,
+              range.location <= storage.length, range.length <= storage.length - range.location else { return }
         suppressTextDidChange = true
         storage.replaceCharacters(
             in: range,

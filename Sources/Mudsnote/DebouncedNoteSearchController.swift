@@ -13,8 +13,6 @@ final class DebouncedNoteSearchController {
 
     private let noteStore: NoteStore
     private let limit: Int
-    private var searchSession: NoteSearchSession?
-    private var searchSessionRootsKey: [String]?
     private var searchTask: Task<Void, Never>?
     private var generation = 0
 
@@ -39,8 +37,6 @@ final class DebouncedNoteSearchController {
         let noteStore = noteStore
         let limit = limit
         let requestedRoots = roots ?? noteStore.knownSearchRoots()
-        let rootsKey = requestedRoots.map { $0.standardizedFileURL.path }.sorted()
-        let existingSession = searchSessionRootsKey == rootsKey ? searchSession : nil
         searchTask = Task.detached(priority: .userInitiated) { [weak self] in
             if delay > .zero {
                 do {
@@ -51,18 +47,8 @@ final class DebouncedNoteSearchController {
             }
             guard !Task.isCancelled else { return }
 
-            let session: NoteSearchSession
-            if let existingSession {
-                session = existingSession
-            } else {
-                guard let builtSession = noteStore.makeSearchSession(
-                    roots: requestedRoots,
-                    cancellationCheck: { Task.isCancelled }
-                ) else {
-                    return
-                }
-                session = builtSession
-            }
+            guard let session = noteStore.makeSearchSession(
+                roots: requestedRoots, cancellationCheck: { Task.isCancelled }) else { return }
             guard !Task.isCancelled else { return }
             let results = session.searchNotes(
                 query: query,
@@ -83,22 +69,16 @@ final class DebouncedNoteSearchController {
                       self.generation == requestGeneration else {
                     return
                 }
-                self.searchSession = session
-                self.searchSessionRootsKey = rootsKey
                 self.searchTask = nil
                 completion(payload)
             }
         }
     }
 
-    func cancel(invalidateSession: Bool = false) {
+    func cancel() {
         generation += 1
         searchTask?.cancel()
         searchTask = nil
-        if invalidateSession {
-            searchSession = nil
-            searchSessionRootsKey = nil
-        }
     }
 
     func waitForCurrentSearchForTesting() async {

@@ -2,12 +2,14 @@ import Foundation
 import MudsnoteCore
 
 enum LibraryAttachmentState: Int, Sendable, CaseIterable {
+    case unknown
     case missing
     case unreferenced
     case referenced
 
     var title: String {
         switch self {
+        case .unknown: return "待核实"
         case .missing:
             return "缺失"
         case .unreferenced:
@@ -30,6 +32,7 @@ struct LibraryAttachmentItem: Equatable, Sendable {
 
     var referenceSummary: String {
         switch state {
+        case .unknown: return "引用扫描不完整"
         case .missing:
             return referencingNotes.count == 1
                 ? "1 篇笔记中的链接失效"
@@ -49,9 +52,11 @@ enum LibraryAttachmentInventory {
 
     static func build(
         roots: [URL],
+        protectedSources: [(url: URL, markdown: String)] = [],
         fileManager: FileManager = .default
     ) -> [LibraryAttachmentItem] {
         let roots = deduplicatedRoots(roots)
+        var complete = true
         var noteURLs: [URL] = []
         var attachmentURLsByPath: [String: URL] = [:]
 
@@ -60,15 +65,19 @@ enum LibraryAttachmentInventory {
                 under: root,
                 fileManager: fileManager,
                 noteURLs: &noteURLs,
-                attachmentURLsByPath: &attachmentURLsByPath
+                attachmentURLsByPath: &attachmentURLsByPath,
+                complete: &complete
             )
         }
 
         var referencingNotesByAttachmentPath: [String: Set<URL>] = [:]
+        var sources = protectedSources
         for noteURL in noteURLs {
-            guard let markdown = try? String(contentsOf: noteURL, encoding: .utf8) else {
-                continue
-            }
+            if let markdown = try? String(contentsOf: noteURL, encoding: .utf8) {
+                sources.append((noteURL, markdown))
+            } else { complete = false }
+        }
+        for (noteURL, markdown) in sources {
             for target in localAttachmentTargets(in: markdown) {
                 guard let attachmentURL = managedAttachmentURL(
                     for: target,
@@ -92,7 +101,7 @@ enum LibraryAttachmentInventory {
                 .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
             let exists = attachmentURLsByPath[path] != nil
             let state: LibraryAttachmentState = exists
-                ? (references.isEmpty ? .unreferenced : .referenced)
+                ? (references.isEmpty ? (complete ? .unreferenced : .unknown) : .referenced)
                 : .missing
             let byteCount = exists
                 ? (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
@@ -132,6 +141,14 @@ enum LibraryAttachmentInventory {
             }
             cursor = opener.upperBound
         }
+        // A definition can protect an attachment even if its use is outside
+        // this scan (drafts and recovery notes are scanned separately).
+        let definitions = try? NSRegularExpression(pattern: #"(?m)^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|([^\s]+))"#)
+        let text = markdown as NSString
+        for match in definitions?.matches(in: markdown, range: NSRange(location: 0, length: text.length)) ?? [] {
+            let range = match.range(at: match.range(at: 1).location == NSNotFound ? 2 : 1)
+            targets.append(text.substring(with: range))
+        }
         return targets
     }
 
@@ -139,18 +156,21 @@ enum LibraryAttachmentInventory {
         under root: URL,
         fileManager: FileManager,
         noteURLs: inout [URL],
-        attachmentURLsByPath: inout [String: URL]
+        attachmentURLsByPath: inout [String: URL],
+        complete: inout Bool
     ) {
         guard let enumerator = fileManager.enumerator(
             at: root,
             includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
             options: [.skipsHiddenFiles, .skipsPackageDescendants]
         ) else {
+            complete = false
             return
         }
 
         while let url = enumerator.nextObject() as? URL {
             guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey]) else {
+                complete = false
                 continue
             }
             if values.isDirectory == true,

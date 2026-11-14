@@ -23,6 +23,7 @@ final class LibraryWindowController: NSWindowController,
     MarkdownTextViewCommands,
     WindowOpacityAdjusting
 {
+    var documentIdentity = UUID()
     let noteStore: NoteStore
     let sidebarLibraryTitle = NSTextField(labelWithString: "目录")
     weak var sidebarSearchButton: NSButton?

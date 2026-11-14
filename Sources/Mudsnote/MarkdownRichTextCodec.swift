@@ -5,6 +5,8 @@ import ImageIO
 import MudsnoteCore
 
 enum MarkdownRichTextCodec {
+    static let literalMarkdownKey = NSAttributedString.Key("MudsnoteLiteralMarkdown")
+    private static let originalMarkdownKey = NSAttributedString.Key("MudsnoteOriginalMarkdown")
     private static let tablePlaceholder = "\u{200B}"
     @MainActor
     private static let automaticLinkDetector = try? NSDataDetector(
@@ -29,7 +31,32 @@ enum MarkdownRichTextCodec {
         let output = NSMutableAttributedString()
 
         var lineIndex = 0
+        var fence: (Character, Int)?
         while lineIndex < lines.count {
+            let line = lines[lineIndex]
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            let marker = trimmed.first
+            let markerCount = marker.map { first in trimmed.prefix { $0 == first }.count } ?? 0
+            let isFence = (marker == "`" || marker == "~") && markerCount >= 3
+            let isLiteral = fence != nil || isFence || line.hasPrefix("  ") || line.hasPrefix("\t")
+            if isLiteral {
+                var attributes = theme.baseAttributes(for: .paragraph)
+                attributes[literalMarkdownKey] = true
+                attributes[.font] = theme.codeFont
+                output.append(NSAttributedString(string: line, attributes: attributes))
+                if let active = fence {
+                    if marker == active.0 && markerCount >= active.1 && trimmed.dropFirst(markerCount).isEmpty {
+                        fence = nil
+                    }
+                } else if isFence, let marker {
+                    fence = (marker, markerCount)
+                }
+                if lineIndex < lines.count - 1 {
+                    output.append(NSAttributedString(string: "\n", attributes: attributes))
+                }
+                lineIndex += 1
+                continue
+            }
             if let table = parsedMarkdownTable(in: lines, startingAt: lineIndex) {
                 let nextLineIndex = lineIndex + table.consumedLineCount
                 output.append(renderTable(
@@ -134,6 +161,21 @@ enum MarkdownRichTextCodec {
             paragraphString.addAttribute(.qmParagraphKind, value: kind.encodedValue, range: NSRange(location: 0, length: paragraphString.length))
         }
 
+        if paragraphString.length > 0 {
+            let range = NSRange(location: 0, length: paragraphString.length)
+            let canonical = serializeLine(range: range, visibleText: paragraphString.string,
+                in: paragraphString, theme: theme, context: SerializationContext(attributedString: paragraphString))
+            let isChecklistShortcut: Bool
+            if case .checklist = kind {
+                let trimmed = line.trimmingCharacters(in: .whitespaces)
+                isChecklistShortcut = trimmed.hasPrefix("[") || trimmed.hasPrefix("【】")
+            } else {
+                isChecklistShortcut = false
+            }
+            if line != canonical && !isChecklistShortcut {
+                paragraphString.addAttribute(originalMarkdownKey, value: [line, canonical], range: range)
+            }
+        }
         return paragraphString
     }
 
@@ -538,6 +580,9 @@ enum MarkdownRichTextCodec {
         theme: MarkdownEditorTheme,
         context: SerializationContext
     ) -> String {
+        if range.length > 0, attributedString.attribute(literalMarkdownKey, at: range.location, effectiveRange: nil) as? Bool == true {
+            return visibleText
+        }
         let kind = paragraphKind(at: range, in: attributedString)
         let contentRange = rangeAfterVisiblePrefix(for: range, in: attributedString, kind: kind)
         let contentMarkdown = serializeInline(
@@ -548,20 +593,20 @@ enum MarkdownRichTextCodec {
             context: context
         )
 
+        let canonical: String
         switch kind {
-        case .paragraph:
-            return contentMarkdown
-        case .heading(let level):
-            guard !contentMarkdown.isEmpty else { return "" }
-            return String(repeating: "#", count: max(level, 1)) + " " + contentMarkdown
-        case .bullet:
-            return contentMarkdown.isEmpty ? "- " : "- " + contentMarkdown
-        case .ordered(let index):
-            return "\(max(index, 1)). " + contentMarkdown
-        case .checklist(let checked):
-            let marker = checked ? "- [x] " : "- [ ] "
-            return marker + contentMarkdown
+        case .paragraph: canonical = contentMarkdown
+        case .heading(let level): canonical = contentMarkdown.isEmpty ? "" : String(repeating: "#", count: max(level, 1)) + " " + contentMarkdown
+        case .bullet: canonical = "- " + contentMarkdown
+        case .ordered(let index): canonical = "\(max(index, 1)). " + contentMarkdown
+        case .checklist(let checked): canonical = (checked ? "- [x] " : "- [ ] ") + contentMarkdown
         }
+        if range.length > 0,
+           let original = attributedString.attribute(originalMarkdownKey, at: range.location, effectiveRange: nil) as? [String],
+           original.count == 2, original[1] == canonical {
+            return original[0]
+        }
+        return canonical
     }
 
     private static func serializeInline(

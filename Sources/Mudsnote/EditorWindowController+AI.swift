@@ -63,18 +63,21 @@ extension EditorWindowController {
             scope: context.scope
         )
 
-        Task {
+        aiTask?.cancel()
+        let requestID = UUID()
+        aiRequestID = requestID
+        aiTask = Task { @MainActor [weak self] in
             do {
                 let output = try await provider.generate(request: request)
-                await MainActor.run {
-                    statusLabel.stringValue = previousStatus
-                    presentAIResult(output, actionID: actionID, context: context)
-                }
+                guard let self, !Task.isCancelled, self.aiRequestID == requestID, !self.didCloseWindow else { return }
+                self.aiTask = nil
+                self.statusLabel.stringValue = previousStatus
+                self.presentAIResult(output, actionID: actionID, context: context)
             } catch {
-                await MainActor.run {
-                    statusLabel.stringValue = previousStatus
-                    presentAIError(error)
-                }
+                guard let self, !Task.isCancelled, self.aiRequestID == requestID, !self.didCloseWindow else { return }
+                self.aiTask = nil
+                self.statusLabel.stringValue = previousStatus
+                self.presentAIError(error)
             }
         }
     }
@@ -90,21 +93,21 @@ extension EditorWindowController {
     private func selectedMarkdownOrWholeNote(preferWholeNote: Bool) -> AIEditorContext? {
         let selection = editorTextView.selectedRange()
         if !preferWholeNote, selection.length > 0, let markdown = markdown(in: selection), !markdown.isBlank {
-            return AIEditorContext(markdown: markdown, range: selection, scope: .selection)
+            return AIEditorContext(documentIdentity: documentIdentity, revision: draftContentRevision, markdown: markdown, range: selection, scope: .selection)
         }
         let markdown = serializedBodyMarkdown()
         guard !markdown.isBlank else { return nil }
-        return AIEditorContext(markdown: markdown, range: NSRange(location: editorTextView.string.utf16.count, length: 0), scope: .wholeNote)
+        return AIEditorContext(documentIdentity: documentIdentity, revision: draftContentRevision, markdown: markdown, range: NSRange(location: 0, length: editorTextView.string.utf16.count), scope: .wholeNote)
     }
 
     private func selectedMarkdownOrCurrentParagraph() -> AIEditorContext? {
         let selection = editorTextView.selectedRange()
         if selection.length > 0, let markdown = markdown(in: selection), !markdown.isBlank {
-            return AIEditorContext(markdown: markdown, range: selection, scope: .selection)
+            return AIEditorContext(documentIdentity: documentIdentity, revision: draftContentRevision, markdown: markdown, range: selection, scope: .selection)
         }
         let lineRange = visibleLineRangeForSelection()
         guard let markdown = markdown(in: lineRange), !markdown.isBlank else { return nil }
-        return AIEditorContext(markdown: markdown, range: lineRange, scope: .currentParagraph)
+        return AIEditorContext(documentIdentity: documentIdentity, revision: draftContentRevision, markdown: markdown, range: lineRange, scope: .currentParagraph)
     }
 
     private func markdown(in range: NSRange) -> String? {
@@ -144,7 +147,12 @@ extension EditorWindowController {
         alert.addButton(withTitle: "复制")
         alert.addButton(withTitle: "取消")
 
+        if !aiContextIsCurrent(context) {
+            alert.informativeText = "原文已变化，结果仅供复制。请重新发起请求后再替换。"
+            alert.buttons.prefix(2).forEach { $0.isEnabled = false }
+        }
         let result = alert.runModal()
+        guard result == .alertThirdButtonReturn || aiContextIsCurrent(context) else { return }
         switch (actionID.defaultOutputMode, result) {
         case (.replaceInput, .alertFirstButtonReturn):
             applyAIReplacement(output, range: context.range)
@@ -161,6 +169,13 @@ extension EditorWindowController {
             break
         }
         window?.makeFirstResponder(editorTextView)
+    }
+
+    private func aiContextIsCurrent(_ context: AIEditorContext) -> Bool {
+        context.documentIdentity == documentIdentity && context.revision == draftContentRevision
+            && context.range.location >= 0 && context.range.length >= 0
+            && context.range.location <= editorTextView.string.utf16.count
+            && context.range.length <= editorTextView.string.utf16.count - context.range.location
     }
 
     private func applyAIReplacement(_ output: String, range: NSRange) {
@@ -202,6 +217,8 @@ extension EditorWindowController {
 }
 
 private struct AIEditorContext {
+    let documentIdentity: UUID
+    let revision: Int
     let markdown: String
     let range: NSRange
     let scope: AIInputScope

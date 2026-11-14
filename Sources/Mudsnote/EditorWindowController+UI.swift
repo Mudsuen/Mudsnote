@@ -642,6 +642,11 @@ extension EditorWindowController {
     }
 
     func applyInitialContent(title: String, body: String) {
+        documentIdentity = UUID()
+        editorTextView.undoManager?.removeAllActions()
+        aiTask?.cancel()
+        aiTask = nil
+        aiRequestID = UUID()
         if isQuickCaptureMode {
             hasAutomaticTitleFormatting = false
             applyBodyMarkdown(QuickCaptureDocumentState.unifiedMarkdown(

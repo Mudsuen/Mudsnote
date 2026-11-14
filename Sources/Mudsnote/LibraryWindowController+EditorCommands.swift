@@ -87,12 +87,11 @@ extension LibraryWindowController {
         guard selectedScope != .trash, let storage = editorTextView.textStorage else { return }
         focusEditorForLibraryAction()
         let selection = editorTextView.selectedRange()
-        let rendered = MarkdownRichTextCodec.render(
-            markdown: markdown,
-            theme: theme,
-            baseURL: renderingBaseURL ?? selectedURL,
-            imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
-        )
+        let rendered: NSAttributedString = isEditorShowingMarkdownSource
+            ? NSAttributedString(string: markdown, attributes: editorTextView.typingAttributes)
+            : MarkdownRichTextCodec.render(
+                markdown: markdown, theme: theme, baseURL: renderingBaseURL ?? selectedURL,
+                imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:))
 
         suppressEditorChanges = true
         storage.replaceCharacters(in: selection, with: rendered)
