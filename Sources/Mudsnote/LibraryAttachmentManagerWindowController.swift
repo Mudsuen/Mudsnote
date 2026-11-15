@@ -3,7 +3,7 @@ import AppKit
 @MainActor
 final class LibraryAttachmentManagerWindowController: NSWindowController,
     NSTableViewDataSource,
-    NSTableViewDelegate
+    NSTableViewDelegate, NSWindowDelegate
 {
     private enum Column {
         static let name = NSUserInterfaceItemIdentifier("AttachmentName")
@@ -13,12 +13,13 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
     }
 
     private let rootsProvider: () -> [URL]
-    private let inventoryLoader: @Sendable ([URL]) throws -> [LibraryAttachmentItem]
+    private let inventoryLoader: @Sendable ([URL]) throws -> LibraryAttachmentScan
+    private let removeAttachment: @Sendable (URL) throws -> Void
     private let onOpenNote: (URL) -> Void
     private let quickLookController = AttachmentQuickLookController()
     private let tableView = NSTableView()
     private let filterControl = NSSegmentedControl(
-        labels: ["全部", "已引用", "未引用", "缺失"],
+        labels: ["全部", "已引用", "未引用", "缺失", "待核实"],
         trackingMode: .selectOne,
         target: nil,
         action: nil
@@ -32,18 +33,24 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
     private let deleteButton = NSButton(title: "删除未引用附件…", target: nil, action: nil)
     private var allItems: [LibraryAttachmentItem] = []
     private var visibleItems: [LibraryAttachmentItem] = []
+    private var scanIsComplete = true
     private var loadGeneration = 0
+    private var scanTask: Task<Void, Never>?
+    private enum LoadState { case loaded, loading, failed(message: String, detail: String) }
+    private var loadState: LoadState = .loaded
 
     init(
         rootsProvider: @escaping () -> [URL],
-        inventoryLoader: @escaping @Sendable ([URL]) throws -> [LibraryAttachmentItem] = {
-            LibraryAttachmentInventory.build(roots: $0)
+        inventoryLoader: @escaping @Sendable ([URL]) throws -> LibraryAttachmentScan = {
+            LibraryAttachmentInventory.scan(roots: $0)
         },
+        removeAttachment: @escaping @Sendable (URL) throws -> Void = { try FileManager.default.trashItem(at: $0, resultingItemURL: nil) },
         onOpenNote: @escaping (URL) -> Void
     ) {
         self.rootsProvider = rootsProvider
         self.inventoryLoader = inventoryLoader
         self.onOpenNote = onOpenNote
+        self.removeAttachment = removeAttachment
         let window = NSWindow(
             contentRect: NSRect(x: 0, y: 0, width: 760, height: 460),
             styleMask: [.titled, .closable, .miniaturizable, .resizable],
@@ -54,6 +61,7 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         window.minSize = NSSize(width: 620, height: 340)
         window.isReleasedWhenClosed = false
         super.init(window: window)
+        window.delegate = self
         buildUI()
     }
 
@@ -162,30 +170,77 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         updateSelectionActions()
     }
 
-    private func refresh() {
+    private func refresh() { scan() }
+
+    private func scan(removing item: LibraryAttachmentItem? = nil) {
+        scanTask?.cancel()
         loadGeneration += 1
         let generation = loadGeneration
-        let roots = rootsProvider()
-        refreshButton.isEnabled = false
-        summaryLabel.stringValue = "正在扫描…"
-        let loader = inventoryLoader
-        Task.detached(priority: .userInitiated) { [weak self] in
-            let result = Result { try loader(roots) }
+        let selectedPath = selectedItem?.url.path
+        let roots = rootsProvider(), loader = inventoryLoader, remove = removeAttachment
+        loadState = .loading
+        updateLoadPresentation()
+        scanTask = Task.detached(priority: .userInitiated) { [weak self] in
+            let result = Result {
+                try Task.checkCancellation()
+                var scan = try loader(roots)
+                try Task.checkCancellation()
+                if let item, scan.isComplete, scan.items.contains(where: {
+                    $0.url.standardizedFileURL == item.url.standardizedFileURL && $0.state == .unreferenced
+                }) {
+                    try remove(item.url)
+                    scan.items.removeAll { $0.url.standardizedFileURL == item.url.standardizedFileURL }
+                }
+                return scan
+            }
+            guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard let self, generation == self.loadGeneration else { return }
-                self.refreshButton.isEnabled = true
+                self.scanTask = nil
                 switch result {
-                case .success(let items):
-                    self.allItems = items
-                    self.applyFilter(preserving: nil)
+                case .success(let scan):
+                    self.allItems = scan.items
+                    self.scanIsComplete = scan.isComplete
+                    self.loadState = .loaded
                 case .failure(let error):
                     self.allItems = []
-                    self.applyFilter(preserving: nil)
-                    self.summaryLabel.stringValue = "扫描失败，请重试"
-                    self.summaryLabel.toolTip = error.localizedDescription
+                    self.loadState = .failed(message: item == nil ? "扫描失败，请重试" : "删除未完成，请重试", detail: error.localizedDescription)
                 }
+                self.applyFilter(preserving: selectedPath)
             }
         }
+    }
+
+    func windowWillClose(_ notification: Notification) {
+        loadGeneration += 1
+        scanTask?.cancel()
+        scanTask = nil
+    }
+
+    private func updateLoadPresentation() {
+        switch loadState {
+        case .loading:
+            summaryLabel.stringValue = "正在扫描…"
+            summaryLabel.toolTip = nil
+            emptyLabel.isHidden = true
+            refreshButton.isEnabled = false
+        case .failed(let message, let detail):
+            summaryLabel.stringValue = message
+            summaryLabel.toolTip = detail
+            emptyLabel.isHidden = true
+            refreshButton.isEnabled = true
+        case .loaded:
+            let missing = allItems.filter { $0.state == .missing }.count
+            let unreferenced = allItems.filter { $0.state == .unreferenced }.count
+            let unknown = allItems.filter { $0.state == .unknown }.count
+            summaryLabel.stringValue = "\(allItems.count) 个附件 · \(unreferenced) 个未引用 · \(missing) 个缺失"
+                + (unknown > 0 ? " · \(unknown) 个待核实" : "")
+                + (!scanIsComplete ? " · 引用扫描不完整" : "")
+            summaryLabel.toolTip = !scanIsComplete ? "部分目录或笔记无法读取，未确认引用的附件不能删除。" : nil
+            emptyLabel.isHidden = !scanIsComplete || !visibleItems.isEmpty
+            refreshButton.isEnabled = true
+        }
+        updateSelectionActions()
     }
 
     private func applyFilter(preserving selectedPath: String?) {
@@ -197,6 +252,8 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
             state = .unreferenced
         case 3:
             state = .missing
+        case 4:
+            state = .unknown
         default:
             state = nil
         }
@@ -210,12 +267,7 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         } else {
             tableView.deselectAll(nil)
         }
-        let missing = allItems.filter { $0.state == .missing }.count
-        let unreferenced = allItems.filter { $0.state == .unreferenced }.count
-        summaryLabel.stringValue = "\(allItems.count) 个附件 · \(unreferenced) 个未引用 · \(missing) 个缺失"
-        summaryLabel.toolTip = nil
-        emptyLabel.isHidden = !visibleItems.isEmpty
-        updateSelectionActions()
+        updateLoadPresentation()
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
@@ -281,7 +333,8 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         previewButton.isEnabled = exists
         revealButton.isEnabled = exists
         openNoteButton.isEnabled = !(item?.referencingNotes.isEmpty ?? true)
-        deleteButton.isEnabled = item?.state == .unreferenced && exists
+        if case .loaded = loadState { deleteButton.isEnabled = item?.state == .unreferenced && exists }
+        else { deleteButton.isEnabled = false }
     }
 
     @objc
@@ -330,21 +383,19 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         alert.addButton(withTitle: "移到废纸篓")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        do {
-            guard try inventoryLoader(rootsProvider()).contains(where: {
-                $0.url.standardizedFileURL == item.url.standardizedFileURL && $0.state == .unreferenced
-            }) else {
-                refresh()
-                return
-            }
-            try FileManager.default.trashItem(at: item.url, resultingItemURL: nil)
-            refresh()
-        } catch {
-            let errorAlert = NSAlert(error: error)
-            errorAlert.messageText = "无法删除附件"
-            errorAlert.runModal()
-        }
+        scan(removing: item)
     }
+
+    func refreshAttachmentInventoryForTesting() { refresh() }
+    func waitForAttachmentInventoryForTesting() async { await scanTask?.value }
+    func deleteSelectedAttachmentForTesting() {
+        guard let item = selectedItem, item.state == .unreferenced else { return }
+        scan(removing: item)
+    }
+    var selectedAttachmentPathForTesting: String? { selectedItem?.url.path }
+    var attachmentSummaryForTesting: String { summaryLabel.stringValue }
+    var showsEmptyAttachmentMessageForTesting: Bool { !emptyLabel.isHidden }
+    var canOpenSelectedAttachmentSourceForTesting: Bool { openNoteButton.isEnabled }
 
     var attachmentItemsForTesting: [LibraryAttachmentItem] {
         visibleItems
@@ -361,6 +412,8 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
 
     func loadAttachmentItemsForTesting(_ items: [LibraryAttachmentItem]) {
         allItems = items
+        scanIsComplete = true
+        loadState = .loaded
         filterControl.selectedSegment = 0
         applyFilter(preserving: nil)
     }
@@ -373,7 +426,9 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
             filterControl.selectedSegment = 2
         case .missing:
             filterControl.selectedSegment = 3
-        case nil, .unknown:
+        case .unknown:
+            filterControl.selectedSegment = 4
+        case nil:
             filterControl.selectedSegment = 0
         }
         applyFilter(preserving: nil)

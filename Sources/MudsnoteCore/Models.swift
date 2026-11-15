@@ -190,7 +190,7 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
         hasMetadataTags: Bool
     ) -> String {
         let trimmedTitle = title.trimmingCharacters(in: .whitespacesAndNewlines)
-        let trimmedBody = body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let trimmedBody = body.trimmingCharacters(in: .newlines)
 
         if trimmedTitle.isEmpty {
             return trimmedBody
@@ -252,7 +252,7 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
         let body = remainingLines
             .drop { $0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty }
             .joined(separator: "\n")
-            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: .newlines)
 
         return MarkdownEditorDocument(title: title, body: body, tags: normalizedTags(tags))
     }

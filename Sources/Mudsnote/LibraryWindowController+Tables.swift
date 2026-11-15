@@ -40,6 +40,7 @@ extension LibraryWindowController {
         let rows: [[String]]
         let cellRanges: [[NSRange]]
         let columnCount: Int
+        let alignments: [String]
     }
 
     struct RichMarkdownTableLocation {
@@ -53,6 +54,21 @@ extension LibraryWindowController {
               editorTextView.selectedRange().length == 0,
               let storage = editorTextView.textStorage else {
             return false
+        }
+
+        // Ordinary Tab only inspects the current and adjacent cell paragraphs.
+        // A full content snapshot is needed only when the last cell adds a row.
+        let probe = min(editorTextView.selectedRange().location, max(0, storage.length - 1))
+        if storage.length > 0, let tableID = tableAttributeString(.qmTableID, at: probe, in: storage) {
+            let text = storage.string as NSString
+            let current = text.paragraphRange(for: NSRange(location: probe, length: 0))
+            let adjacent = direction == .next ? NSMaxRange(current) : current.location - 1
+            if adjacent >= 0, adjacent < storage.length,
+               tableAttributeString(.qmTableID, at: adjacent, in: storage) == tableID {
+                moveEditorSelection(to: text.paragraphRange(for: NSRange(location: adjacent, length: 0)).location)
+                return true
+            }
+            if direction == .previous { moveEditorSelection(to: current.location); return true }
         }
 
         if let location = richMarkdownTableLocation(atCharacterIndex: editorTextView.selectedRange().location) {
@@ -167,10 +183,10 @@ extension LibraryWindowController {
 
         let currentLineRange = visibleLineRangeForSelection()
         let currentLine = string.substring(with: currentLineRange)
-        guard markdownTableColumnCount(in: currentLine) != nil else { return false }
+        guard let currentColumnCount = markdownTableColumnCount(in: currentLine) else { return false }
 
         var targetLineRange = currentLineRange
-        var columnCount = markdownTableColumnCount(in: currentLine) ?? 2
+        var columnCount = currentColumnCount
         if !isMarkdownTableSeparatorLine(currentLine),
            let nextLineRange = lineRange(after: currentLineRange, in: string) {
             let nextLine = string.substring(with: nextLineRange)
@@ -188,7 +204,10 @@ extension LibraryWindowController {
     func insertEmptyMarkdownTableRow(after targetLineRange: NSRange, columnCount: Int, in storage: NSTextStorage) -> Int {
         let insertionLocation = NSMaxRange(targetLineRange)
         let rowMarkdown = "\n" + emptyMarkdownTableRow(columnCount: columnCount)
-        let rendered = MarkdownRichTextCodec.render(
+        let undoSnapshot = libraryFormattingUndoSnapshot()
+        let rendered = isEditorShowingMarkdownSource
+            ? NSAttributedString(string: rowMarkdown, attributes: editorTextView.typingAttributes)
+            : MarkdownRichTextCodec.render(
             markdown: rowMarkdown,
             theme: theme,
             baseURL: selectedURL,
@@ -200,7 +219,10 @@ extension LibraryWindowController {
         suppressEditorChanges = false
 
         markDirty()
-        return min(insertionLocation + 3, storage.length)
+        let selection = min(insertionLocation + 3, storage.length)
+        moveEditorSelection(to: selection)
+        registerLibraryFormattingUndoIfNeeded(before: undoSnapshot, actionName: "插入表格行")
+        return selection
     }
 
     @discardableResult
@@ -237,6 +259,7 @@ extension LibraryWindowController {
 
         let deletionRange = fullLineDeletionRange(for: currentLineRange, in: string)
         let nextSelectionLocation = deletionRange.location
+        let undoSnapshot = libraryFormattingUndoSnapshot()
 
         suppressEditorChanges = true
         storage.replaceCharacters(in: deletionRange, with: NSAttributedString(string: ""))
@@ -244,6 +267,7 @@ extension LibraryWindowController {
 
         markDirty()
         moveEditorSelection(to: nextSelectionLocation)
+        registerLibraryFormattingUndoIfNeeded(before: undoSnapshot, actionName: "删除表格行")
         return true
     }
 
@@ -275,15 +299,18 @@ extension LibraryWindowController {
         if let location = richMarkdownTableLocation(atCharacterIndex: characterIndex) {
             guard operation != .delete || location.snapshot.columnCount > 2 else { return false }
             var rows = location.snapshot.rows
+            var alignments = location.snapshot.alignments
             let selectedColumn: Int
             switch operation {
             case .insertAfter:
                 selectedColumn = location.column + 1
+                alignments.insert("---", at: selectedColumn)
                 for rowIndex in rows.indices {
                     rows[rowIndex].insert("", at: selectedColumn)
                 }
             case .delete:
                 selectedColumn = min(location.column, location.snapshot.columnCount - 2)
+                alignments.remove(at: location.column)
                 for rowIndex in rows.indices {
                     rows[rowIndex].remove(at: location.column)
                 }
@@ -291,6 +318,7 @@ extension LibraryWindowController {
             replaceRichMarkdownTable(
                 location.snapshot,
                 rows: rows,
+                alignments: alignments,
                 selectedRow: location.row,
                 selectedColumn: selectedColumn
             )
@@ -337,8 +365,12 @@ extension LibraryWindowController {
             targetColumnIndex = min(location.columnIndex, max(location.columnCount - 2, 0))
         }
 
-        let rendered = MarkdownRichTextCodec.render(
-            markdown: replacementLines.joined(separator: "\n"),
+        let undoSnapshot = libraryFormattingUndoSnapshot()
+        let replacementMarkdown = replacementLines.joined(separator: "\n")
+        let rendered = isEditorShowingMarkdownSource
+            ? NSAttributedString(string: replacementMarkdown, attributes: editorTextView.typingAttributes)
+            : MarkdownRichTextCodec.render(
+            markdown: replacementMarkdown,
             theme: theme,
             baseURL: selectedURL,
             imageDisplayWidthProvider: noteStore.libraryImageDisplayWidth(for:)
@@ -360,6 +392,7 @@ extension LibraryWindowController {
         } else {
             moveEditorSelection(to: firstRange.location)
         }
+        registerLibraryFormattingUndoIfNeeded(before: undoSnapshot, actionName: "编辑表格列")
         return true
     }
 
@@ -383,7 +416,8 @@ extension LibraryWindowController {
 
     func richMarkdownTableSnapshot(
         atCharacterIndex characterIndex: Int,
-        in storage: NSTextStorage
+        in storage: NSTextStorage,
+        serializesContents: Bool = true
     ) -> RichMarkdownTableSnapshot? {
         guard storage.length > 0 else { return nil }
         let probeLocation = max(0, min(characterIndex, storage.length - 1))
@@ -400,6 +434,7 @@ extension LibraryWindowController {
         let string = storage.string as NSString
         var markdownByRow: [Int: [Int: String]] = [:]
         var rangesByRow: [Int: [Int: NSRange]] = [:]
+        var alignmentsByColumn: [Int: String] = [:]
         var columnCount = 0
         var cursor = tableRange.location
         while cursor < NSMaxRange(tableRange) {
@@ -423,7 +458,10 @@ extension LibraryWindowController {
                 columnCount,
                 tableAttributeInteger(.qmTableColumnCount, at: metadataLocation, in: storage) ?? 0
             )
-            let cellMarkdown = MarkdownRichTextCodec.serializeVisibleContent(
+            if alignmentsByColumn[column] == nil {
+                alignmentsByColumn[column] = tableAttributeString(.qmTableColumnAlignment, at: metadataLocation, in: storage) ?? "---"
+            }
+            let cellMarkdown = serializesContents ? MarkdownRichTextCodec.serializeVisibleContent(
                 range: cellRange,
                 in: storage,
                 paragraphKind: .paragraph,
@@ -431,7 +469,7 @@ extension LibraryWindowController {
             )
                 .replacingOccurrences(of: "\u{200B}", with: "")
                 .replacingOccurrences(of: "|", with: "\\|")
-                .trimmingCharacters(in: .whitespacesAndNewlines)
+                .trimmingCharacters(in: .whitespacesAndNewlines) : ""
             markdownByRow[row, default: [:]][column] = cellMarkdown
             rangesByRow[row, default: [:]][column] = cellRange
             cursor = NSMaxRange(clippedParagraphRange)
@@ -460,13 +498,15 @@ extension LibraryWindowController {
             tableRange: tableRange,
             rows: rows,
             cellRanges: cellRanges,
-            columnCount: columnCount
+            columnCount: columnCount,
+            alignments: (0..<columnCount).map { alignmentsByColumn[$0] ?? "---" }
         )
     }
 
     func replaceRichMarkdownTable(
         _ snapshot: RichMarkdownTableSnapshot,
         rows: [[String]],
+        alignments: [String]? = nil,
         selectedRow: Int,
         selectedColumn: Int
     ) {
@@ -477,10 +517,13 @@ extension LibraryWindowController {
             return
         }
 
+        let columnAlignments = alignments ?? snapshot.alignments
+        guard columnAlignments.count == rows[0].count else { return }
+        let undoSnapshot = libraryFormattingUndoSnapshot()
         let lines = rows.enumerated().flatMap { rowIndex, row -> [String] in
             let rowLine = markdownTableLine(cells: row)
             guard rowIndex == 0 else { return [rowLine] }
-            return [rowLine, markdownTableLine(cells: Array(repeating: "---", count: row.count))]
+            return [rowLine, markdownTableLine(cells: columnAlignments)]
         }
         let source = lines.joined(separator: "\n")
         let rendered = MarkdownRichTextCodec.render(
@@ -495,13 +538,14 @@ extension LibraryWindowController {
         suppressEditorChanges = false
         markDirty()
 
-        if let replacement = richMarkdownTableSnapshot(atCharacterIndex: snapshot.tableRange.location, in: storage),
+        if let replacement = richMarkdownTableSnapshot(atCharacterIndex: snapshot.tableRange.location, in: storage, serializesContents: false),
            replacement.cellRanges.indices.contains(selectedRow),
            replacement.cellRanges[selectedRow].indices.contains(selectedColumn) {
             moveEditorSelection(to: replacement.cellRanges[selectedRow][selectedColumn].location)
         } else {
             moveEditorSelection(to: snapshot.tableRange.location)
         }
+        registerLibraryFormattingUndoIfNeeded(before: undoSnapshot, actionName: "编辑表格")
     }
 
     func tableAttributeString(
@@ -672,27 +716,10 @@ extension LibraryWindowController {
         return fullLineRange
     }
 
-    func markdownTableColumnCount(in line: String) -> Int? {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard trimmed.hasPrefix("|"), trimmed.hasSuffix("|") else { return nil }
-
-        let columns = trimmed
-            .split(separator: "|", omittingEmptySubsequences: false)
-            .dropFirst()
-            .dropLast()
-        let count = columns.count
-        return count >= 2 ? count : nil
-    }
+    func markdownTableColumnCount(in line: String) -> Int? { markdownTableCells(in: line)?.count }
 
     func isMarkdownTableSeparatorLine(_ line: String) -> Bool {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard markdownTableColumnCount(in: trimmed) != nil else { return false }
-
-        let cells = trimmed
-            .split(separator: "|", omittingEmptySubsequences: false)
-            .dropFirst()
-            .dropLast()
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        guard let cells = markdownTableCells(in: line) else { return false }
         return cells.allSatisfy { cell in
             let stripped = cell.trimmingCharacters(in: CharacterSet(charactersIn: ":"))
             return stripped.count >= 3 && stripped.allSatisfy { $0 == "-" }
@@ -704,13 +731,13 @@ extension LibraryWindowController {
     }
 
     func markdownTableCells(in line: String) -> [String]? {
-        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard markdownTableColumnCount(in: trimmed) != nil else { return nil }
-        return trimmed
-            .split(separator: "|", omittingEmptySubsequences: false)
-            .dropFirst()
-            .dropLast()
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
+        let trimmed = line.trimmingCharacters(in: .whitespacesAndNewlines) as NSString
+        let pipes = markdownTablePipeIndexes(in: trimmed)
+        guard pipes.count >= 3, pipes.first == 0, pipes.last == trimmed.length - 1 else { return nil }
+        return (0..<(pipes.count - 1)).map { index in
+            trimmed.substring(with: NSRange(location: pipes[index] + 1, length: pipes[index + 1] - pipes[index] - 1))
+                .trimmingCharacters(in: .whitespacesAndNewlines)
+        }
     }
 
     func markdownTableLine(cells: [String]) -> String {
@@ -749,7 +776,9 @@ extension LibraryWindowController {
     func markdownTablePipeIndexes(in line: NSString) -> [Int] {
         var indexes: [Int] = []
         for index in 0..<line.length where line.substring(with: NSRange(location: index, length: 1)) == "|" {
-            indexes.append(index)
+            var preceding = index
+            while preceding > 0, line.character(at: preceding - 1) == 92 { preceding -= 1 }
+            if (index - preceding).isMultiple(of: 2) { indexes.append(index) }
         }
         return indexes
     }

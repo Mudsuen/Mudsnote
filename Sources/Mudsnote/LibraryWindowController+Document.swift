@@ -203,7 +203,7 @@ extension LibraryWindowController {
     }
 
     func normalizedMarkdownBody(_ body: String) -> String {
-        body.trimmingCharacters(in: .whitespacesAndNewlines)
+        body.trimmingCharacters(in: .newlines)
     }
 
     func cachedLoadedNote(for note: NoteSearchResult) -> LoadedLibraryNoteCacheEntry? {

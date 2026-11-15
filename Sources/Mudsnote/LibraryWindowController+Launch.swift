@@ -362,6 +362,7 @@ extension LibraryWindowController {
             // Closing can release this controller, and quitting stops its queue.
             // Drain even when the visible document is clean after navigation.
             _ = try saveCurrentNote(force: false)
+            try retryFailedBackgroundAutosaves()
             return true
         } catch {
             if let persistenceErrorHandler {

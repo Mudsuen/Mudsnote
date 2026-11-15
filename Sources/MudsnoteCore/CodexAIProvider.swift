@@ -17,7 +17,8 @@ public enum CodexRuntimeLocator {
     ) -> URL? {
         var candidates: [String] = []
         if let configuredPath, !configuredPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
-            candidates.append(configuredPath)
+            let path = NSString(string: configuredPath.trimmingCharacters(in: .whitespacesAndNewlines)).expandingTildeInPath
+            return fileManager.isExecutableFile(atPath: path) ? URL(fileURLWithPath: path) : nil
         }
         if let environmentPath {
             candidates += environmentPath.split(separator: ":").map { String($0) + "/codex" }
@@ -100,7 +101,9 @@ public struct CodexAIProvider: Sendable {
     }
 
     private func generate(prompt: String) async throws -> String {
+        try Task.checkCancellation()
         let worker = Task.detached(priority: .userInitiated) {
+            try Task.checkCancellation()
             let fileManager = FileManager.default
             guard let agentExecutableURL = CodexRuntimeLocator.restrictedAgentExecutable(
                 from: executableURL,
@@ -117,12 +120,13 @@ public struct CodexAIProvider: Sendable {
                 )
             try fileManager.createDirectory(
                 at: isolatedWorkingDirectory,
-                withIntermediateDirectories: true
+                withIntermediateDirectories: true,
+                attributes: [.posixPermissions: 0o700]
             )
             defer {
                 try? fileManager.removeItem(at: isolatedWorkingDirectory)
             }
-            return try Self.run(
+            return try await Self.run(
                 executableURL: agentExecutableURL,
                 workingDirectory: isolatedWorkingDirectory,
                 prompt: prompt
@@ -187,7 +191,8 @@ public struct CodexAIProvider: Sendable {
         executableURL: URL,
         workingDirectory: URL,
         prompt: String
-    ) throws -> String {
+    ) async throws -> String {
+        try Task.checkCancellation()
         let fileManager = FileManager.default
         let codexHome = workingDirectory.appendingPathComponent(".codex", isDirectory: true)
         try fileManager.createDirectory(
@@ -222,7 +227,6 @@ public struct CodexAIProvider: Sendable {
             try? fileManager.removeItem(at: errorURL)
         }
 
-        let inputPipe = Pipe()
         let process = Process()
         let sandboxExecutableURL = URL(fileURLWithPath: "/usr/bin/sandbox-exec")
         guard fileManager.isExecutableFile(atPath: sandboxExecutableURL.path) else {
@@ -238,7 +242,6 @@ public struct CodexAIProvider: Sendable {
             executableURL.path
         ] + makeArguments(workingDirectory: workingDirectory, outputURL: outputURL)
         process.currentDirectoryURL = workingDirectory
-        process.standardInput = inputPipe
         process.standardOutput = FileHandle.nullDevice
         process.standardError = errorHandle
 
@@ -248,17 +251,7 @@ public struct CodexAIProvider: Sendable {
         )
 
         do {
-            try process.run()
-            inputPipe.fileHandleForWriting.write(Data(prompt.utf8))
-            inputPipe.fileHandleForWriting.closeFile()
-            while process.isRunning {
-                if Task.isCancelled {
-                    process.terminate()
-                    process.waitUntilExit()
-                    throw CancellationError()
-                }
-                Thread.sleep(forTimeInterval: 0.05)
-            }
+            _ = try await CodexProcessExecution.runPrepared(process, prompt: prompt, workingDirectory: workingDirectory)
         } catch {
             if error is CancellationError {
                 throw error

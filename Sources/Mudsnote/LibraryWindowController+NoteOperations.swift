@@ -391,8 +391,7 @@ extension LibraryWindowController {
                     self?.noteStore.preferredDirectories ?? []
                 },
                 inventoryLoader: { [noteStore] roots in
-                    LibraryAttachmentInventory.build(roots: roots,
-                        protectedSources: try noteStore.protectedAttachmentReferenceSources())
+                    LibraryAttachmentInventory.scan(roots: roots, noteStore: noteStore)
                 },
                 onOpenNote: { [weak self] url in
                     do {

@@ -25,12 +25,18 @@ struct LibraryAttachmentItem: Equatable, Sendable {
     let state: LibraryAttachmentState
     let byteCount: Int64?
     let referencingNotes: [URL]
+    var protectedSources: [AttachmentReferenceSource] = []
 
     var filename: String {
         url.lastPathComponent
     }
 
     var referenceSummary: String {
+        if !protectedSources.isEmpty {
+            let drafts = protectedSources.filter { $0.kind == .draft }.count
+            let trash = protectedSources.filter { $0.kind == .trash }.count
+            return "\(referencingNotes.count + protectedSources.count) 个来源 · \(drafts) 份草稿 · \(trash) 篇回收站笔记"
+        }
         switch state {
         case .unknown: return "引用扫描不完整"
         case .missing:
@@ -47,271 +53,110 @@ struct LibraryAttachmentItem: Equatable, Sendable {
     }
 }
 
+struct LibraryAttachmentScan: Sendable {
+    var items: [LibraryAttachmentItem]
+    var isComplete = true
+}
+
 enum LibraryAttachmentInventory {
     private static let noteExtensions = Set(["md", "markdown", "txt"])
 
     static func build(
-        roots: [URL],
-        protectedSources: [(url: URL, markdown: String)] = [],
-        fileManager: FileManager = .default
+        roots: [URL], protectedSources: [ProtectedAttachmentReferenceSource] = [],
+        noteStore: NoteStore? = nil, fileManager: FileManager = .default,
+        cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
     ) -> [LibraryAttachmentItem] {
+        scan(roots: roots, protectedSources: protectedSources, noteStore: noteStore,
+            fileManager: fileManager, cancellationCheck: cancellationCheck).items
+    }
+
+    static func scan(
+        roots: [URL], protectedSources: [ProtectedAttachmentReferenceSource] = [],
+        noteStore: NoteStore? = nil, fileManager: FileManager = .default,
+        cancellationCheck: @Sendable () -> Bool = { Task.isCancelled }
+    ) -> LibraryAttachmentScan {
         let roots = deduplicatedRoots(roots)
         var complete = true
         var noteURLs: [URL] = []
         var attachmentURLsByPath: [String: URL] = [:]
-
         for root in roots {
-            collectFiles(
-                under: root,
-                fileManager: fileManager,
-                noteURLs: &noteURLs,
-                attachmentURLsByPath: &attachmentURLsByPath,
-                complete: &complete
-            )
+            if cancellationCheck() { return LibraryAttachmentScan(items: [], isComplete: false) }
+            collectFiles(under: root, fileManager: fileManager, noteURLs: &noteURLs,
+                attachmentURLsByPath: &attachmentURLsByPath, complete: &complete, cancellationCheck: cancellationCheck)
         }
-
-        var referencingNotesByAttachmentPath: [String: Set<URL>] = [:]
-        var sources = protectedSources
-        for noteURL in noteURLs {
-            if let markdown = try? String(contentsOf: noteURL, encoding: .utf8) {
-                sources.append((noteURL, markdown))
-            } else { complete = false }
-        }
-        for (noteURL, markdown) in sources {
-            for target in localAttachmentTargets(in: markdown) {
-                guard let attachmentURL = managedAttachmentURL(
-                    for: target,
-                    relativeTo: noteURL,
-                    inside: roots
-                ) else {
-                    continue
+        var sourcesByAttachment: [String: Set<AttachmentReferenceSource>] = [:]
+        func consume(_ source: AttachmentReferenceSource, _ markdown: String) {
+            for reference in MarkdownNoteReferenceParser.destinations(in: markdown, cancellationCheck: cancellationCheck) {
+                let candidates = reference.localFileCandidates(relativeTo: source.resolutionURL).filter { candidate in
+                    candidate.pathComponents.contains { $0.caseInsensitiveCompare(NoteStore.attachmentDirectoryName) == .orderedSame }
+                        && roots.contains { candidate.path.hasPrefix($0.path + "/") }
                 }
-                referencingNotesByAttachmentPath[
-                    attachmentURL.standardizedFileURL.path,
-                    default: []
-                ].insert(noteURL.standardizedFileURL)
+                // Wiki links can omit a note extension. Protect every existing
+                // candidate if ambiguous, rather than granting deletion rights.
+                let existing = candidates.filter { attachmentURLsByPath[$0.path] != nil }
+                let targets = existing.isEmpty ? Array(candidates.prefix(1)) : existing
+                for target in targets { sourcesByAttachment[target.path, default: []].insert(source) }
             }
         }
-
-        let allPaths = Set(attachmentURLsByPath.keys)
-            .union(referencingNotesByAttachmentPath.keys)
-        return allPaths.compactMap { path -> LibraryAttachmentItem? in
+        // Only one active note's text is held at a time.
+        for noteURL in noteURLs {
+            if cancellationCheck() { return LibraryAttachmentScan(items: [], isComplete: false) }
+            do {
+                consume(AttachmentReferenceSource(resolutionURL: noteURL, identityURL: noteURL, kind: .note),
+                    try String(contentsOf: noteURL, encoding: .utf8))
+            } catch { complete = false }
+        }
+        for entry in protectedSources {
+            if cancellationCheck() { return LibraryAttachmentScan(items: [], isComplete: false) }
+            consume(entry.source, entry.markdown)
+        }
+        if let noteStore {
+            do { try noteStore.forEachProtectedAttachmentReferenceSource(cancellationCheck: cancellationCheck, consume) }
+            catch { complete = false }
+        }
+        if cancellationCheck() { return LibraryAttachmentScan(items: [], isComplete: false) }
+        let items = Set(attachmentURLsByPath.keys).union(sourcesByAttachment.keys).map { path in
             let url = attachmentURLsByPath[path] ?? URL(fileURLWithPath: path)
-            let references = referencingNotesByAttachmentPath[path, default: []]
-                .sorted { $0.path.localizedStandardCompare($1.path) == .orderedAscending }
+            let sources = sourcesByAttachment[path, default: []].sorted { $0.identityURL.path < $1.identityURL.path }
             let exists = attachmentURLsByPath[path] != nil
             let state: LibraryAttachmentState = exists
-                ? (references.isEmpty ? (complete ? .unreferenced : .unknown) : .referenced)
-                : .missing
-            let byteCount = exists
-                ? (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize)
-                    .flatMap { $0.map(Int64.init) }
-                : nil
-            return LibraryAttachmentItem(
-                url: url,
-                state: state,
-                byteCount: byteCount,
-                referencingNotes: references
-            )
+                ? (sources.isEmpty ? (complete ? .unreferenced : .unknown) : .referenced)
+                : (complete ? .missing : .unknown)
+            let bytes = exists ? (try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize).flatMap { $0.map(Int64.init) } : nil
+            return LibraryAttachmentItem(url: url, state: state, byteCount: bytes,
+                referencingNotes: sources.compactMap(\.openableNoteURL),
+                protectedSources: sources.filter { $0.kind != .note })
         }.sorted(by: attachmentSort)
+        return LibraryAttachmentScan(items: items, isComplete: complete)
     }
 
     static func localAttachmentTargets(in markdown: String) -> [String] {
-        var targets: [String] = []
-        var cursor = markdown.startIndex
-        while cursor < markdown.endIndex,
-              let opener = markdown[cursor...].range(of: "](") {
-            var targetStart = opener.upperBound
-            while targetStart < markdown.endIndex, markdown[targetStart].isWhitespace {
-                targetStart = markdown.index(after: targetStart)
-            }
-            guard targetStart < markdown.endIndex else { break }
-
-            if markdown[targetStart] == "<" {
-                let valueStart = markdown.index(after: targetStart)
-                if let closing = unescapedCharacter(">", in: markdown, from: valueStart) {
-                    targets.append(String(markdown[valueStart..<closing]))
-                    cursor = markdown.index(after: closing)
-                    continue
-                }
-            } else if let parsed = bareDestination(in: markdown, from: targetStart) {
-                targets.append(parsed.value)
-                cursor = parsed.end
-                continue
-            }
-            cursor = opener.upperBound
-        }
-        // A definition can protect an attachment even if its use is outside
-        // this scan (drafts and recovery notes are scanned separately).
-        let definitions = try? NSRegularExpression(pattern: #"(?m)^[ \t]{0,3}\[[^\]\n]+\]:[ \t]*(?:<([^>\n]+)>|([^\s]+))"#)
-        let text = markdown as NSString
-        for match in definitions?.matches(in: markdown, range: NSRange(location: 0, length: text.length)) ?? [] {
-            let range = match.range(at: match.range(at: 1).location == NSNotFound ? 2 : 1)
-            targets.append(text.substring(with: range))
-        }
-        return targets
+        MarkdownNoteReferenceParser.destinations(in: markdown).map(\.destination)
     }
 
     private static func collectFiles(
-        under root: URL,
-        fileManager: FileManager,
-        noteURLs: inout [URL],
-        attachmentURLsByPath: inout [String: URL],
-        complete: inout Bool
+        under root: URL, fileManager: FileManager,
+        noteURLs: inout [URL], attachmentURLsByPath: inout [String: URL],
+        complete: inout Bool, cancellationCheck: @Sendable () -> Bool
     ) {
-        guard let enumerator = fileManager.enumerator(
-            at: root,
+        var enumerationFailed = false
+        guard let enumerator = fileManager.enumerator(at: root,
             includingPropertiesForKeys: [.isDirectoryKey, .isRegularFileKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else {
-            complete = false
-            return
-        }
-
-        while let url = enumerator.nextObject() as? URL {
-            guard let values = try? url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey]) else {
-                complete = false
-                continue
-            }
-            if values.isDirectory == true,
-               url.lastPathComponent.caseInsensitiveCompare(NoteStore.attachmentDirectoryName) == .orderedSame {
-                collectAttachmentFiles(
-                    under: url,
-                    fileManager: fileManager,
-                    into: &attachmentURLsByPath
-                )
-                enumerator.skipDescendants()
-                continue
-            }
-            guard values.isRegularFile == true,
-                  noteExtensions.contains(url.pathExtension.lowercased()) else {
-                continue
-            }
-            noteURLs.append(url.standardizedFileURL)
-        }
-    }
-
-    private static func collectAttachmentFiles(
-        under directory: URL,
-        fileManager: FileManager,
-        into urlsByPath: inout [String: URL]
-    ) {
-        guard let enumerator = fileManager.enumerator(
-            at: directory,
-            includingPropertiesForKeys: [.isRegularFileKey],
-            options: [.skipsHiddenFiles, .skipsPackageDescendants]
-        ) else {
-            return
+            options: [.skipsHiddenFiles, .skipsPackageDescendants],
+            errorHandler: { _, _ in enumerationFailed = true; return true }) else {
+            complete = false; return
         }
         while let url = enumerator.nextObject() as? URL {
-            guard (try? url.resourceValues(forKeys: [.isRegularFileKey]).isRegularFile) == true else {
-                continue
-            }
-            let standardizedURL = url.standardizedFileURL
-            urlsByPath[standardizedURL.path] = standardizedURL
+            if cancellationCheck() { complete = false; return }
+            do {
+                let values = try url.resourceValues(forKeys: [.isDirectoryKey, .isRegularFileKey])
+                guard values.isRegularFile == true else { continue }
+                if url.pathComponents.contains(where: { $0.caseInsensitiveCompare(NoteStore.attachmentDirectoryName) == .orderedSame }) {
+                    attachmentURLsByPath[url.standardizedFileURL.path] = url.standardizedFileURL
+                } else if noteExtensions.contains(url.pathExtension.lowercased()) { noteURLs.append(url.standardizedFileURL) }
+            } catch { complete = false }
         }
-    }
-
-    private static func managedAttachmentURL(
-        for rawTarget: String,
-        relativeTo noteURL: URL,
-        inside roots: [URL]
-    ) -> URL? {
-        var target = rawTarget.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !target.isEmpty else { return nil }
-        if let titleRange = target.range(
-            of: #"\s+["'][^"']*["']\s*$"#,
-            options: .regularExpression
-        ) {
-            target.removeSubrange(titleRange)
-        }
-        target = target
-            .split(separator: "#", maxSplits: 1, omittingEmptySubsequences: false)
-            .first
-            .map(String.init) ?? target
-        target = target
-            .split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false)
-            .first
-            .map(String.init) ?? target
-        target = target.removingPercentEncoding ?? target
-        guard !target.isEmpty else { return nil }
-
-        let resolved: URL
-        if let parsed = URL(string: target), parsed.isFileURL {
-            resolved = parsed.standardizedFileURL
-        } else if URL(string: target)?.scheme != nil {
-            return nil
-        } else if target.hasPrefix("/") {
-            resolved = URL(fileURLWithPath: target).standardizedFileURL
-        } else {
-            resolved = noteURL.deletingLastPathComponent()
-                .appendingPathComponent(target)
-                .standardizedFileURL
-        }
-
-        guard resolved.pathComponents.contains(where: {
-            $0.caseInsensitiveCompare(NoteStore.attachmentDirectoryName) == .orderedSame
-        }) else {
-            return nil
-        }
-        guard roots.contains(where: {
-            let rootPath = $0.standardizedFileURL.path
-            return resolved.path == rootPath || resolved.path.hasPrefix(rootPath + "/")
-        }) else {
-            return nil
-        }
-        return resolved
-    }
-
-    private static func bareDestination(
-        in markdown: String,
-        from start: String.Index
-    ) -> (value: String, end: String.Index)? {
-        var cursor = start
-        var depth = 0
-        var escaped = false
-        while cursor < markdown.endIndex {
-            let character = markdown[cursor]
-            if escaped {
-                escaped = false
-            } else if character == "\\" {
-                escaped = true
-            } else if character == "(" {
-                depth += 1
-            } else if character == ")" {
-                if depth == 0 {
-                    return (String(markdown[start..<cursor]), markdown.index(after: cursor))
-                }
-                depth -= 1
-            } else if character == "\n" {
-                return nil
-            }
-            cursor = markdown.index(after: cursor)
-        }
-        return nil
-    }
-
-    private static func unescapedCharacter(
-        _ character: Character,
-        in string: String,
-        from start: String.Index
-    ) -> String.Index? {
-        var cursor = start
-        var escaped = false
-        while cursor < string.endIndex {
-            let current = string[cursor]
-            if escaped {
-                escaped = false
-            } else if current == "\\" {
-                escaped = true
-            } else if current == character {
-                return cursor
-            } else if current == "\n" {
-                return nil
-            }
-            cursor = string.index(after: cursor)
-        }
-        return nil
+        if enumerationFailed { complete = false }
     }
 
     private static func deduplicatedRoots(_ roots: [URL]) -> [URL] {

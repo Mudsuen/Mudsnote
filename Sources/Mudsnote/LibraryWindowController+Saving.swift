@@ -174,14 +174,25 @@ extension LibraryWindowController {
         case .failure:
             discardSupersededFailedAutosaves(by: boxedResult.snapshot)
             failedBackgroundAutosaveSnapshots[generation] = boxedResult.snapshot
+            let shouldSaveCurrentNext = backgroundAutosaveNeedsLatest && isDirty
+                && currentSaveDocumentIdentifier != boxedResult.snapshot.documentIdentifier
             backgroundAutosaveNeedsLatest = false
-            updateEditorStatus(
-                "自动保存失败，编辑仍保留",
-                kind: .failure,
-                toolTip: "按 Command-S 重试保存",
-                announcesChange: true
-            )
-            NSSound.beep()
+            if let previousURL = boxedResult.snapshot.previousURL {
+                for tab in documentTabs where tab.url?.standardizedFileURL == previousURL.standardizedFileURL {
+                    tab.isDirty = true
+                }
+            }
+            updateDocumentTabBar()
+            if currentSaveDocumentIdentifier == boxedResult.snapshot.documentIdentifier {
+                updateEditorStatus(
+                    "自动保存失败，编辑仍保留",
+                    kind: .failure,
+                    toolTip: "按 Command-S 重试保存",
+                    announcesChange: true
+                )
+                NSSound.beep()
+            }
+            if shouldSaveCurrentNext { enqueueBackgroundAutosave() }
         }
         flushDeferredFileSystemChangesAfterAutosave()
     }
@@ -215,6 +226,14 @@ extension LibraryWindowController {
         let isCurrentDocument = selectedScope != .trash
             && currentSaveDocumentIdentifier == snapshot.documentIdentifier
         guard isCurrentDocument else {
+            if let previousURL = snapshot.previousURL {
+                for tab in documentTabs where tab.url?.standardizedFileURL == previousURL.standardizedFileURL {
+                    tab.url = success.savedURL
+                    tab.title = snapshot.title.isEmpty ? success.savedURL.deletingPathExtension().lastPathComponent : snapshot.title
+                    tab.isDirty = failedBackgroundAutosaveSnapshots.values.contains { $0.documentIdentifier == snapshot.documentIdentifier }
+                }
+                updateDocumentTabBar()
+            }
             onSave(success.savedURL)
             return
         }
@@ -265,9 +284,10 @@ extension LibraryWindowController {
         }
     }
 
-    func retryFailedBackgroundAutosaves() throws {
+    func retryFailedBackgroundAutosaves(documentIdentifier: String? = nil) throws {
         for generation in failedBackgroundAutosaveSnapshots.keys.sorted() {
             guard let snapshot = failedBackgroundAutosaveSnapshots[generation] else { continue }
+            if let documentIdentifier, snapshot.documentIdentifier != documentIdentifier { continue }
             let success: LibraryBackgroundSaveSuccess
             do {
                 success = try Self.performBackgroundSave(snapshot, noteStore: noteStore)
@@ -300,6 +320,14 @@ extension LibraryWindowController {
         failedBackgroundAutosaveSnapshots = failedBackgroundAutosaveSnapshots.filter { _, failed in
             failed.documentIdentifier != snapshot.documentIdentifier || failed.generation > snapshot.generation
         }
+    }
+
+    func showCurrentDocumentPendingSaveFailure() {
+        guard selectedScope != .trash,
+              failedBackgroundAutosaveSnapshots.values.contains(where: { $0.documentIdentifier == currentSaveDocumentIdentifier }) else { return }
+        activeDocumentTab.isDirty = true
+        updateDocumentTabBar()
+        updateEditorStatus("此笔记有未保存的编辑", kind: .failure, toolTip: "按 Command-S 恢复并保存保留的编辑")
     }
 
     func saveCurrentNoteIfNeeded(allowBackgroundHandoff: Bool = false) throws {
@@ -388,15 +416,20 @@ extension LibraryWindowController {
     @discardableResult
     func saveCurrentNote(force: Bool) throws -> URL? {
         drainBackgroundAutosaves()
-        try retryFailedBackgroundAutosaves()
+        let savingDocumentIdentifier = currentSaveDocumentIdentifier
+        if !isDirty { try retryFailedBackgroundAutosaves(documentIdentifier: savingDocumentIdentifier) }
         guard force || isDirty else { return selectedURL }
         guard selectedScope != .trash else { return selectedURL }
+        if !isDirty, let selectedURL, let selectedSourceContents,
+           try String(contentsOf: selectedURL, encoding: .utf8) == selectedSourceContents {
+            return selectedURL
+        }
         autosaveTask?.cancel()
         autosaveTask = nil
         cancelSourceSnapshotValidation()
 
         let document = currentEditorDocument()
-        let body = document.body.trimmingCharacters(in: .whitespacesAndNewlines)
+        let body = document.body.trimmingCharacters(in: .newlines)
         let title = document.title
         guard selectedURL != nil || isCreatingNewNote || !title.isEmpty || !body.isEmpty else { return nil }
 
@@ -434,6 +467,9 @@ extension LibraryWindowController {
         }
 
         let changedURLs = [previousURL, savedURL].compactMap { $0 }
+        failedBackgroundAutosaveSnapshots = failedBackgroundAutosaveSnapshots.filter {
+            $0.value.documentIdentifier != savingDocumentIdentifier
+        }
         recordInternalFileSystemChanges(for: changedURLs)
         remapOverviewAfterSave(previousURL: previousURL, savedURL: savedURL)
         setSelectedURLForLibrary(savedURL)
@@ -644,11 +680,7 @@ extension LibraryWindowController {
 
     @discardableResult
     func saveCurrentNoteForLibrary() throws -> URL? {
-        let savedURL = try saveCurrentNote(force: true)
-        if let savedURL {
-            reloadNotes(selecting: savedURL, loadFirstIfNeeded: false)
-        }
-        return savedURL
+        try saveCurrentNote(force: true)
     }
 
     @discardableResult

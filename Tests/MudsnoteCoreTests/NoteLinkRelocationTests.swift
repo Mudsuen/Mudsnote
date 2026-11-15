@@ -113,7 +113,7 @@ struct NoteLinkRelocationTests {
         #expect(try fixture.read(fixture.root.appendingPathComponent("Other/Attachments/spec-2.md")) == "# Source attachment")
     }
 
-    @Test func movingNoteOnlySkipsMarkdownAttachmentsActuallyCopied() throws {
+    @Test func movingNoteCopiesParenthesizedMarkdownAttachmentsAndKeepsTheirNewTargets() throws {
         let fixture = try LinkRelocationFixture()
         let uncopied = try fixture.note("Attachments/spec(1).md", "# Parenthesized attachment")
         _ = try fixture.note("Attachments/plain.md", "# Copied attachment")
@@ -122,13 +122,13 @@ struct NoteLinkRelocationTests {
 
         let moved = try fixture.store.moveNote(at: source, to: fixture.root.appendingPathComponent("Other"))
 
-        #expect(try fixture.read(moved) == "[Spec](../Attachments/spec%281%29.md) [Plain](Attachments/plain-2.md)")
+        #expect(try fixture.read(moved) == "[Spec](Attachments/spec%281%29.md) [Plain](Attachments/plain-2.md)")
         #expect(try fixture.read(uncopied) == "# Parenthesized attachment")
-        #expect(!FileManager.default.fileExists(atPath: fixture.root.appendingPathComponent("Other/Attachments/spec(1).md").path))
+        #expect(try fixture.read(fixture.root.appendingPathComponent("Other/Attachments/spec(1).md")) == "# Parenthesized attachment")
         #expect(try fixture.read(fixture.root.appendingPathComponent("Other/Attachments/plain-2.md")) == "# Copied attachment")
     }
 
-    @Test func updatingNoteInAnotherFolderOnlySkipsMarkdownAttachmentsActuallyCopied() throws {
+    @Test func updatingNoteInAnotherFolderKeepsAllCopiedMarkdownAttachmentTargets() throws {
         let fixture = try LinkRelocationFixture()
         _ = try fixture.note("Attachments/spec(1).md", "# Parenthesized attachment")
         _ = try fixture.note("Attachments/plain.md", "# Copied attachment")
@@ -141,7 +141,8 @@ struct NoteLinkRelocationTests {
             in: fixture.root.appendingPathComponent("Other")
         )
 
-        #expect(try fixture.store.loadNote(at: moved).body == "[Spec](../Attachments/spec%281%29.md#details) [Plain](Attachments/plain-2.md)")
+        #expect(try fixture.store.loadNote(at: moved).body == "[Spec](Attachments/spec%281%29.md#details) [Plain](Attachments/plain-2.md)")
+        #expect(try fixture.read(fixture.root.appendingPathComponent("Other/Attachments/spec(1).md")) == "# Parenthesized attachment")
         #expect(try fixture.read(fixture.root.appendingPathComponent("Other/Attachments/plain-2.md")) == "# Copied attachment")
     }
 

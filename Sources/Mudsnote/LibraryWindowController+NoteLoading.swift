@@ -192,6 +192,7 @@ extension LibraryWindowController {
             isDirty = false
             updateEditorCreatedDate(note.createdAt)
             updateEditorStatus(editorEditedDateText(for: note.modifiedAt))
+            showCurrentDocumentPendingSaveFailure()
             updateToolbarActionState()
             refreshNoteLinks(for: note.url, body: cached.loaded.body)
             return
@@ -227,6 +228,7 @@ extension LibraryWindowController {
         isDirty = false
         updateEditorCreatedDate(note.createdAt)
         updateEditorStatus(editorEditedDateText(for: note.modifiedAt))
+        showCurrentDocumentPendingSaveFailure()
         applyEditorSearchHighlightsForCurrentQuery()
         updateToolbarActionState()
         refreshNoteLinks(for: note.url, body: cached.loaded.body)

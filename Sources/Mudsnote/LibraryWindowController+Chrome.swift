@@ -833,6 +833,15 @@ extension LibraryWindowController {
                 return
             }
         }
+        do {
+            drainBackgroundAutosaves()
+            if let url = documentTabs[index].url {
+                try retryFailedBackgroundAutosaves(documentIdentifier: url.standardizedFileURL.path)
+            }
+        } catch {
+            presentErrorAlert(message: "无法关闭标签页", details: error.localizedDescription)
+            return
+        }
         let wasActive = documentTabs[index].id == activeDocumentTab.id
         if documentTabs.count == 1 {
             documentTabs.append(LibraryDocumentTab())

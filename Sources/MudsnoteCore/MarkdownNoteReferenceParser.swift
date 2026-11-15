@@ -2,19 +2,49 @@ import Foundation
 
 /// A note reference and its editable destination in the original Markdown.
 /// Ranges use UTF-16 offsets, matching NSString and the native editors.
-struct MarkdownNoteReference: Equatable, Sendable {
-    enum Kind: Equatable, Sendable { case markdown, wiki }
+public struct MarkdownNoteReference: Equatable, Sendable {
+    public enum Kind: Equatable, Sendable { case markdown, wiki }
 
-    let kind: Kind
+    public let kind: Kind
     /// Markdown escapes are decoded; percent escapes and fragments are preserved.
-    let destination: String
+    public let destination: String
     /// Excludes angle brackets, a Markdown title, and a Wiki display alias.
-    let destinationRange: NSRange
-    let sourceRange: NSRange
+    public let destinationRange: NSRange
+    public let sourceRange: NSRange
+    public var isEmbedded = false
+    public var isDefinition = false
+
+    /// Lexical local targets; callers resolve existence/ambiguity for their purpose.
+    public func localFileCandidates(relativeTo sourceURL: URL) -> [URL] {
+        let end = destination.firstIndex(where: { $0 == "#" || $0 == "?" }) ?? destination.endIndex
+        let rawPath = String(destination[..<end])
+        guard !rawPath.isEmpty else { return [] }
+        let target = rawPath.removingPercentEncoding ?? rawPath
+        let resolved: URL
+        if let url = URL(string: rawPath), url.isFileURL { resolved = url.standardizedFileURL }
+        else if URL(string: rawPath)?.scheme != nil { return [] }
+        else if target.hasPrefix("/") { resolved = URL(fileURLWithPath: target) }
+        else if target.hasPrefix("~/") { return [] }
+        else { resolved = sourceURL.deletingLastPathComponent().appendingPathComponent(target) }
+        let direct = resolved.standardizedFileURL
+        if kind == .wiki, !["md", "markdown"].contains(direct.pathExtension.lowercased()) {
+            return [direct, direct.appendingPathExtension("md"), direct.appendingPathExtension("markdown")]
+        }
+        return [direct]
+    }
 }
 
-enum MarkdownNoteReferenceParser {
+public enum MarkdownNoteReferenceParser {
     static func references(
+        in markdown: String,
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> [MarkdownNoteReference] {
+        destinations(in: markdown, cancellationCheck: cancellationCheck).filter { !$0.isEmbedded && !$0.isDefinition }
+    }
+
+    /// Includes images, wiki embeds and reference definitions, with the same
+    /// decoded targets and source ranges used by note references.
+    public static func destinations(
         in markdown: String,
         cancellationCheck: @Sendable () -> Bool = { false }
     ) -> [MarkdownNoteReference] {
@@ -34,15 +64,51 @@ enum MarkdownNoteReferenceParser {
                 reference = wikiReference(at: index, in: units, ignored: ignored)
             } else {
                 reference = markdownReference(at: index, in: units, ignored: ignored)
+                    ?? definitionReference(at: index, in: units)
             }
-            if let reference {
-                if !isImage { result.append(reference) }
+            if var reference {
+                reference.isEmbedded = isImage
+                result.append(reference)
                 index = NSMaxRange(reference.sourceRange)
             } else {
                 index += 1
             }
         }
         return cancellationCheck() ? [] : result
+    }
+
+    private static func definitionReference(at start: Int, in units: [UInt16]) -> MarkdownNoteReference? {
+        var lineStart = start
+        while lineStart > 0, !isNewline(units[lineStart - 1]) { lineStart -= 1 }
+        guard start - lineStart <= 3, units[lineStart..<start].allSatisfy({ $0 == 32 }) else { return nil }
+        var index = start + 1
+        while index < units.count, units[index] != 93, !isNewline(units[index]) {
+            index += units[index] == 92 ? 2 : 1
+        }
+        guard index + 1 < units.count, units[index] == 93, units[index + 1] == 58 else { return nil }
+        index += 2
+        while index < units.count, units[index] == 32 || units[index] == 9 { index += 1 }
+        guard index < units.count else { return nil }
+        let angle = units[index] == 60
+        if angle { index += 1 }
+        let begin = index
+        var depth = 0
+        while index < units.count, !isNewline(units[index]) {
+            if units[index] == 92 { index += 2; continue }
+            if angle, units[index] == 62 { break }
+            if !angle {
+                if isWhitespace(units[index]), depth == 0 { break }
+                if units[index] == 40 { depth += 1 }
+                if units[index] == 41 { depth -= 1 }
+            }
+            index += 1
+        }
+        guard index <= units.count, !angle || (index < units.count && units[index] == 62) else { return nil }
+        let end = index
+        while index < units.count, !isNewline(units[index]) { index += 1 }
+        var value = reference(kind: .markdown, source: start..<index, destination: begin..<end, in: units)
+        value?.isDefinition = true
+        return value
     }
 
     private static func wikiReference(
