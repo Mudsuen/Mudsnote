@@ -23,36 +23,19 @@ public final class NoteSearchSession: @unchecked Sendable {
         filter: NoteSearchFilter,
         cancellationCheck: @Sendable () -> Bool = { false }
     ) -> [NoteSearchResult] {
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        let filteredEntries: [NoteSearchIndexEntry]
-        switch filter {
-        case .all:
-            filteredEntries = entries
-        case .title:
-            filteredEntries = entries.filter {
-                $0.title.localizedCaseInsensitiveContains(trimmedQuery)
-            }
-        case .body:
-            filteredEntries = entries.filter {
-                $0.body.localizedCaseInsensitiveContains(trimmedQuery)
-            }
-        case .tags:
-            filteredEntries = entries.filter { entry in
-                entry.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
-            }
-        case .attachments:
-            filteredEntries = entries.filter(\.hasAttachments)
-        }
-        if trimmedQuery.isEmpty {
-            return filteredEntries
+        guard limit > 0, !cancellationCheck() else { return [] }
+        if query.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
+            return entries.lazy
+                .filter { filter != .attachments || $0.hasAttachments }
                 .sorted { $0.modifiedAt > $1.modifiedAt }
                 .prefix(limit)
                 .map(\.result)
         }
         return noteStore.rankedSearchResults(
-            query: trimmedQuery,
+            query: query,
             limit: limit,
-            entries: filteredEntries,
+            entries: entries,
+            filter: filter,
             cancellationCheck: cancellationCheck
         ) ?? []
     }
@@ -276,8 +259,10 @@ extension NoteStore {
 
     private func knownTags(limit: Int, roots: [URL]?) -> [String] {
         var summaries: [String: (name: String, count: Int)] = [:]
+        let includesArchived = includesArchivedNotesInKnowledge
 
-        for entry in searchEligibleEntries(indexedEntries(roots: roots)) {
+        for entry in indexedEntries(roots: roots) {
+            guard includesArchived || !isArchivedNote(at: entry.url) else { continue }
             var countedInNote = Set<String>()
             for tag in entry.tags {
                 let key = tag.folding(
@@ -348,7 +333,7 @@ extension NoteStore {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedQuery.isEmpty {
             return recentSearchResults(limit: limit)
-                .filter { includesArchivedNotesInSearchAndKnowledge || !isArchivedNote(at: $0.url) }
+                .filter { includesArchivedNotesInSearch || !isArchivedNote(at: $0.url) }
         }
 
         return rankedSearchResults(
@@ -359,7 +344,7 @@ extension NoteStore {
     }
 
     private func searchEligibleEntries(_ entries: [NoteSearchIndexEntry]) -> [NoteSearchIndexEntry] {
-        guard !includesArchivedNotesInSearchAndKnowledge else { return entries }
+        guard !includesArchivedNotesInSearch else { return entries }
         return entries.filter { !isArchivedNote(at: $0.url) }
     }
 
@@ -407,6 +392,7 @@ extension NoteStore {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             return recentSearchResults(limit: limit)
+                .filter { includesArchivedNotesInSearch || !isArchivedNote(at: $0.url) }
         }
 
         let recentPaths = Set(listRecentFiles(limit: .max).map { $0.url.standardizedFileURL.path })
@@ -452,10 +438,12 @@ extension NoteStore {
         query: String,
         limit: Int,
         entries: [NoteSearchIndexEntry],
+        filter: NoteSearchFilter = .all,
         cancellationCheck: @Sendable () -> Bool
     ) -> [NoteSearchResult]? {
         guard limit > 0, !cancellationCheck() else { return [] }
-        let loweredQuery = query.lowercased()
+        let parsedQuery = NoteSearchQuery(query)
+        guard !parsedQuery.terms.isEmpty else { return [] }
         let retainsEveryEntry = limit >= entries.count
         var candidates: [RankedSearchCandidate] = []
         candidates.reserveCapacity(min(limit, entries.count))
@@ -464,7 +452,7 @@ extension NoteStore {
             guard !cancellationCheck() else { return nil }
             searchIndexEntryWillMatchForTesting?()
             guard !cancellationCheck(),
-                  let score = matchScore(for: entry, loweredQuery: loweredQuery) else {
+                  let score = matchScore(for: entry, query: parsedQuery, filter: filter) else {
                 continue
             }
             let candidate = RankedSearchCandidate(entry: entry, score: score)
@@ -488,7 +476,7 @@ extension NoteStore {
             results.append(NoteSearchResult(
                 url: entry.url,
                 title: entry.title,
-                snippet: snippet(from: entry.body, query: loweredQuery),
+                snippet: parsedQuery.snippet(in: entry.body, fallback: entry.snippet),
                 modifiedAt: entry.modifiedAt,
                 createdAt: entry.createdAt,
                 tags: entry.tags,
@@ -554,7 +542,7 @@ extension NoteStore {
         limit: Int,
         matching predicate: (NoteSearchIndexEntry) -> Bool
     ) -> [NoteSearchResult] {
-        let entries = indexedEntries().filter(predicate)
+        let entries = searchEligibleEntries(indexedEntries()).filter(predicate)
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
             return entries
@@ -565,17 +553,22 @@ extension NoteStore {
         return rankedSearchResults(query: trimmedQuery, limit: limit, entries: entries)
     }
 
-    private func matchScore(for entry: NoteSearchIndexEntry, loweredQuery: String) -> Int? {
-        let titleLower = entry.title.lowercased()
-        guard titleLower.contains(loweredQuery) || entry.bodyLower.contains(loweredQuery) || entry.tagsLower.contains(where: { $0.contains(loweredQuery) }) else {
-            return nil
+    private func matchScore(for entry: NoteSearchIndexEntry, query: NoteSearchQuery,
+                            filter: NoteSearchFilter) -> Int? {
+        guard filter != .attachments || entry.hasAttachments else { return nil }
+        var score = 0
+        for term in query.terms {
+            let titleMatches = filter != .body && filter != .tags && entry.titleLower.contains(term)
+            let tagScore: Int
+            if filter == .title || filter == .body { tagScore = 0 }
+            else if entry.tagsLower.contains(term) { tagScore = 80 }
+            else { tagScore = entry.tagsLower.contains { $0.contains(term) } ? 40 : 0 }
+            let occurrences = filter == .title || filter == .tags ? 0
+                : occurrenceCount(of: term, in: entry.bodyLower, stoppingAt: 6)
+            guard titleMatches || occurrences > 0 || tagScore > 0 else { return nil }
+            score += (titleMatches ? 100 : 0) + occurrences * 15 + tagScore
         }
-
-        let titleScore = titleLower.contains(loweredQuery) ? 100 : 0
-        let occurrences = occurrenceCount(of: loweredQuery, in: entry.bodyLower, stoppingAt: 6)
-        let bodyScore = min(occurrences * 15, 90)
-        let tagScore = entry.tagsLower.contains(where: { $0 == loweredQuery }) ? 80 : (entry.tagsLower.contains(where: { $0.contains(loweredQuery) }) ? 40 : 0)
-        return titleScore + bodyScore + tagScore
+        return score
     }
 
     private func occurrenceCount(of needle: String, in haystack: String, stoppingAt limit: Int) -> Int {
@@ -583,7 +576,7 @@ extension NoteStore {
         var count = 0
         var searchStart = haystack.startIndex
         while searchStart < haystack.endIndex,
-              let range = haystack.range(of: needle, range: searchStart..<haystack.endIndex) {
+              let range = haystack.range(of: needle, options: .literal, range: searchStart..<haystack.endIndex) {
             count += 1
             if count == limit { break }
             searchStart = range.upperBound
@@ -1006,13 +999,14 @@ extension NoteStore {
         return NoteSearchIndexEntry(
             url: fileURL,
             title: title,
+            titleLower: NoteSearchQuery.normalized(title),
             body: note.body,
-            bodyLower: note.body.lowercased(),
+            bodyLower: NoteSearchQuery.normalized(note.body),
             snippet: snippet,
             modifiedAt: modifiedAt,
             createdAt: createdAt,
             tags: note.tags,
-            tagsLower: note.tags.map { $0.lowercased() },
+            tagsLower: note.tags.map(NoteSearchQuery.normalized),
             knowledgeLayer: KnowledgeLayer.parse(sourceContents: text, tags: note.tags),
             knowledgeLinkTargets: knowledgeLinkTargets(
                 in: note.body,
@@ -1031,6 +1025,7 @@ extension NoteStore {
         NoteSearchIndexEntry(
             url: fileURL,
             title: displayTitle(for: fileURL, loadedTitle: ""),
+            titleLower: NoteSearchQuery.normalized(displayTitle(for: fileURL, loadedTitle: "")),
             body: "",
             bodyLower: "",
             snippet: "",
@@ -1061,15 +1056,4 @@ extension NoteStore {
         return values.ubiquitousItemDownloadingStatus == .current
     }
 
-    private func snippet(from body: String, query: String) -> String {
-        let lines = body.components(separatedBy: .newlines)
-            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-            .filter { !$0.isEmpty }
-
-        if let match = lines.first(where: { $0.lowercased().contains(query) }) {
-            return MarkdownEditorDocument.previewText(fromMarkdownLine: match) ?? ""
-        }
-
-        return MarkdownEditorDocument.firstPreviewLine(in: body) ?? ""
-    }
 }

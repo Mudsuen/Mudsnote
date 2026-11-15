@@ -15,7 +15,8 @@ struct PreferencesSettings {
     let themeColorIdentifier: String
     let libraryIncludesSubfolderNotes: Bool
     let searchDefaultScope: NoteStore.SearchDefaultScope
-    let includesArchivedNotesInSearchAndKnowledge: Bool
+    let includesArchivedNotesInSearch: Bool
+    let includesArchivedNotesInKnowledge: Bool
     let editorContextMenuOptions: Set<EditorContextMenuOption>
     let selectionToolbarOptions: Set<SelectionToolbarOption>
     let aiEnabled: Bool
@@ -68,8 +69,9 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let revealDirectoryButton = NSButton(title: "在 Finder 中显示", target: nil, action: nil)
     private let folderNoteVisibilityPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let searchDefaultScopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
+    private let searchArchivedNotesButton = NSButton(checkboxWithTitle: "搜索包含归档笔记", target: nil, action: nil)
     private let includesArchivedNotesButton = NSButton(
-        checkboxWithTitle: "搜索和知识关联包含 Archive",
+        checkboxWithTitle: "知识关联和标签建议包含归档笔记",
         target: nil,
         action: nil
     )
@@ -126,7 +128,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         currentThemeColorIdentifier: String = "ocean",
         libraryIncludesSubfolderNotes: Bool = true,
         searchDefaultScope: NoteStore.SearchDefaultScope = .allDirectories,
-        includesArchivedNotesInSearchAndKnowledge: Bool = false,
+        includesArchivedNotesInSearch: Bool = false,
+        includesArchivedNotesInKnowledge: Bool = false,
         editorContextMenuOptions: Set<EditorContextMenuOption> = Set(EditorContextMenuOption.allCases),
         selectionToolbarOptions: Set<SelectionToolbarOption> = Set(SelectionToolbarOption.allCases),
         aiEnabled: Bool,
@@ -188,7 +191,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         folderNoteVisibilityPopUp.selectItem(at: libraryIncludesSubfolderNotes ? 0 : 1)
         searchDefaultScopePopUp.addItems(withTitles: ["所有资料库文件夹", "默认笔记文件夹"])
         searchDefaultScopePopUp.selectItem(at: searchDefaultScope == .allDirectories ? 0 : 1)
-        includesArchivedNotesButton.state = includesArchivedNotesInSearchAndKnowledge ? .on : .off
+        searchArchivedNotesButton.state = includesArchivedNotesInSearch ? .on : .off
+        includesArchivedNotesButton.state = includesArchivedNotesInKnowledge ? .on : .off
         aiMemoryDailySyncButton.state = aiMemoryDailySyncEnabled ? .on : .off
         refreshDirectoryControls()
     }
@@ -391,10 +395,11 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 help: "打开独立搜索窗口时，默认搜索所有资料库文件夹或仅默认笔记文件夹。"
             ),
             preferenceRow(
-                label: "",
-                control: includesArchivedNotesButton,
-                help: "默认关闭；关闭时 Archive、Archives 或归档文件夹不参与搜索、标签建议和知识关联。"
-            )
+                label: "搜索内容:",
+                control: searchArchivedNotesButton,
+                help: "包含 Archive、Archives 和归档文件夹中的笔记。"
+            ),
+            preferenceRow(label: "知识关联:", control: includesArchivedNotesButton)
         ])
     }
 
@@ -800,7 +805,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
             searchDefaultScope: searchDefaultScopePopUp.indexOfSelectedItem == 1
                 ? .defaultDirectory
                 : .allDirectories,
-            includesArchivedNotesInSearchAndKnowledge: includesArchivedNotesButton.state == .on,
+            includesArchivedNotesInSearch: searchArchivedNotesButton.state == .on,
+            includesArchivedNotesInKnowledge: includesArchivedNotesButton.state == .on,
             editorContextMenuOptions: Set(contextMenuOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             selectionToolbarOptions: Set(selectionToolbarOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             aiEnabled: aiEnabledButton.state == .on,

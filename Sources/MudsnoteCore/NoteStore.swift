@@ -111,6 +111,7 @@ struct NoteSearchFileSignature: Equatable, Codable {
 struct NoteSearchIndexEntry: Codable {
     let url: URL
     let title: String
+    let titleLower: String
     let body: String
     let bodyLower: String
     let snippet: String
@@ -139,7 +140,7 @@ struct NoteSearchIndexEntry: Codable {
 }
 
 struct NoteSearchIndexDiskCache: Codable {
-    static let currentSchemaVersion = 9
+    static let currentSchemaVersion = 10
 
     let schemaVersion: Int
     let snapshot: NoteSearchIndexSnapshot
@@ -157,7 +158,8 @@ enum NoteStoreDefaultsKey {
     static let spellCheckingEnabled = "mudsnote.spellCheckingEnabled"
     static let themeColorIdentifier = "mudsnote.themeColorIdentifier"
     static let searchDefaultScope = "mudsnote.search.defaultScope"
-    static let includesArchivedNotesInSearchAndKnowledge = "mudsnote.search.includesArchivedNotes"
+    static let includesArchivedNotesInKnowledge = "mudsnote.knowledge.includesArchivedNotes"
+    static let includesArchivedNotesInSearch = "mudsnote.search.includesArchivedNotes"
     static let aiMemoryDailySyncEnabled = "mudsnote.aiMemory.dailySyncEnabled"
     static let aiMemoryLastSyncDate = "mudsnote.aiMemory.lastSyncDate"
     static let editorContextMenuItems = "mudsnote.editor.contextMenuItems"

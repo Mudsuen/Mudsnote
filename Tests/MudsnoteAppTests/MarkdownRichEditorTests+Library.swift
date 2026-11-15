@@ -690,9 +690,6 @@ extension MarkdownRichEditorTests {
         #expect(LibraryNotesLayout.noteTableMinimumWidth == 194)
         #expect(LibraryNotesLayout.noteTableInitialWidth + LibraryNotesLayout.noteListLeadingInset + LibraryNotesLayout.noteListTrailingInset == LibraryNotesLayout.noteColumnWidth)
         #expect(LibraryNotesLayout.toolbarSearchWidth == 160)
-        #expect(LibraryNotesLayout.toolbarSearchHorizontalFocusRingInset == 4)
-        #expect(LibraryNotesLayout.toolbarSearchWrapperWidth == LibraryNotesLayout.toolbarSearchWidth + 8)
-        #expect(LibraryNotesLayout.toolbarSearchWrapperHeight == 28)
         #expect(LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 2200, height: 1200)) == LibraryNotesLayout.presentedWindowSize)
         let clampedSize = LibraryNotesLayout.presentedWindowSize(in: NSRect(x: 0, y: 0, width: 1180, height: 720))
         #expect(clampedSize == LibraryNotesLayout.presentedWindowSize)
@@ -4422,7 +4419,7 @@ extension MarkdownRichEditorTests {
             appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
         )
         store.notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
-        store.includesArchivedNotesInSearchAndKnowledge = true
+        store.includesArchivedNotesInSearch = true
         let projectsFolder = try store.createFolder(named: "Projects")
         let archiveFolder = try store.createFolder(named: "Archive")
         _ = try store.saveNewNote(title: "Alpha Project", body: "current folder alpha body", in: projectsFolder)

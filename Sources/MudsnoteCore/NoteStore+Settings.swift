@@ -78,13 +78,24 @@ extension NoteStore {
         set { defaults.set(newValue.rawValue, forKey: NoteStoreDefaultsKey.searchDefaultScope) }
     }
 
-    public var includesArchivedNotesInSearchAndKnowledge: Bool {
+    public var includesArchivedNotesInSearch: Bool {
+        get { defaults.object(forKey: NoteStoreDefaultsKey.includesArchivedNotesInSearch) as? Bool ?? false }
+        set {
+            // Preserve the former combined preference before the two controls diverge.
+            if defaults.object(forKey: NoteStoreDefaultsKey.includesArchivedNotesInKnowledge) == nil {
+                defaults.set(includesArchivedNotesInKnowledge, forKey: NoteStoreDefaultsKey.includesArchivedNotesInKnowledge)
+            }
+            defaults.set(newValue, forKey: NoteStoreDefaultsKey.includesArchivedNotesInSearch)
+        }
+    }
+
+    public var includesArchivedNotesInKnowledge: Bool {
         get {
-            defaults.object(forKey: NoteStoreDefaultsKey.includesArchivedNotesInSearchAndKnowledge) as? Bool
-                ?? false
+            defaults.object(forKey: NoteStoreDefaultsKey.includesArchivedNotesInKnowledge) as? Bool
+                ?? includesArchivedNotesInSearch
         }
         set {
-            defaults.set(newValue, forKey: NoteStoreDefaultsKey.includesArchivedNotesInSearchAndKnowledge)
+            defaults.set(newValue, forKey: NoteStoreDefaultsKey.includesArchivedNotesInKnowledge)
         }
     }
 

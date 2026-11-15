@@ -89,6 +89,7 @@ extension LibraryWindowController {
         surface.addSubview(tint)
         sidebarLibraryTitle.font = .systemFont(ofSize: 18, weight: .semibold)
         sidebarLibraryTitle.lineBreakMode = .byTruncatingTail
+        sidebarLibraryTitle.setContentHuggingPriority(.defaultLow, for: .horizontal)
         sidebarLibraryTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         let searchButton = OverviewActionButton("", symbol: "magnifyingglass", action: {})
         sidebarSearchButton = searchButton
@@ -102,8 +103,7 @@ extension LibraryWindowController {
         let newNote = SidebarNewNoteButton { [weak self] in self?.createNewNoteForLibrary() }
         newNote.identifier = NSUserInterfaceItemIdentifier("OverviewRail-square.and.pencil")
         newNote.widthAnchor.constraint(equalToConstant: 28).isActive = true
-        let headingSpacer = NSView()
-        let heading = NSStackView(views: [sidebarLibraryTitle, searchField, headingSpacer, searchButton, newNote])
+        let heading = NSStackView(views: [sidebarLibraryTitle, searchField, searchButton, newNote])
         searchField.isHidden = true
         heading.orientation = .horizontal; heading.spacing = 4
         heading.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 12)
@@ -397,7 +397,7 @@ extension LibraryWindowController {
         else if sidebarPresentation == .tree { page = "目录" }
         else if case .tag = selectedScope { page = "标签" }
         else { page = selectedScope == .recent ? "最近笔记" : "目录" }
-        navigationRail?.select(page)
+        navigationRail?.select(!isShowingOverview && !searchField.isHidden ? "搜索" : page)
         let title = !isShowingOverview && sidebarPresentation == .list && selectedScope != .all && selectedScope != .recent
             ? noteListTitle(for: selectedScope) : page
         if sidebarLibraryTitle.stringValue != title { sidebarLibraryTitle.stringValue = title }

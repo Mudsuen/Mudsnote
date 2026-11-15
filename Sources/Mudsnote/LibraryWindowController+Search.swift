@@ -13,15 +13,21 @@ extension LibraryWindowController {
         sidebarSearchButton?.isHidden = presented
         searchField.isHidden = !presented
         sidebarSearchStatusView?.isHidden = !presented || searchField.stringValue.isEmpty
+        updateSidebarScopeButton()
     }
 
-    func focusSearchForLibrary() {
+    func focusSearchForLibrary(searchesAllNotes: Bool = false) {
         if isShowingOverview {
             showLibraryNavigationPage(.list, scope: .all)
             guard !isShowingOverview else { return }
         }
         _ = setSourceListVisibleForLibrary(true)
+        if searchesAllNotes, searchScopeControl.selectedSegment != 1 {
+            searchScopeControl.selectedSegment = 1
+            if !searchField.stringValue.isEmpty { performSearchReload() }
+        }
         setSidebarSearchPresented(true)
+        updateNoteListHeader(query: searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
         window?.contentView?.layoutSubtreeIfNeeded()
         window?.makeFirstResponder(searchField)
         searchField.selectText(nil)
@@ -62,6 +68,7 @@ extension LibraryWindowController {
 
     func scheduleSearchReloadFromTyping() {
         searchReloadWorkItem?.cancel()
+        editorSearchHighlightRefreshTask?.cancel()
         cancelActiveSearchResultReload()
 
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -78,7 +85,6 @@ extension LibraryWindowController {
         searchScopeControl.isHidden = false
         updateNoteListHeader(query: query)
         updateNoteListEmptyState(query: query)
-        applyEditorSearchHighlightsForCurrentQuery()
 
         let workItem = DispatchWorkItem { [weak self] in
             self?.performSearchReload()
@@ -140,7 +146,9 @@ extension LibraryWindowController {
         let existingSearchSession = activeSearchSession
         let preferredDirectories = noteStore.preferredDirectories
         let includesSubfolderNotes = noteStore.libraryIncludesSubfolderNotes
-        let recentlyEditedPaths = Set(recentNoteResults(limit: 80, allNotes: sourceCountSnapshot).map { $0.url.standardizedFileURL.path })
+        let recentlyEditedPaths = !searchesAllNotes && scope == .recent
+            ? Set(recentNoteResults(limit: 80, allNotes: sourceCountSnapshot).map { $0.url.standardizedFileURL.path })
+            : []
         isSearchResultReloading = true
         searchScopeControl.isHidden = false
         updateNoteListHeader(query: query)
@@ -209,7 +217,7 @@ extension LibraryWindowController {
 
         refreshSourceSelection()
         updateToolbarActionState()
-        applyEditorSearchHighlightsForCurrentQuery()
+        refreshEditorSearchHighlightsAtomically(query: query)
     }
 
     enum NoteListResultDirection {

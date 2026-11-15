@@ -1360,7 +1360,7 @@ struct MudsnoteCoreTests {
         let notes = harness.root.appendingPathComponent("Notes", isDirectory: true)
         let archive = notes.appendingPathComponent("Archive", isDirectory: true)
         store.configurePreferredDirectories([notes], defaultDirectory: notes)
-        store.includesArchivedNotesInSearchAndKnowledge = false
+        store.includesArchivedNotesInKnowledge = false
         let isolated = try store.saveNewNote(title: "Unlinked", body: "A note", in: notes)
         let archived = try store.saveNewNote(title: "Archived", body: "An older note", in: archive)
         let linked = try store.saveNewNote(

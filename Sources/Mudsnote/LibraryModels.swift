@@ -108,8 +108,9 @@ func librarySearchResults(
         return searchSession.searchNotes(
             query: query,
             limit: limit,
+            restrictedTo: pinnedPaths,
             cancellationCheck: cancellationCheck
-        ).filter { pinnedPaths.contains($0.url.standardizedFileURL.path) }
+        )
     case .inbox:
         return searchSession.searchInboxNotes(
             query: query,

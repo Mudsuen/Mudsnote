@@ -489,6 +489,7 @@ extension NoteStore {
         guard limit > 0 else { return [] }
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return listTrashedNotes(limit: limit) }
+        let parsedQuery = NoteSearchQuery(trimmedQuery)
         let metadata = storedTrashedNotesMetadata()
         guard let fileURLs = markdownFiles(
             in: trashDirectory(),
@@ -511,15 +512,7 @@ extension NoteStore {
             let title = loaded?.title ?? fileURL.deletingPathExtension().lastPathComponent
             let body = loaded?.body ?? ""
             let tags = loaded?.tags ?? []
-            let matchingLine = body
-                .components(separatedBy: .newlines)
-                .map { $0.trimmingCharacters(in: .whitespacesAndNewlines) }
-                .first { !$0.isEmpty && $0.localizedCaseInsensitiveContains(trimmedQuery) }
-            guard title.localizedCaseInsensitiveContains(trimmedQuery)
-                    || matchingLine != nil
-                    || tags.contains(where: { $0.localizedCaseInsensitiveContains(trimmedQuery) }) else {
-                continue
-            }
+            guard parsedQuery.matches(title: title, body: body, tags: tags) else { continue }
 
             let modifiedAt = resolvedTrashedNoteMetadata(for: fileURL, in: metadata)?.metadata.deletedAt
                 ?? fileModificationDate(for: fileURL)
@@ -527,9 +520,7 @@ extension NoteStore {
             let result = NoteSearchResult(
                 url: fileURL,
                 title: title,
-                snippet: matchingLine.flatMap(MarkdownEditorDocument.previewText(fromMarkdownLine:))
-                    ?? MarkdownEditorDocument.firstPreviewLine(in: body)
-                    ?? "",
+                snippet: parsedQuery.snippet(in: body, fallback: MarkdownEditorDocument.firstPreviewLine(in: body) ?? ""),
                 modifiedAt: modifiedAt,
                 tags: tags,
                 hasAttachments: MarkdownEditorDocument.containsAttachmentReference(in: body),

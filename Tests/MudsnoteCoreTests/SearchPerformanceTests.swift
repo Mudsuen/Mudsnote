@@ -400,6 +400,7 @@ struct SearchPerformanceTests {
             NoteSearchIndexEntry(
                 url: notesDirectory.appendingPathComponent("cache-\(index).md"),
                 title: "Cache \(index)",
+                titleLower: "cache \(index)",
                 body: largeBody,
                 bodyLower: largeBody,
                 snippet: "",
@@ -507,6 +508,11 @@ struct SearchPerformanceTests {
         #expect(fullResults.count == 1_500)
         #expect(fullResultLatency < .milliseconds(500))
 
+        let mixedStarted = clock.now
+        #expect(session.searchNotes(query: "fixture海风", limit: .max).count == 750)
+        let mixedLatency = mixedStarted.duration(to: clock.now)
+        #expect(mixedLatency < .milliseconds(500))
+
         let warmStarted = clock.now
         for index in 0..<40 {
             let query = index.isMultiple(of: 2) ? "lighthouse" : "海风"
@@ -525,7 +531,7 @@ struct SearchPerformanceTests {
         #expect(relaunchedStore.searchNotes(query: "海风", limit: 30).count == 30)
         let relaunchLatency = relaunchStarted.duration(to: clock.now)
         emitSearchPerformanceEvidence(
-            "large-library files=1500 cold=\(coldLatency) full=\(fullResultLatency) warm40=\(warmLatency) relaunch=\(relaunchLatency)"
+            "large-library files=1500 cold=\(coldLatency) full=\(fullResultLatency) mixed=\(mixedLatency) warm40=\(warmLatency) relaunch=\(relaunchLatency)"
         )
         #expect(relaunchLatency < .seconds(3))
     }

@@ -1066,7 +1066,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             currentThemeColorIdentifier: noteStore.themeColorIdentifier,
             libraryIncludesSubfolderNotes: noteStore.libraryIncludesSubfolderNotes,
             searchDefaultScope: noteStore.searchDefaultScope,
-            includesArchivedNotesInSearchAndKnowledge: noteStore.includesArchivedNotesInSearchAndKnowledge,
+            includesArchivedNotesInSearch: noteStore.includesArchivedNotesInSearch,
+            includesArchivedNotesInKnowledge: noteStore.includesArchivedNotesInKnowledge,
             editorContextMenuOptions: noteStore.enabledEditorContextMenuOptions,
             selectionToolbarOptions: noteStore.enabledSelectionToolbarOptions,
             aiEnabled: noteStore.aiEnabled,
@@ -1100,7 +1101,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         noteStore.themeColorIdentifier = settings.themeColorIdentifier
         noteStore.libraryIncludesSubfolderNotes = settings.libraryIncludesSubfolderNotes
         noteStore.searchDefaultScope = settings.searchDefaultScope
-        noteStore.includesArchivedNotesInSearchAndKnowledge = settings.includesArchivedNotesInSearchAndKnowledge
+        noteStore.includesArchivedNotesInSearch = settings.includesArchivedNotesInSearch
+        noteStore.includesArchivedNotesInKnowledge = settings.includesArchivedNotesInKnowledge
         noteStore.enabledEditorContextMenuOptions = settings.editorContextMenuOptions
         noteStore.enabledSelectionToolbarOptions = settings.selectionToolbarOptions
         noteStore.aiEnabled = settings.aiEnabled

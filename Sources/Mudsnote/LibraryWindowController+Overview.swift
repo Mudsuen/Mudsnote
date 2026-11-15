@@ -60,6 +60,7 @@ extension LibraryWindowController {
         navigationRail = rail
         let actions: [(String, String, () -> Void)] = [
             ("总览", "house", { [weak self] in self?.showOverview() }),
+            ("搜索", "magnifyingglass", { [weak self] in self?.focusSearchForLibrary(searchesAllNotes: true) }),
             ("最近笔记", "clock", { [weak self] in
                 self?.showLibraryNavigationPage(.list, scope: .recent)
             }),

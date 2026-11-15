@@ -249,23 +249,11 @@ extension LibraryWindowController {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty, !text.isEmpty else { return attributed }
 
-        let nsText = text as NSString
-        var searchRange = NSRange(location: 0, length: nsText.length)
-        while searchRange.location < nsText.length {
-            let match = nsText.range(
-                of: trimmedQuery,
-                options: [.caseInsensitive, .diacriticInsensitive],
-                range: searchRange
-            )
-            guard match.location != NSNotFound, match.length > 0 else { break }
-
+        for match in NoteSearchQuery(trimmedQuery).matchRanges(in: text) {
             attributed.addAttributes([
                 .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.34),
                 .foregroundColor: panelPrimaryTextColor()
             ], range: match)
-
-            let nextLocation = NSMaxRange(match)
-            searchRange = NSRange(location: nextLocation, length: nsText.length - nextLocation)
         }
         return attributed
     }

@@ -774,7 +774,7 @@ extension NoteStore {
     private func knowledgeEligibleEntries(
         _ entries: [NoteSearchIndexEntry]
     ) -> [NoteSearchIndexEntry] {
-        guard !includesArchivedNotesInSearchAndKnowledge else { return entries }
+        guard !includesArchivedNotesInKnowledge else { return entries }
         return entries.filter { !isArchivedNote(at: $0.url) }
     }
 

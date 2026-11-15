@@ -11,6 +11,23 @@ Known open issue:
 
 - Window live-resize still shows a dark trailing shadow/transition on some systems even after switching away from the default window shadow path. This is likely tied to macOS compositing for transparent borderless resizable panels and may require a more drastic rendering fallback during resize.
 
+## 2026-11-15 — Faster search, archive controls and a rounded sidebar field
+
+- Problem: mixed-script or separated terms required one contiguous phrase;
+  archived search was coupled to knowledge suggestions, and the navigation rail
+  lacked search. Typing repeated document highlight work and long-note snippets
+  split entire bodies into lines.
+- Fix: share normalized multi-term matching and highlighting, cache normalized
+  titles, combine field filtering with ranking, and extract bounded matching
+  snippets. Debounce highlight updates with results and only collect recent-note
+  paths for recent-scope queries. Add global search to the rail and a flexible,
+  rounded native search field; remove the obsolete toolbar search wrapper.
+  Keep archives excluded by default with independent search/knowledge controls,
+  preserving the old preference when the controls first diverge.
+- Lesson: a successful index can still omit results because of scope. Make scope
+  controllable, keep matching and highlighting consistent, and avoid repeating
+  query work on the main thread.
+
 ## 2026-11-14 — Repair search entry and make overview navigation predictable
 
 - Problem: the search shortcut could focus a hidden field; search counts were

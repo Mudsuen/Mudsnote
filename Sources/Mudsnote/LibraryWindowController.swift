@@ -50,7 +50,7 @@ final class LibraryWindowController: NSWindowController,
 
     let galleryCollectionView = LibraryGalleryCollectionView()
 
-    let searchField = NSSearchField(string: "")
+    let searchField = LibrarySearchField(string: "")
 
     let searchScopeControl = NSSegmentedControl(
         labels: ["当前", "所有"],
@@ -137,7 +137,6 @@ final class LibraryWindowController: NSWindowController,
 
     static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
 
-    static let searchToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.search")
 
     enum EditorStatusKind {
         case normal

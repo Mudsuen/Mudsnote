@@ -197,7 +197,7 @@ extension LibraryWindowController {
         if !query.isEmpty { setSidebarSearchPresented(true) }
         sidebarSearchStatusView?.isHidden = query.isEmpty
         let scopeTitle = noteListTitle(for: selectedScope)
-        searchField.placeholderString = "搜索" + scopeTitle
+        searchField.placeholderString = "搜索" + (searchScopeControl.selectedSegment == 1 ? "全部笔记" : scopeTitle)
         searchScopeControl.setToolTip("搜索" + scopeTitle, forSegment: 0)
         searchScopeControl.setToolTip("搜索所有笔记", forSegment: 1)
         // Search results must be visible even when the persisted presentation
@@ -348,10 +348,9 @@ extension LibraryWindowController {
     func cachedTrashSearchResults(query: String, limit: Int) -> [NoteSearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else { return Array(trashedNotesSnapshot.prefix(limit)) }
+        let parsedQuery = NoteSearchQuery(trimmedQuery)
         return Array(trashedNotesSnapshot.lazy.filter { note in
-            note.title.localizedCaseInsensitiveContains(trimmedQuery)
-                || note.snippet.localizedCaseInsensitiveContains(trimmedQuery)
-                || note.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
+            parsedQuery.matches(title: note.title, body: note.snippet, tags: note.tags)
         }.prefix(limit))
     }
 
@@ -397,10 +396,11 @@ extension LibraryWindowController {
         }
 
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedQuery = NoteSearchQuery(trimmedQuery)
+        let includesArchived = noteStore.includesArchivedNotesInSearch
         return Array(candidates.lazy.filter { note in
-            note.title.localizedCaseInsensitiveContains(trimmedQuery)
-                || note.snippet.localizedCaseInsensitiveContains(trimmedQuery)
-                || note.tags.contains { $0.localizedCaseInsensitiveContains(trimmedQuery) }
+            (includesArchived || !self.noteStore.isArchivedNote(at: note.url))
+                && parsedQuery.matches(title: note.title, body: note.snippet, tags: note.tags)
         }.prefix(limit))
     }
 

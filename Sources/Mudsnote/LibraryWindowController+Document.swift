@@ -374,27 +374,14 @@ extension LibraryWindowController {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty, storage.length > 0 else { return }
 
-        let nsText = storage.string as NSString
-        var searchRange = NSRange(location: 0, length: nsText.length)
-        var foundMatch = false
-        while searchRange.location < nsText.length {
-            let match = nsText.range(
-                of: trimmedQuery,
-                options: [.caseInsensitive, .diacriticInsensitive],
-                range: searchRange
-            )
-            guard match.location != NSNotFound, match.length > 0 else { break }
-
+        let ranges = NoteSearchQuery(trimmedQuery).matchRanges(in: storage.string)
+        for match in ranges {
             storage.addAttributes([
                 .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.30),
                 .qmSearchHighlight: true
             ], range: match)
-            foundMatch = true
-
-            let nextLocation = NSMaxRange(match)
-            searchRange = NSRange(location: nextLocation, length: nsText.length - nextLocation)
         }
-        hasEditorSearchHighlights = foundMatch
+        hasEditorSearchHighlights = !ranges.isEmpty
     }
 
     func removeEditorSearchHighlights() {

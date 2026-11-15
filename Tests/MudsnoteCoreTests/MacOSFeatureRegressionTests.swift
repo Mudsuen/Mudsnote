@@ -3,6 +3,66 @@ import Testing
 @testable import MudsnoteCore
 
 struct MacOSFeatureRegressionTests {
+    @Test func archivedSearchPreferencePreservesLegacyChoiceAndSeparatesKnowledge() throws {
+        let (store, root, defaults, suiteName) = try makeStore()
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        defaults.set(true, forKey: "mudsnote.search.includesArchivedNotes")
+        #expect(store.includesArchivedNotesInSearch)
+        #expect(store.includesArchivedNotesInKnowledge)
+        store.includesArchivedNotesInSearch = false
+        #expect(store.includesArchivedNotesInKnowledge)
+        store.includesArchivedNotesInKnowledge = false
+        store.includesArchivedNotesInSearch = true
+        #expect(!store.includesArchivedNotesInKnowledge)
+    }
+
+    @Test func multiTermSearchMatchesMixedScriptsAcrossFieldsAndKeepsFilters() throws {
+        let (store, root, defaults, suiteName) = try makeStore()
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let crossField = try store.saveNewNote(title: "Knock", body: "操作说明\n短密码的使用方式", tags: ["工具"])
+        let titleOnly = try store.saveNewNote(title: "ＫＮＯＣＫ短密码", body: "标题命中")
+        _ = try store.saveNewNote(title: "Knock", body: "没有第二个词")
+        _ = try store.saveNewNote(title: "Other", body: "只有短密码")
+        let cafe = try store.saveNewNote(title: "Café", body: "Résumé")
+        let session = store.makeSearchSession()
+        let reads = store.searchIndexEntryReadCountForTesting
+        for query in ["knock短密码", "KNOCK 短密码", "短密码\nknock", "  knock　短密码  "] {
+            #expect(Set(session.searchNotes(query: query).map(\.url)) == [crossField, titleOnly])
+        }
+        #expect(session.searchNotes(query: "knock 短密码", filter: .title).map(\.url) == [titleOnly])
+        #expect(session.searchNotes(query: "knock 短密码", filter: .body).isEmpty)
+        #expect(session.searchNotes(query: "工具 knock").map(\.url) == [crossField])
+        #expect(session.searchNotes(query: "cafe resume").map(\.url) == [cafe])
+        #expect(session.searchNotes(query: "knock", limit: 0, filter: .all).isEmpty)
+        #expect(session.searchNotes(query: "knock", filter: .title, cancellationCheck: { true }).isEmpty)
+        #expect(store.searchIndexEntryReadCountForTesting == reads)
+        let relaunchedStore = NoteStore(defaults: defaults, legacyDefaults: nil,
+                                       appSupportDirectory: root.appendingPathComponent("AppSupport"))
+        #expect(Set(relaunchedStore.searchNotes(query: "knock 短密码").map(\.url)) == [crossField, titleOnly])
+        #expect(relaunchedStore.searchIndexEntryReadCountForTesting == 0)
+        let trashed = try store.trashNote(at: crossField)
+        #expect(store.searchTrashedNotes(query: "knock短密码", limit: 10, cancellationCheck: { false }).map { $0.url.resolvingSymlinksInPath() } == [trashed.resolvingSymlinksInPath()])
+    }
+
+    @Test func searchSnippetKeepsLateMatchVisibleInLongLines() throws {
+        let (store, root, defaults, suiteName) = try makeStore()
+        defer {
+            defaults.removePersistentDomain(forName: suiteName)
+            try? FileManager.default.removeItem(at: root)
+        }
+        _ = try store.saveNewNote(title: "Knock", body:
+            String(repeating: "前置内容 ", count: 2_000) + "短密码示例" + String(repeating: " 后续内容", count: 2_000))
+        let result = try #require(store.searchNotes(query: "knock 短密码").first)
+        #expect(result.snippet.contains("短密码"))
+        #expect(result.snippet.count < 200)
+    }
+
     private func makeStore() throws -> (NoteStore, URL, UserDefaults, String) {
         let suiteName = "mudsnote.macos-feature-regressions.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
@@ -37,7 +97,7 @@ struct MacOSFeatureRegressionTests {
     }
 
     @Test
-    func archivedNotesAreExcludedFromSearchTagsAndKnowledgeByDefault() throws {
+    func archivedSearchCanBeEnabledWithoutEnablingKnowledgeSuggestions() throws {
         let (store, root, defaults, suiteName) = try makeStore()
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -59,10 +119,14 @@ struct MacOSFeatureRegressionTests {
         )
 
         #expect(store.searchNotes(query: "Archived").isEmpty)
+        store.includesArchivedNotesInSearch = true
+        #expect(!store.includesArchivedNotesInKnowledge)
+        #expect(store.searchNotes(query: "Archived").map(\.url) == [archived])
+        #expect(store.makeSearchSession().searchNotes(query: "Archived").map(\.url) == [archived])
         #expect(!store.knownTags().contains("archived"))
         #expect(!store.knowledgeRelations(for: active, roots: [notes]).suggested.map(\.url).contains(archived))
 
-        store.includesArchivedNotesInSearchAndKnowledge = true
+        store.includesArchivedNotesInKnowledge = true
         #expect(store.searchNotes(query: "Archived").map(\.url).contains(archived))
         #expect(store.knownTags().contains("archived"))
     }

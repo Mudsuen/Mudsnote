@@ -55,6 +55,49 @@ extension MarkdownRichEditorTests {
         #expect(!controller.searchField.isHiddenOrHasHiddenAncestor)
     }
 
+    @Test func searchRailFindsOutsideCurrentFolderAndHighlightsEveryTerm() async throws {
+        let suite = "mudsnote.library-search-rail.\(UUID().uuidString)"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        defer {
+            defaults.removePersistentDomain(forName: suite)
+            try? FileManager.default.removeItem(at: root)
+        }
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil,
+                              appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let folder = try store.createFolder(named: "Projects")
+        _ = try store.saveNewNote(title: "Project", body: "Current folder", in: folder)
+        let target = try store.saveNewNote(title: "Knock", body: "短密码的使用方式")
+        let controller = LibraryWindowController(noteStore: store,
+            onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close() }
+        controller.showWindowAndFocus()
+        controller.showLibraryNavigationPage(.tree, scope: .folder(folder))
+        let button = try #require(controller.navigationRail?.buttons.first { $0.0 == "搜索" }?.1)
+        button.performClick(nil)
+        #expect(controller.searchScopeControl.selectedSegment == 1)
+        #expect(controller.searchField.currentEditor() === controller.window?.firstResponder)
+        #expect(!controller.searchField.isBezeled)
+        #expect(controller.searchField.frame.width > 100)
+        #expect(button.selected)
+        controller.searchForLibrary(query: "knock短密码", allNotes: true)
+        #expect(controller.noteListSearchResultsForLibrary().map(\.url) == [target])
+        let text = "Knock 与短密码"
+        let highlighted = controller.highlightedSearchString(text, font: .systemFont(ofSize: 14),
+                                                             baseColor: .labelColor, query: "knock短密码")
+        for term in ["Knock", "短密码"] {
+            let range = (text as NSString).range(of: term)
+            #expect(highlighted.attribute(.backgroundColor, at: range.location, effectiveRange: nil) != nil)
+        }
+        // Typing only schedules work; it must not rescan the document per keystroke.
+        let scans = controller.editorSearchHighlightRemovalScanCount
+        controller.searchField.stringValue = "knock"
+        controller.scheduleSearchReloadFromTyping()
+        #expect(controller.editorSearchHighlightRemovalScanCount == scans)
+        controller.cancelPendingSearchReload()
+    }
+
     @Test func nativeSearchCancelRestoresLibraryAndCancelsPendingQuery() async throws {
         let suite = "mudsnote.library-native-search-cancel.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suite))

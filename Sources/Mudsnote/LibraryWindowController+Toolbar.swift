@@ -15,9 +15,11 @@ extension LibraryWindowController {
         searchField.delegate = self
         searchField.target = self
         searchField.action = #selector(searchFieldAction(_:))
-        searchField.isBordered = true
+        searchField.isBordered = false
+        searchField.isBezeled = false
+        searchField.drawsBackground = false
         searchField.bezelStyle = .roundedBezel
-        searchField.focusRingType = .default
+        searchField.focusRingType = .exterior
         searchField.translatesAutoresizingMaskIntoConstraints = false
         searchField.frame = NSRect(
             x: 0,
@@ -25,7 +27,8 @@ extension LibraryWindowController {
             width: LibraryNotesLayout.toolbarSearchWidth,
             height: LibraryNotesLayout.toolbarSearchHeight
         )
-        searchField.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWidth).isActive = true
+        searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
+        searchField.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
         searchField.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchHeight).isActive = true
 
         let toolbar = NSToolbar(identifier: Self.toolbarIdentifier)
@@ -268,28 +271,6 @@ extension LibraryWindowController {
                 action: #selector(restoreSelectedNotePressed),
                 visibilityPriority: .low
             )
-        case Self.searchToolbarItemIdentifier:
-            let item = NSToolbarItem(itemIdentifier: itemIdentifier)
-            item.label = LibraryCopy.search
-            item.paletteLabel = LibraryCopy.search
-            item.toolTip = LibraryCopy.searchNotes
-            item.visibilityPriority = .high
-            let wrapper = NSView(frame: NSRect(
-                x: 0,
-                y: 0,
-                width: LibraryNotesLayout.toolbarSearchWrapperWidth,
-                height: LibraryNotesLayout.toolbarSearchWrapperHeight
-            ))
-            wrapper.translatesAutoresizingMaskIntoConstraints = false
-            wrapper.addSubview(searchField)
-            NSLayoutConstraint.activate([
-                wrapper.widthAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWrapperWidth),
-                wrapper.heightAnchor.constraint(equalToConstant: LibraryNotesLayout.toolbarSearchWrapperHeight),
-                searchField.centerXAnchor.constraint(equalTo: wrapper.centerXAnchor),
-                searchField.centerYAnchor.constraint(equalTo: wrapper.centerYAnchor)
-            ])
-            item.view = wrapper
-            return item
         default:
             return nil
         }
