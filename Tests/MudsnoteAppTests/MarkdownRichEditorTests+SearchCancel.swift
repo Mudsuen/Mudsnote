@@ -78,7 +78,6 @@ extension MarkdownRichEditorTests {
         button.performClick(nil)
         #expect(controller.searchScopeControl.selectedSegment == 1)
         #expect(controller.searchField.currentEditor() === controller.window?.firstResponder)
-        #expect(!controller.searchField.isBezeled)
         #expect(controller.searchField.frame.width > 100)
         #expect(button.selected)
         controller.searchForLibrary(query: "knock短密码", allNotes: true)

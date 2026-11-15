@@ -50,7 +50,7 @@ final class LibraryWindowController: NSWindowController,
 
     let galleryCollectionView = LibraryGalleryCollectionView()
 
-    let searchField = LibrarySearchField(string: "")
+    let searchField = LibrarySearchField(frame: .zero)
 
     let searchScopeControl = NSSegmentedControl(
         labels: ["当前", "所有"],

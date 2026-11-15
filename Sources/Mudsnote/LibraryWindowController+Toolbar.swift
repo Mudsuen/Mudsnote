@@ -16,7 +16,7 @@ extension LibraryWindowController {
         searchField.target = self
         searchField.action = #selector(searchFieldAction(_:))
         searchField.isBordered = false
-        searchField.isBezeled = false
+        searchField.isBezeled = true
         searchField.drawsBackground = false
         searchField.bezelStyle = .roundedBezel
         searchField.focusRingType = .exterior

@@ -106,6 +106,9 @@ extension LibraryWindowController {
         let heading = NSStackView(views: [sidebarLibraryTitle, searchField, searchButton, newNote])
         searchField.isHidden = true
         heading.orientation = .horizontal; heading.spacing = 4
+        heading.distribution = .fill
+        heading.detachesHiddenViews = true
+        heading.alignment = .centerY
         heading.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 12)
         heading.heightAnchor.constraint(equalToConstant: 40).isActive = true
         let searchStatus = NSStackView(views: [noteListCountLabel, NSView(), searchScopeControl])
