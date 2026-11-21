@@ -182,8 +182,7 @@ available_iphone_id() {
 
 available_xcode_iphone_id() {
   xcodebuild -project "$PROJECT" -scheme "$SCHEME" -showdestinations 2>/dev/null \
-    | sed -nE 's/.*platform:iOS,.*id:([^,}]+).*/\1/p' \
-    | head -n 1
+    | awk -F'id:' '/platform:iOS,/ && !/placeholder/ && !/error:/ { split($2, a, /[,}]/); print a[1]; exit }'
 }
 
 iphone_state_summary() {

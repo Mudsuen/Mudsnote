@@ -31,6 +31,8 @@ assert_script_contract 'restore_isolated_profiles' \
   "failed renewal must restore the previous cached profiles"
 assert_script_contract 'available_xcode_iphone_id' \
   "renewal must prefer the connected iPhone over a generic destination"
+assert_script_contract '!/placeholder/' \
+  "destination lookup must ignore Xcode placeholder iOS destinations"
 assert_script_contract 'notify_failure' \
   "background failures must produce a user notification"
 assert_script_contract 'redact_build_output' \
