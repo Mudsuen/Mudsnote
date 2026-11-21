@@ -3,6 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SCRIPT="$ROOT_DIR/scripts/ios_signing_refresh.sh"
+APPS_SCRIPT="$ROOT_DIR/scripts/ios_apps_signing_refresh.sh"
 
 fail() {
   printf 'FAIL: %s\n' "$1" >&2
@@ -75,5 +76,12 @@ plist="$test_root/home/Library/LaunchAgents/com.mudsnote.ios-signing-refresh.pli
   || fail "LaunchAgent must request launch smoke after installation"
 [[ "$(stat -f '%Lp' "$plist")" == "600" ]] \
   || fail "LaunchAgent plist must use least-privilege file permissions"
+
+grep -Eq 'isolate_app_profiles' "$APPS_SCRIPT" \
+  || fail "multi-app refresh must isolate near-expiry cached profiles before renewing secondary apps"
+grep -Eq 'restore_app_profiles' "$APPS_SCRIPT" \
+  || fail "multi-app refresh must restore isolated profiles if secondary renewal fails"
+grep -Eq 'DeviceLocked' "$APPS_SCRIPT" \
+  || fail "multi-app install must defer cleanly when the iPhone is locked"
 
 printf 'iOS signing refresh contract tests passed.\n'
