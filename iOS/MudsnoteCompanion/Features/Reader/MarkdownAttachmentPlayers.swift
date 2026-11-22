@@ -53,7 +53,7 @@ struct AudioAttachmentPlayer: View {
                         .font(.system(size: 18, weight: .semibold))
                         .frame(width: 42, height: 42)
                         .background(MudsnoteColors.primary, in: Circle())
-                        .foregroundStyle(.black)
+                        .foregroundStyle(MudsnoteColors.primaryForeground)
                 }
                 .buttonStyle(.plain)
                 .accessibilityLabel(playback.isPlaying ? "Pause audio" : "Play audio")
@@ -143,6 +143,9 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
         do {
             errorMessage = nil
             if player == nil {
+                let session = AVAudioSession.sharedInstance()
+                try? session.setCategory(.playback, mode: .default)
+                try? session.setActive(true)
                 let player = try AVAudioPlayer(contentsOf: url)
                 player.delegate = self
                 self.player = player
@@ -152,6 +155,9 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
                 player.pause()
                 isPlaying = false
             } else {
+                let session = AVAudioSession.sharedInstance()
+                try? session.setCategory(.playback, mode: .default)
+                try? session.setActive(true)
                 guard player.play() else {
                     errorMessage = String(localized: "Could not play this audio file.")
                     return

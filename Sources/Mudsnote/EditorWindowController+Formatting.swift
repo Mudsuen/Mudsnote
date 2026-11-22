@@ -119,7 +119,7 @@ extension EditorWindowController {
             paragraphKind: kind,
             theme: theme
         )
-        let replacement = MarkdownRichTextCodec.renderLine(inlineMarkdown, theme: theme)
+        let replacement = MarkdownRichTextCodec.renderLine(inlineMarkdown, theme: theme, baseURL: fileURLForRendering)
         let selectionOffset = max(editorTextView.selectedRange().location - contentRange.location, 0)
 
         suppressTextDidChange = true
@@ -193,7 +193,7 @@ extension EditorWindowController {
             }
 
             let lineMarkdown = MarkdownRichTextCodec.markdownLine(for: nextKind, inlineContent: inlineMarkdown)
-            renderedLines.append(MarkdownRichTextCodec.renderLine(lineMarkdown, theme: theme))
+            renderedLines.append(MarkdownRichTextCodec.renderLine(lineMarkdown, theme: theme, baseURL: fileURLForRendering))
         }
 
         let replacement = joinRenderedLines(renderedLines)
@@ -264,7 +264,8 @@ extension EditorWindowController {
         let inlineMarkdown = MarkdownRichTextCodec.serializeVisibleContent(range: contentRange, in: storage, paragraphKind: kind, theme: theme)
         let replacement = MarkdownRichTextCodec.renderLine(
             MarkdownRichTextCodec.markdownLine(for: .checklist(checked: !checked), inlineContent: inlineMarkdown),
-            theme: theme
+            theme: theme,
+            baseURL: fileURLForRendering
         )
 
         let undoSnapshot = formattingUndoSnapshot()
@@ -576,9 +577,13 @@ extension EditorWindowController {
 
     func rememberEditorSelectionForToolbarActions() {
         let selection = editorTextView.selectedRange()
-        guard selection.length > 0, let storage = editorTextView.textStorage else { return }
+        guard let storage = editorTextView.textStorage else { return }
         guard NSMaxRange(selection) <= storage.length else { return }
-        lastEditorSelectionForToolbarAction = selection
+        if selection.length > 0 {
+            lastEditorSelectionForToolbarAction = selection
+        } else if window == nil || window?.firstResponder === editorTextView {
+            lastEditorSelectionForToolbarAction = nil
+        }
     }
 
     // MARK: - Keyboard shortcuts

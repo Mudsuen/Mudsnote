@@ -40,7 +40,7 @@ public struct AIMemorySyncService: Sendable {
 
         let snapshot = try makeSnapshot(now: now)
         let current = try? String(contentsOf: destinationURL, encoding: .utf8)
-        let didWrite = current != snapshot
+        let didWrite = current.map { Self.stripGeneratedTimestamp(in: $0) != Self.stripGeneratedTimestamp(in: snapshot) } ?? true
         if didWrite {
             try FileManager.default.createDirectory(
                 at: destinationDirectory,
@@ -49,6 +49,14 @@ public struct AIMemorySyncService: Sendable {
             try snapshot.write(to: destinationURL, atomically: true, encoding: .utf8)
         }
         return AIMemorySyncResult(destinationURL: destinationURL, didWrite: didWrite, syncedAt: now)
+    }
+
+    private static func stripGeneratedTimestamp(in markdown: String) -> String {
+        markdown
+            .replacingOccurrences(of: "\r\n", with: "\n")
+            .components(separatedBy: "\n")
+            .filter { !$0.hasPrefix("generated: ") }
+            .joined(separator: "\n")
     }
 
     func makeSnapshot(now: Date) throws -> String {
@@ -90,6 +98,8 @@ public struct AIMemorySyncService: Sendable {
         var sections: [String] = []
         var current: [String] = []
         var capturedHeadingLevel: Int?
+        var activeFenceCharacter: Character?
+        var activeFenceLength = 0
 
         func flush() {
             let section = current.joined(separator: "\n")
@@ -101,6 +111,32 @@ public struct AIMemorySyncService: Sendable {
         }
 
         for line in lines {
+            let trimmed = line.trimmingCharacters(in: .whitespaces)
+            if let first = trimmed.first, first == "`" || first == "~" {
+                let runLength = trimmed.prefix(while: { $0 == first }).count
+                if runLength >= 3 {
+                    if let active = activeFenceCharacter {
+                        if active == first, runLength >= activeFenceLength,
+                           trimmed.dropFirst(runLength).trimmingCharacters(in: .whitespaces).isEmpty {
+                            activeFenceCharacter = nil
+                            activeFenceLength = 0
+                        }
+                    } else {
+                        activeFenceCharacter = first
+                        activeFenceLength = runLength
+                    }
+                    if capturedHeadingLevel != nil {
+                        current.append(line)
+                    }
+                    continue
+                }
+            }
+            if activeFenceCharacter != nil {
+                if capturedHeadingLevel != nil {
+                    current.append(line)
+                }
+                continue
+            }
             let headingLevel = line.prefix(while: { $0 == "#" }).count
             let isHeading = headingLevel > 0
                 && line.dropFirst(headingLevel).first?.isWhitespace == true

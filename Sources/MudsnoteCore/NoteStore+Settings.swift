@@ -109,10 +109,34 @@ extension NoteStore {
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.aiMemoryLastSyncDate) }
     }
 
+    private static let archiveDirectoryNames: Set<String> = ["archive", "archives", "归档"]
+
     public func isArchivedNote(at url: URL) -> Bool {
-        let archiveNames = Set(["archive", "archives", "归档"])
-        return url.standardizedFileURL.pathComponents.contains {
-            archiveNames.contains($0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
+        let standardizedURL = url.standardizedFileURL
+        let directoryURL = standardizedURL.deletingLastPathComponent()
+        let directoryPath = directoryURL.path
+        let candidateRoots = knownSearchRoots().map(\.standardizedFileURL)
+        let matchingRoot = candidateRoots
+            .filter { root in
+                directoryPath == root.path || directoryPath.hasPrefix(root.path + "/")
+            }
+            .max { $0.path.count < $1.path.count }
+
+        let componentsToInspect: [String]
+        if let matchingRoot {
+            let rootName = matchingRoot.lastPathComponent
+            if directoryPath == matchingRoot.path {
+                componentsToInspect = [rootName]
+            } else {
+                let relative = String(directoryPath.dropFirst(matchingRoot.path.count + 1))
+                componentsToInspect = [rootName] + relative.split(separator: "/").map(String.init)
+            }
+        } else {
+            componentsToInspect = directoryURL.pathComponents
+        }
+
+        return componentsToInspect.contains {
+            Self.archiveDirectoryNames.contains($0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased())
         }
     }
 

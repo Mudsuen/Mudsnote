@@ -7,6 +7,7 @@ import UniformTypeIdentifiers
 
 extension LibraryWindowController {
     func showWindowAndFocus() {
+        isWindowClosed = false
         hasRequestedWindowPresentation = true
         showWindow(nil)
         guard let window else { return }
@@ -375,6 +376,7 @@ extension LibraryWindowController {
     }
 
     func windowWillClose(_ notification: Notification) {
+        isWindowClosed = true
         if let librarySplitView {
             NotificationCenter.default.removeObserver(
                 self,
@@ -397,6 +399,9 @@ extension LibraryWindowController {
         fileSystemMonitor?.stop()
         fileSystemMonitor = nil
         internallyMutatedPaths.removeAll()
+        overviewView?.cancelPendingWork()
+        editorTextView.dismissSelectionFormattingPanel()
+        editorTextView.undoManager?.removeAllActions()
         attachmentQuickLookController.dismiss()
         attachmentManagerWindowController?.close()
         attachmentManagerWindowController = nil

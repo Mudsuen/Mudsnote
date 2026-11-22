@@ -809,9 +809,18 @@ enum MarkdownRichTextCodec {
         let output = NSMutableAttributedString()
         let baseAttributes = theme.baseAttributes(for: paragraphKind)
         var index = source.startIndex
+        var plainStart = index
+
+        func flushPlain(upTo end: String.Index) {
+            guard plainStart < end else { return }
+            output.append(NSAttributedString(string: String(source[plainStart..<end]), attributes: baseAttributes))
+            plainStart = end
+        }
 
         while index < source.endIndex {
-            if source[index...].hasPrefix("!["),
+            let currentChar = source[index]
+            if currentChar == "!",
+               source[index...].hasPrefix("!["),
                let closeBracket = source[source.index(index, offsetBy: 2)...].range(of: "]("),
                let closeParen = closingLinkParenthesis(in: source, after: closeBracket.upperBound) {
                 let label = String(source[source.index(index, offsetBy: 2)..<closeBracket.lowerBound])
@@ -826,50 +835,65 @@ enum MarkdownRichTextCodec {
                     baseAttributes: baseAttributes,
                     baseURL: baseURL
                 ) {
+                    flushPlain(upTo: index)
                     output.append(imageAttachment)
                     index = source.index(after: closeParen)
+                    plainStart = index
                     continue
                 }
             }
 
-            if source[index...].hasPrefix("**"),
+            if currentChar == "*",
+               source[index...].hasPrefix("**"),
                let end = source[index...].dropFirst(2).range(of: "**") {
+                flushPlain(upTo: index)
                 let content = String(source[source.index(index, offsetBy: 2)..<end.lowerBound])
                 output.append(attributed(content, base: baseAttributes, extra: [.font: theme.boldFont]))
                 index = end.upperBound
+                plainStart = index
                 continue
             }
 
-            if source[index...].hasPrefix("*"),
+            if currentChar == "*",
                let end = source[source.index(after: index)...].range(of: "*") {
+                flushPlain(upTo: index)
                 let content = String(source[source.index(after: index)..<end.lowerBound])
                 output.append(attributed(content, base: baseAttributes, extra: [
                     .font: theme.italicFont,
                     .obliqueness: markdownItalicObliqueness
                 ]))
                 index = end.upperBound
+                plainStart = index
                 continue
             }
 
-            if source[index...].hasPrefix("~~"),
+            if currentChar == "~",
+               source[index...].hasPrefix("~~"),
                let end = source[index...].dropFirst(2).range(of: "~~") {
+                flushPlain(upTo: index)
                 let content = String(source[source.index(index, offsetBy: 2)..<end.lowerBound])
                 output.append(attributed(content, base: baseAttributes, extra: [.strikethroughStyle: NSUnderlineStyle.single.rawValue]))
                 index = end.upperBound
+                plainStart = index
                 continue
             }
 
-            if source[index...].hasPrefix("<u>"),
+            if currentChar == "<",
+               source[index...].hasPrefix("<u>"),
                let end = source[index...].range(of: "</u>") {
+                flushPlain(upTo: index)
                 let contentStart = source.index(index, offsetBy: 3)
                 let content = String(source[contentStart..<end.lowerBound])
                 output.append(attributed(content, base: baseAttributes, extra: [.underlineStyle: NSUnderlineStyle.single.rawValue]))
                 index = end.upperBound
+                plainStart = index
                 continue
             }
 
-            if source[index...].hasPrefix("<mark>"),
+            if currentChar == "<",
+               source[index...].hasPrefix("<mark>"),
                let end = source[index...].range(of: "</mark>") {
+                flushPlain(upTo: index)
                 let contentStart = source.index(index, offsetBy: 6)
                 let content = String(source[contentStart..<end.lowerBound])
                 let highlighted = parseInlineMarkdown(
@@ -886,25 +910,28 @@ enum MarkdownRichTextCodec {
                 }
                 output.append(highlighted)
                 index = end.upperBound
+                plainStart = index
                 continue
             }
 
-            if source[index...].hasPrefix("`"),
+            if currentChar == "`",
                let end = source[source.index(after: index)...].range(of: "`") {
                 let content = String(source[source.index(after: index)..<end.lowerBound])
                 guard !content.isEmpty else {
-                    output.append(attributed(String(source[index]), base: baseAttributes))
                     index = source.index(after: index)
                     continue
                 }
+                flushPlain(upTo: index)
                 output.append(attributed(content, base: baseAttributes, extra: [.font: theme.codeFont, .qmCode: true, .foregroundColor: theme.accentColor]))
                 index = end.upperBound
+                plainStart = index
                 continue
             }
 
-            if source[index...].hasPrefix("["),
+            if currentChar == "[",
                let closeBracket = source[index...].range(of: "]("),
                let closeParen = closingLinkParenthesis(in: source, after: closeBracket.upperBound) {
+                flushPlain(upTo: index)
                 let label = String(source[source.index(after: index)..<closeBracket.lowerBound])
                 let url = String(source[closeBracket.upperBound..<closeParen])
                 let markdown = String(source[index...closeParen])
@@ -919,6 +946,7 @@ enum MarkdownRichTextCodec {
                 ) {
                     output.append(attachment)
                     index = source.index(after: closeParen)
+                    plainStart = index
                     continue
                 }
                 output.append(attributed(label, base: baseAttributes, extra: [
@@ -927,12 +955,13 @@ enum MarkdownRichTextCodec {
                     .qmLinkURL: url
                 ]))
                 index = source.index(after: closeParen)
+                plainStart = index
                 continue
             }
 
-            output.append(attributed(String(source[index]), base: baseAttributes))
             index = source.index(after: index)
         }
+        flushPlain(upTo: source.endIndex)
 
         if output.length == 0 {
             output.append(NSAttributedString(string: "", attributes: baseAttributes))
@@ -1224,8 +1253,25 @@ enum MarkdownRichTextCodec {
         return false
     }
 
+    private static let regexCacheLock = NSLock()
+    private nonisolated(unsafe) static var compiledRegexCache: [String: NSRegularExpression] = [:]
+
+    private static func cachedRegex(for pattern: String) -> NSRegularExpression? {
+        regexCacheLock.lock()
+        if let cached = compiledRegexCache[pattern] {
+            regexCacheLock.unlock()
+            return cached
+        }
+        regexCacheLock.unlock()
+        guard let compiled = try? NSRegularExpression(pattern: pattern) else { return nil }
+        regexCacheLock.lock()
+        compiledRegexCache[pattern] = compiled
+        regexCacheLock.unlock()
+        return compiled
+    }
+
     private static func firstMatch(_ pattern: String, in line: String) -> NSTextCheckingResult? {
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+        guard let regex = cachedRegex(for: pattern) else { return nil }
         let nsLine = line as NSString
         return regex.firstMatch(in: line, range: NSRange(location: 0, length: nsLine.length))
     }

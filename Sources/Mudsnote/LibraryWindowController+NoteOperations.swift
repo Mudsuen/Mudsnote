@@ -680,6 +680,25 @@ extension LibraryWindowController {
         }
     }
 
+    func updateEditorPreferences(spellCheckingEnabled: Bool) {
+        editorTextView.isContinuousSpellCheckingEnabled = spellCheckingEnabled
+        editorTextView.isAutomaticSpellingCorrectionEnabled = spellCheckingEnabled
+    }
+
+    func refreshAfterPreferencesChange(rootsChanged: Bool) {
+        activeSearchSession = nil
+        updateEditorPreferences(spellCheckingEnabled: noteStore.spellCheckingEnabled)
+        if rootsChanged {
+            restartLibraryFileSystemMonitorForCurrentRoots()
+            sourceFoldersLoaded = false
+            scheduleDeferredSourceFolderLoad()
+            scheduleSourceSnapshotValidation(loadFirstIfNeeded: selectedURL == nil)
+        }
+        knowledgeGraphWindowController?.reload()
+        refreshFolderNoteVisibilityForLibrary()
+        refreshThemeColorForLibrary()
+    }
+
     func refreshThemeColorForLibrary() {
         LibraryNoteRowView.selectionFillColor = selectedThemeColor.noteSelectionColor
         refreshVisibleSourceOutlinePresentation()

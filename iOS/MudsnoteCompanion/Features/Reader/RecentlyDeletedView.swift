@@ -273,5 +273,9 @@ enum NotesCloneColors {
     static let background = MudsnoteColors.canvas
     static let separator = MudsnoteColors.line
     static let folderYellow = Color(hex: 0xD7BD68)
-    static let chip = Color(hex: 0x22262F)
+    static let chip = Color(uiColor: UIColor { traits in
+        traits.userInterfaceStyle == .dark
+            ? UIColor(red: 0x22 / 255.0, green: 0x26 / 255.0, blue: 0x2F / 255.0, alpha: 1)
+            : UIColor(red: 0xE8 / 255.0, green: 0xEA / 255.0, blue: 0xF0 / 255.0, alpha: 1)
+    })
 }

@@ -298,6 +298,13 @@ struct AttachmentLibraryView: View {
 }
 
 struct AttachmentImageThumbnail: View {
+    private static let thumbnailCache: NSCache<NSString, UIImage> = {
+        let cache = NSCache<NSString, UIImage>()
+        cache.countLimit = 128
+        cache.totalCostLimit = 64 * 1_024 * 1_024
+        return cache
+    }()
+
     @EnvironmentObject private var appModel: AppModel
     var attachment: LibraryAttachment
     @State private var image: UIImage?
@@ -316,12 +323,28 @@ struct AttachmentImageThumbnail: View {
             }
         }
         .clipped()
-        .task(id: attachment.id) {
-            guard let data = await appModel.attachmentThumbnailData(for: attachment) else {
+        .task(id: cacheKey) {
+            let key = cacheKey as NSString
+            if let cached = Self.thumbnailCache.object(forKey: key) {
+                image = cached
                 return
             }
-            image = Self.thumbnail(from: data)
+            guard let data = await appModel.attachmentThumbnailData(for: attachment),
+                  !Task.isCancelled else {
+                return
+            }
+            let decoded = await Task.detached(priority: .utility) {
+                Self.thumbnail(from: data)
+            }.value
+            guard !Task.isCancelled, let decoded else { return }
+            let cost = Int(decoded.size.width * decoded.size.height * decoded.scale * decoded.scale * 4)
+            Self.thumbnailCache.setObject(decoded, forKey: key, cost: cost)
+            image = decoded
         }
+    }
+
+    private var cacheKey: String {
+        "\(attachment.id)|\(attachment.modifiedAt.timeIntervalSinceReferenceDate)|\(attachment.byteCount)"
     }
 
     private static func thumbnail(from data: Data) -> UIImage? {

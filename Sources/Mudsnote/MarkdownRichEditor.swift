@@ -700,17 +700,22 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             }
             : lineStarts
         guard !editableStarts.isEmpty else { return true }
-        guard shouldChangeText(in: paragraphRange, replacementString: nil) else { return true }
-
-        textStorage.beginEditing()
+        let replacement = NSMutableAttributedString(attributedString: textStorage.attributedSubstring(from: paragraphRange))
         for start in editableStarts.reversed() {
+            let relativeStart = start - paragraphRange.location
             if outdent {
-                textStorage.deleteCharacters(in: NSRange(location: start, length: 1))
+                replacement.deleteCharacters(in: NSRange(location: relativeStart, length: 1))
             } else {
-                let attributes = start < textStorage.length ? textStorage.attributes(at: start, effectiveRange: nil) : typingAttributes
-                textStorage.insert(NSAttributedString(string: "\t", attributes: attributes), at: start)
+                let attributes = relativeStart < replacement.length
+                    ? replacement.attributes(at: relativeStart, effectiveRange: nil)
+                    : typingAttributes
+                replacement.insert(NSAttributedString(string: "\t", attributes: attributes), at: relativeStart)
             }
         }
+        guard shouldChangeText(in: paragraphRange, replacementString: replacement.string) else { return true }
+
+        textStorage.beginEditing()
+        textStorage.replaceCharacters(in: paragraphRange, with: replacement)
         textStorage.endEditing()
 
         let selectionStartDelta = editableStarts.filter { $0 <= selection.location }.count * (outdent ? -1 : 1)
@@ -789,6 +794,9 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
     }
 
     override func performKeyEquivalent(with event: NSEvent) -> Bool {
+        guard window == nil || window?.firstResponder === self else {
+            return super.performKeyEquivalent(with: event)
+        }
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
         if modifiers == [.command], event.keyCode == UInt16(kVK_ANSI_Z) {
             dismissSelectionFormattingPanel()
@@ -805,7 +813,6 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
             return true
         }
         if modifiers == [.command], event.keyCode == 9,
-           (window == nil || window?.firstResponder === self),
            pasteContents(from: pasteboardForPaste()) {
             return true
         }

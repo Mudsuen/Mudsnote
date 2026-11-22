@@ -68,7 +68,7 @@ extension LibraryWindowController {
         let tags = selectedTags
         let targetDirectory = previousURL?.deletingLastPathComponent() ?? targetDirectoryForNewNote()
         let updatesInPlace = previousURL.map {
-            externallyOpenedDocumentsByPath[$0.path] != nil
+            externallyOpenedDocumentsByPath[$0.standardizedFileURL.path] != nil
         } ?? false
         let expectedContents = selectedSourceContents
         backgroundAutosaveActiveEditorRevision = editorRevision
@@ -420,7 +420,17 @@ extension LibraryWindowController {
         if !isDirty { try retryFailedBackgroundAutosaves(documentIdentifier: savingDocumentIdentifier) }
         guard force || isDirty else { return selectedURL }
         guard selectedScope != .trash else { return selectedURL }
+
+        let document = currentEditorDocument()
+        let body = document.body.trimmingCharacters(in: .newlines)
+        let title = document.title
         if !isDirty, let selectedURL, let selectedSourceContents,
+           noteStore.matchesStoredNoteContent(
+               title: title,
+               body: body,
+               tags: selectedTags,
+               expectedContents: selectedSourceContents
+           ),
            try String(contentsOf: selectedURL, encoding: .utf8) == selectedSourceContents {
             return selectedURL
         }
@@ -428,9 +438,6 @@ extension LibraryWindowController {
         autosaveTask = nil
         cancelSourceSnapshotValidation()
 
-        let document = currentEditorDocument()
-        let body = document.body.trimmingCharacters(in: .newlines)
-        let title = document.title
         guard selectedURL != nil || isCreatingNewNote || !title.isEmpty || !body.isEmpty else { return nil }
 
         let previousURL = selectedURL
@@ -471,7 +478,6 @@ extension LibraryWindowController {
             $0.value.documentIdentifier != savingDocumentIdentifier
         }
         recordInternalFileSystemChanges(for: changedURLs)
-        remapOverviewAfterSave(previousURL: previousURL, savedURL: savedURL)
         setSelectedURLForLibrary(savedURL)
         activeDocumentTab.url = savedURL
         activeDocumentTab.title = title.isEmpty
@@ -541,10 +547,11 @@ extension LibraryWindowController {
     ) -> Bool {
         remapLibraryPageHistory(from: previousURL, to: savedURL)
         remapOverviewAfterSave(previousURL: previousURL, savedURL: savedURL)
-        let previousPath = previousURL?.path
-        let savedPath = savedURL.path
+        let previousPath = previousURL?.standardizedFileURL.path
+        let savedPath = savedURL.standardizedFileURL.path
         let previousNote = sourceCountSnapshot.first {
-            $0.url.path == previousPath || $0.url.path == savedPath
+            let path = $0.url.standardizedFileURL.path
+            return path == previousPath || path == savedPath
         }
         let previousTagKeys = Set(previousNote?.tags.map {
             $0.folding(options: [.caseInsensitive], locale: .current)

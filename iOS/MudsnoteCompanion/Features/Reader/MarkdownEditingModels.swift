@@ -610,8 +610,25 @@ enum MarkdownLineStyle: Equatable {
         }
     }
 
+    private static let regexCacheLock = NSLock()
+    private static var compiledRegexCache: [String: NSRegularExpression] = [:]
+
+    private static func cachedRegex(for pattern: String) -> NSRegularExpression? {
+        regexCacheLock.lock()
+        if let cached = compiledRegexCache[pattern] {
+            regexCacheLock.unlock()
+            return cached
+        }
+        regexCacheLock.unlock()
+        guard let compiled = try? NSRegularExpression(pattern: pattern) else { return nil }
+        regexCacheLock.lock()
+        compiledRegexCache[pattern] = compiled
+        regexCacheLock.unlock()
+        return compiled
+    }
+
     private static func captures(in value: String, pattern: String) -> [String]? {
-        guard let expression = try? NSRegularExpression(pattern: pattern),
+        guard let expression = cachedRegex(for: pattern),
               let match = expression.firstMatch(
                 in: value,
                 range: NSRange(value.startIndex..., in: value)

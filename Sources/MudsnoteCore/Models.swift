@@ -317,16 +317,20 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
         return trimmed.isEmpty ? nil : trimmed
     }
 
-    public static func firstLocalImageURL(in body: String, relativeTo noteURL: URL) -> URL? {
-        let pattern = #"!?\[[^\]]*\]\(([^)\s]+)\)"#
-        guard let regex = try? NSRegularExpression(pattern: pattern) else { return nil }
+    private static let localImageLinkRegex = try! NSRegularExpression(pattern: #"!?\[[^\]]*\]\(([^)\s]+)\)"#)
+    private static let localImageExtensions: Set<String> = [
+        "apng", "avif", "gif", "heic", "heif", "jpeg", "jpg", "png", "tif", "tiff", "webp"
+    ]
+    private static let multiWhitespaceRegex = try! NSRegularExpression(pattern: #"[ \t]{2,}"#)
+    private static let spaceBeforePunctuationRegex = try! NSRegularExpression(pattern: #"[ \t]+(?=[,.;:!?\)\]\}，。；：！？、])"#)
+    private static let headingTitleRegex = try! NSRegularExpression(pattern: #"^#{1,6}\s+(.+)$"#)
 
+    public static func firstLocalImageURL(in body: String, relativeTo noteURL: URL) -> URL? {
         let nsBody = body as NSString
         let range = NSRange(location: 0, length: nsBody.length)
         let noteDirectory = noteURL.deletingLastPathComponent()
-        let imageExtensions: Set<String> = ["apng", "avif", "gif", "heic", "heif", "jpeg", "jpg", "png", "tif", "tiff", "webp"]
 
-        for match in regex.matches(in: body, range: range) where match.numberOfRanges > 1 {
+        for match in Self.localImageLinkRegex.matches(in: body, range: range) where match.numberOfRanges > 1 {
             var rawPath = nsBody.substring(with: match.range(at: 1))
                 .trimmingCharacters(in: CharacterSet(charactersIn: "\"'<>"))
             guard !rawPath.isEmpty,
@@ -341,7 +345,7 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
 
             let decodedPath = rawPath.removingPercentEncoding ?? rawPath
             let extensionName = (decodedPath as NSString).pathExtension.lowercased()
-            guard imageExtensions.contains(extensionName) else { continue }
+            guard Self.localImageExtensions.contains(extensionName) else { continue }
 
             if decodedPath.hasPrefix("/") {
                 return URL(fileURLWithPath: decodedPath).standardizedFileURL
@@ -451,29 +455,26 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
 
     private static func cleanedLineAfterInlineTagRemoval(_ line: String) -> String {
         let indentation = line.prefix { $0 == " " || $0 == "\t" }
-        let content = String(line.dropFirst(indentation.count))
-            .replacingOccurrences(
-                of: #"[ \t]{2,}"#,
-                with: " ",
-                options: .regularExpression
-            )
-            .replacingOccurrences(
-                of: #"[ \t]+(?=[,.;:!?\)\]\}，。；：！？、])"#,
-                with: "",
-                options: .regularExpression
-            )
-            .trimmingCharacters(in: .whitespaces)
+        var content = String(line.dropFirst(indentation.count))
+        content = Self.multiWhitespaceRegex.stringByReplacingMatches(
+            in: content,
+            range: NSRange(location: 0, length: (content as NSString).length),
+            withTemplate: " "
+        )
+        content = Self.spaceBeforePunctuationRegex.stringByReplacingMatches(
+            in: content,
+            range: NSRange(location: 0, length: (content as NSString).length),
+            withTemplate: ""
+        )
+        content = content.trimmingCharacters(in: .whitespaces)
         return content.isEmpty ? "" : String(indentation) + content
     }
 
     private static func extractedTitle(from line: String) -> String {
-        let headingPattern = #"^#{1,6}\s+(.+)$"#
-        if let regex = try? NSRegularExpression(pattern: headingPattern) {
-            let nsLine = line as NSString
-            let range = NSRange(location: 0, length: nsLine.length)
-            if let match = regex.firstMatch(in: line, range: range), match.numberOfRanges > 1 {
-                return nsLine.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
-            }
+        let nsLine = line as NSString
+        let range = NSRange(location: 0, length: nsLine.length)
+        if let match = Self.headingTitleRegex.firstMatch(in: line, range: range), match.numberOfRanges > 1 {
+            return nsLine.substring(with: match.range(at: 1)).trimmingCharacters(in: .whitespacesAndNewlines)
         }
 
         return line.trimmingCharacters(in: .whitespacesAndNewlines)

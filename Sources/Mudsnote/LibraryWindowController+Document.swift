@@ -330,7 +330,7 @@ extension LibraryWindowController {
     }
 
     func loadedNoteCacheKey(for url: URL) -> NSString {
-        url.path as NSString
+        url.standardizedFileURL.path as NSString
     }
 
     nonisolated static func fileModificationDate(at url: URL) -> Date? {

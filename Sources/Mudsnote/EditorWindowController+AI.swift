@@ -186,12 +186,14 @@ extension EditorWindowController {
     }
 
     private func applyAIInsertion(_ output: String, after range: NSRange) {
-        let insertionPoint = min(NSMaxRange(range), editorTextView.string.utf16.count)
+        let text = editorTextView.string as NSString
+        let insertionPoint = min(NSMaxRange(range), text.length)
         let separator: String
         if insertionPoint == 0 {
             separator = ""
         } else {
-            separator = editorTextView.string.hasSuffix("\n") ? "\n" : "\n\n"
+            let previousUnit = text.character(at: insertionPoint - 1)
+            separator = (previousUnit == 0x000A || previousUnit == 0x000D) ? "\n" : "\n\n"
         }
         editorTextView.undoManager?.beginUndoGrouping()
         replaceText(

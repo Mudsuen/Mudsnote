@@ -16,10 +16,21 @@ final class ScrollIndicatorOverlay: NSView {
         wantsLayer = true
         layer = CALayer()
         layer?.masksToBounds = false
-        trackLayer.backgroundColor = NSColor.black.withAlphaComponent(0.14).cgColor
-        knobLayer.backgroundColor = NSColor.black.withAlphaComponent(0.32).cgColor
         layer?.addSublayer(trackLayer)
         layer?.addSublayer(knobLayer)
+        updateColors()
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateColors()
+    }
+
+    private func updateColors() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            trackLayer.backgroundColor = NSColor.labelColor.withAlphaComponent(0.14).cgColor
+            knobLayer.backgroundColor = NSColor.labelColor.withAlphaComponent(0.32).cgColor
+        }
     }
 
     @available(*, unavailable)

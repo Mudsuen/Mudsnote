@@ -493,6 +493,11 @@ final class KnowledgeGraphCanvasView: NSView {
     private var trackingAreaReference: NSTrackingArea?
     private var isLoading = false
     private var accessibilityElementsByPath: [String: KnowledgeGraphNodeAccessibilityElement] = [:]
+    private var accessibilityLayoutTask: Task<Void, Never>?
+
+    deinit {
+        accessibilityLayoutTask?.cancel()
+    }
 
     override var acceptsFirstResponder: Bool { true }
     override var isFlipped: Bool { true }
@@ -582,7 +587,7 @@ final class KnowledgeGraphCanvasView: NSView {
     override func scrollWheel(with event: NSEvent) {
         panOffset.x -= event.scrollingDeltaX
         panOffset.y -= event.scrollingDeltaY
-        notifyAccessibilityLayoutChanged()
+        scheduleAccessibilityLayoutChanged()
         needsDisplay = true
     }
 
@@ -615,12 +620,16 @@ final class KnowledgeGraphCanvasView: NSView {
             x: panOrigin.x + point.x - dragOrigin.x,
             y: panOrigin.y + point.y - dragOrigin.y
         )
-        notifyAccessibilityLayoutChanged()
+        scheduleAccessibilityLayoutChanged()
         needsDisplay = true
     }
 
     override func mouseUp(with event: NSEvent) {
+        let wasDragging = dragOrigin != nil
         dragOrigin = nil
+        if wasDragging {
+            notifyAccessibilityLayoutChanged()
+        }
     }
 
     override func mouseMoved(with event: NSEvent) {
@@ -827,7 +836,19 @@ final class KnowledgeGraphCanvasView: NSView {
         }
     }
 
+    private func scheduleAccessibilityLayoutChanged() {
+        accessibilityLayoutTask?.cancel()
+        accessibilityLayoutTask = Task { @MainActor [weak self] in
+            try? await Task.sleep(for: .milliseconds(120))
+            guard !Task.isCancelled, let self else { return }
+            self.accessibilityLayoutTask = nil
+            self.notifyAccessibilityLayoutChanged()
+        }
+    }
+
     private func notifyAccessibilityLayoutChanged() {
+        accessibilityLayoutTask?.cancel()
+        accessibilityLayoutTask = nil
         updateAccessibilityElementFrames()
         NSAccessibility.post(element: self, notification: .layoutChanged)
     }

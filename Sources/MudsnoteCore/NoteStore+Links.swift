@@ -119,9 +119,10 @@ extension NoteStore {
     ) -> NoteLinkRelations {
         let entries = indexedEntries(roots: roots)
         let currentURL = noteURL.standardizedFileURL
-        let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
-            ($0.url.standardizedFileURL.path, $0)
-        })
+        let entriesByPath = Dictionary(
+            entries.map { ($0.url.standardizedFileURL.path, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
 
         let body = currentBody
             ?? entriesByPath[currentURL.path]?.body
@@ -160,9 +161,10 @@ extension NoteStore {
         searchIndexLock.lock()
         let entries = searchIndexSnapshot?.entries ?? []
         searchIndexLock.unlock()
-        let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
-            ($0.url.path, $0)
-        })
+        let entriesByPath = Dictionary(
+            entries.map { ($0.url.standardizedFileURL.path, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let currentURL = noteURL.standardizedFileURL
         return linkedItems(
             in: currentBody,
@@ -182,7 +184,7 @@ extension NoteStore {
         for target in markdownLinkTargets(in: body) {
             guard let url = MarkdownLocalLinkResolver.fileURL(for: target, relativeTo: sourceURL),
                   url.path != excludedURL.path,
-                  FileManager.default.fileExists(atPath: url.path) else {
+                  fileManager.fileExists(atPath: url.path) else {
                 continue
             }
             let title = entriesByPath[url.path]?.title

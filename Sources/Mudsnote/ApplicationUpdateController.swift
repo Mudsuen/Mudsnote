@@ -65,20 +65,24 @@ final class ApplicationUpdateController {
         task.standardInput = FileHandle.nullDevice
         task.standardOutput = output
         task.standardError = FileHandle.nullDevice
-        task.terminationHandler = { [weak self] _ in
-            let data = output.fileHandleForReading.readDataToEndOfFile()
+        process = task
+        do {
+            try task.run()
+        } catch {
+            process = nil
+            finish(result: ["status": "failed"], manual: manual)
+            return
+        }
+        let reader = output.fileHandleForReading
+        Task.detached(priority: .utility) { [weak self] in
+            let data = reader.readDataToEndOfFile()
+            task.waitUntilExit()
             let result = (try? JSONDecoder().decode([String: String].self, from: data)) ?? ["status": "failed"]
-            Task { @MainActor [weak self] in
+            await MainActor.run {
                 guard let self else { return }
                 self.process = nil
                 self.finish(result: result, manual: self.wantsResultAlert)
             }
-        }
-        process = task
-        do { try task.run() }
-        catch {
-            process = nil
-            finish(result: ["status": "failed"], manual: manual)
         }
     }
 

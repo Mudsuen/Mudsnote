@@ -283,6 +283,10 @@ final class GlobalHotKeyManager {
         let ids = Array(hotKeyRefs.keys)
         ids.forEach(unregister(id:))
         handlers.removeAll()
+        if let eventHandlerRef {
+            RemoveEventHandler(eventHandlerRef)
+            self.eventHandlerRef = nil
+        }
     }
 
     deinit {

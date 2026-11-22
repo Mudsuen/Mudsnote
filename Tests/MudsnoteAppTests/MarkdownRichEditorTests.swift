@@ -2155,6 +2155,7 @@ struct MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
+        controller.editorTextView.insertText(" updated", replacementRange: NSRange(location: controller.editorTextView.string.utf16.count, length: 0))
         _ = try controller.saveCurrentNoteForLibrary()
         controller.searchForLibrary(query: "Existing", allNotes: true)
         let activeSession = try #require(controller.activeSearchSessionForLibrary())

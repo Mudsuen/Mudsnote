@@ -81,7 +81,9 @@ extension EditorWindowController {
     }
 
     @objc func cancelPressed() {
-        window?.close()
+        guard let window else { return }
+        guard windowShouldClose(window) else { return }
+        window.close()
     }
 
     @objc func closeFloatingNotePressed(_ sender: Any?) {
@@ -115,15 +117,19 @@ extension EditorWindowController {
             activeFloatingNoteURL = url
             selectedDirectoryURL = url.deletingLastPathComponent()
             sourceContentsAtLoad = note.sourceContents
-            applyInitialContent(title: note.title, body: note.body)
+            let noteMigration = MarkdownEditorDocument.extractingInlineTags(from: note.body)
+            activeTags = MarkdownEditorDocument.normalizedTags(note.tags + noteMigration.tags)
+            applyInitialContent(title: note.title, body: noteMigration.body)
 
             if let draft = noteStore.loadDraft(id: currentDraftID), draft.sourcePath == url.path {
-                applyInitialContent(title: draft.title, body: draft.body)
+                let draftMigration = MarkdownEditorDocument.extractingInlineTags(from: draft.body)
+                activeTags = MarkdownEditorDocument.normalizedTags(draft.tags + draftMigration.tags)
+                applyInitialContent(title: draft.title, body: draftMigration.body)
                 selectedDirectoryURL = URL(fileURLWithPath: draft.selectedDirectoryPath, isDirectory: true)
                 isDirty = true
                 statusLabel.stringValue = "已恢复"
             } else {
-                isDirty = false
+                isDirty = noteMigration.occurrenceCount > 0
                 statusLabel.stringValue = "编辑中"
             }
 

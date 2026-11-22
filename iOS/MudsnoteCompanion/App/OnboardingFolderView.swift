@@ -120,12 +120,24 @@ struct StatusToastView: View {
             Spacer()
         }
         .font(.system(.callout, design: .rounded, weight: .semibold))
-        .foregroundStyle(toast.style == .saved ? .black : MudsnoteColors.text)
+        .foregroundStyle(foreground)
         .padding(.horizontal, 16)
         .frame(minHeight: 48)
         .background(background, in: Capsule())
         .overlay {
             Capsule().stroke(MudsnoteColors.line.opacity(toast.style == .saved ? 0 : 1), lineWidth: 1)
+        }
+        .allowsHitTesting(false)
+    }
+
+    private var foreground: Color {
+        switch toast.style {
+        case .saved:
+            return MudsnoteColors.primaryForeground
+        case .pending:
+            return MudsnoteColors.text
+        case .error:
+            return .white
         }
     }
 

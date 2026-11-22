@@ -36,7 +36,7 @@ extension EditorWindowController {
         if currentLineRange.length > 0,
            storage.attribute(MarkdownRichTextCodec.literalMarkdownKey, at: currentLineRange.location, effectiveRange: nil) as? Bool == true { return }
         let markdown = MarkdownRichTextCodec.serialize(storage.attributedSubstring(from: currentLineRange), theme: theme)
-        let rendered = MarkdownRichTextCodec.renderLine(markdown, theme: theme, baseURL: activeFloatingNoteURL ?? fileURL)
+        let rendered = MarkdownRichTextCodec.renderLine(markdown, theme: theme, baseURL: fileURLForRendering)
         let clampedStart = min(selectionStartOffset, rendered.length)
         let clampedEnd = min(selectionEndOffset, rendered.length)
         let newSelection = NSRange(
@@ -71,7 +71,8 @@ extension EditorWindowController {
         )
         let replacement = MarkdownRichTextCodec.renderLine(
             MarkdownRichTextCodec.markdownLine(for: .paragraph, inlineContent: inlineMarkdown),
-            theme: theme
+            theme: theme,
+            baseURL: fileURLForRendering
         )
 
         let selection = editorTextView.selectedRange()

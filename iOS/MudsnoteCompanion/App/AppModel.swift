@@ -117,6 +117,7 @@ final class AppModel: ObservableObject {
     private var transcriptionID: UUID?
     private var isSceneRefreshRunning = false
     private var sceneRefreshRequested = false
+    private var isReplayingQueue = false
     private var isLoadingLibraryPage = false
     private var draftRecoveryEnabled = false
     private var recoveredDraftNeedsAnnouncement = false
@@ -786,9 +787,15 @@ final class AppModel: ObservableObject {
     }
 
     func replayQueue() {
+        guard !isReplayingQueue, !isSendingDraft else { return }
+        isReplayingQueue = true
         Task {
+            defer { isReplayingQueue = false }
             guard let root = folderAccess.currentRoot else { return }
             do {
+                if let queue {
+                    try await queue.load()
+                }
                 let replayResult = try await queue?.replay { [fileStore, weak self] item in
                     let createdFile = try await fileStore.performPendingWrite(item, root: root)
                     self?.applyCreatedProjection(createdFile)
@@ -1310,6 +1317,14 @@ final class AppModel: ObservableObject {
                 to: renamedPath
             )
             attachmentPresentationRevision += 1
+            if let selectedDocument,
+               selectedDocument.relativePath.hasPrefix(folder.relativePath + "/") {
+                let updatedPath = renamedPath
+                    + selectedDocument.relativePath.dropFirst(folder.relativePath.count)
+                self.selectedDocument = try await fileStore.loadMarkdownDocument(
+                    relativePath: updatedPath
+                )
+            }
             statusToast = .saved(String(localized: "Folder Renamed"))
             await refreshInbox()
             await refreshActiveSearchIfNeeded()
@@ -1647,8 +1662,7 @@ final class AppModel: ObservableObject {
                     expectedMarkdown: expectedMarkdown
                 )
             }
-            if selectedDocument?.relativePath == document.relativePath,
-               updated.relativePath == document.relativePath {
+            if selectedDocument?.relativePath == document.relativePath {
                 selectedDocument = updated
             }
             if announce { statusToast = .saved(String(localized: "Saved")) }
@@ -2489,7 +2503,9 @@ final class AppModel: ObservableObject {
         from memos: [MemoBlock],
         files: [RecentMarkdownFile]
     ) -> [TagSummary] {
-        var summaries: [String: TagSummary] = [:]
+        var displayNames: [String: String] = [:]
+        var counts: [String: Int] = [:]
+        var termsByKey: [String: Set<String>] = [:]
         func countTags(_ tags: [String], semanticText: String) {
             var countedInNote = Set<String>()
             let semanticTerms = TagSuggestionRanker.terms(in: semanticText)
@@ -2499,19 +2515,11 @@ final class AppModel: ObservableObject {
                     locale: .current
                 )
                 guard countedInNote.insert(key).inserted else { continue }
-                if var summary = summaries[key] {
-                    summary.count += 1
-                    summary.semanticTerms = Array(
-                        Set(summary.semanticTerms).union(semanticTerms)
-                    ).sorted()
-                    summaries[key] = summary
-                } else {
-                    summaries[key] = TagSummary(
-                        name: tag,
-                        count: 1,
-                        semanticTerms: semanticTerms.sorted()
-                    )
+                if displayNames[key] == nil {
+                    displayNames[key] = tag
                 }
+                counts[key, default: 0] += 1
+                termsByKey[key, default: []].formUnion(semanticTerms)
             }
         }
         for memo in memos {
@@ -2521,13 +2529,20 @@ final class AppModel: ObservableObject {
             countTags(file.tags, semanticText: "\(file.title)\n\(file.preview)")
         }
 
-        return summaries.values
-            .sorted {
-                if $0.count == $1.count {
-                    return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
-                }
-                return $0.count > $1.count
+        return counts.keys.compactMap { key -> TagSummary? in
+            guard let name = displayNames[key], let count = counts[key] else { return nil }
+            return TagSummary(
+                name: name,
+                count: count,
+                semanticTerms: (termsByKey[key] ?? []).sorted()
+            )
+        }
+        .sorted {
+            if $0.count == $1.count {
+                return $0.name.localizedCaseInsensitiveCompare($1.name) == .orderedAscending
             }
+            return $0.count > $1.count
+        }
     }
 
     private static func libraryFileOrder(

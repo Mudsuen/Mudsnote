@@ -45,6 +45,7 @@ final class SingleInstanceCoordinator: NSObject, NSApplicationDelegate {
     private var files: [String] = []
     private var requestURL: URL?
     private var timer: Timer?
+    private var directoryWatcher: DispatchSourceFileSystemObject?
     private var deadline = Date.distantFuture
 
     var isPrimary: Bool { lease.isOwner && legacyApplication == nil }
@@ -107,21 +108,63 @@ final class SingleInstanceCoordinator: NSObject, NSApplicationDelegate {
 
     func startReceiving(_ receive: @escaping @MainActor (InstanceRequest) -> Bool) {
         precondition(isPrimary)
-        timer = Timer.scheduledTimer(withTimeInterval: 0.15, repeats: true) { [weak self] _ in
-            MainActor.assumeIsolated {
-                guard let self else { return }
-                let entries = (try? FileManager.default.contentsOfDirectory(at: self.lease.directory,
-                    includingPropertiesForKeys: nil)) ?? []
-                for url in entries.filter({ $0.pathExtension == "json" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
-                    guard let data = try? Data(contentsOf: url),
-                          let request = try? JSONDecoder().decode(InstanceRequest.self, from: data) else { continue }
-                    // Never replay abandoned requests on a later manual launch.
-                    if Date().timeIntervalSince(request.createdAt) > 30 || receive(request) {
-                        try? FileManager.default.removeItem(at: url)
-                    }
-                }
+        directoryWatcher?.cancel()
+        directoryWatcher = nil
+        timer?.invalidate()
+        timer = nil
+
+        let drain: @MainActor () -> Void = { [weak self] in
+            self?.drainPendingRequests(receive)
+        }
+        drain()
+
+        let descriptor = open(lease.directory.path, O_EVTONLY)
+        if descriptor >= 0 {
+            let source = DispatchSource.makeFileSystemObjectSource(
+                fileDescriptor: descriptor,
+                eventMask: [.write, .rename, .extend],
+                queue: .main
+            )
+            source.setEventHandler {
+                MainActor.assumeIsolated { drain() }
+            }
+            source.setCancelHandler {
+                close(descriptor)
+            }
+            directoryWatcher = source
+            source.resume()
+        } else {
+            timer = Timer.scheduledTimer(withTimeInterval: 0.5, repeats: true) { _ in
+                MainActor.assumeIsolated { drain() }
             }
         }
+    }
+
+    private func drainPendingRequests(_ receive: @MainActor (InstanceRequest) -> Bool) {
+        let entries = (try? FileManager.default.contentsOfDirectory(
+            at: lease.directory,
+            includingPropertiesForKeys: [.contentModificationDateKey]
+        )) ?? []
+        let now = Date()
+        for url in entries.filter({ $0.pathExtension == "json" }).sorted(by: { $0.lastPathComponent < $1.lastPathComponent }) {
+            guard let data = try? Data(contentsOf: url),
+                  let request = try? JSONDecoder().decode(InstanceRequest.self, from: data) else {
+                if let modifiedAt = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate),
+                   now.timeIntervalSince(modifiedAt) > 30 {
+                    try? FileManager.default.removeItem(at: url)
+                }
+                continue
+            }
+            // Never replay abandoned requests on a later manual launch.
+            if now.timeIntervalSince(request.createdAt) > 30 || receive(request) {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
+    }
+
+    isolated deinit {
+        directoryWatcher?.cancel()
+        timer?.invalidate()
     }
 
     func runSecondary(application: NSApplication) -> Never {

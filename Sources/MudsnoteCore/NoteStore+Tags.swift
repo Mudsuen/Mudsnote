@@ -131,8 +131,8 @@ extension NoteStore {
     }
 
     public func renameTag(_ input: String, to newName: String, roots: [URL]? = nil, additionalNoteURLs: [URL] = []) throws -> Int {
-        let name = newName.trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        let trimmed = newName.trimmingCharacters(in: .whitespacesAndNewlines)
+        let name = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
         guard !name.isEmpty, !name.contains("\n"), !name.contains("\r") else {
             throw NoteTagMutationError.invalidTag
         }
@@ -140,9 +140,8 @@ extension NoteStore {
     }
 
     private func replaceTag(_ input: String, with replacement: String?, roots: [URL]?, additionalNoteURLs: [URL]) throws -> Int {
-        let tag = input
-            .trimmingCharacters(in: .whitespacesAndNewlines)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "#"))
+        let trimmed = input.trimmingCharacters(in: .whitespacesAndNewlines)
+        let tag = trimmed.hasPrefix("#") ? String(trimmed.dropFirst()) : trimmed
         guard !tag.isEmpty else { throw NoteTagMutationError.invalidTag }
 
         let matches = listNotesRefreshingIndex(limit: .max, roots: roots).filter { note in

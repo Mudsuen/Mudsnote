@@ -206,6 +206,8 @@ final class LibraryWindowController: NSWindowController,
 
     var isDirty = false
 
+    var isWindowClosed = false
+
     var autosaveTask: Task<Void, Never>?
 
     let autosavePersistenceQueue = DispatchQueue(

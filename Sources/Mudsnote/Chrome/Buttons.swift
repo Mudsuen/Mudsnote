@@ -122,15 +122,17 @@ final class HoverToolbarButton: NSButton {
         let highlightColor: NSColor
         if isActive {
             foregroundColor = panelPrimaryTextColor()
-            highlightColor = NSColor.white.withAlphaComponent(isWindowFocused ? 0.20 : 0.14)
+            highlightColor = NSColor.labelColor.withAlphaComponent(isWindowFocused ? 0.16 : 0.11)
         } else if isHovered {
             foregroundColor = panelPrimaryTextColor()
-            highlightColor = NSColor.white.withAlphaComponent(isWindowFocused ? 0.14 : 0.10)
+            highlightColor = NSColor.labelColor.withAlphaComponent(isWindowFocused ? 0.11 : 0.08)
         } else {
             foregroundColor = isWindowFocused ? panelSecondaryTextColor() : panelTertiaryTextColor()
             highlightColor = panelSubtleFillColor().withAlphaComponent(isWindowFocused ? 0.86 : 0.64)
         }
-        layer?.backgroundColor = (isActive || isHovered) ? highlightColor.cgColor : NSColor.clear.cgColor
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = (isActive || isHovered) ? highlightColor.cgColor : NSColor.clear.cgColor
+        }
         layer?.borderWidth = 0
         layer?.borderColor = NSColor.clear.cgColor
         alphaValue = isPressing ? 0.72 : (isWindowFocused ? 1.0 : 0.92)

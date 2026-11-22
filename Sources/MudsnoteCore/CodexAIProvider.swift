@@ -9,6 +9,14 @@ public enum CodexRuntimeLocator {
         )
     }
 
+    private static func isExecutableRegularFile(atPath path: String, fileManager: FileManager) -> Bool {
+        var isDirectory: ObjCBool = false
+        guard fileManager.fileExists(atPath: path, isDirectory: &isDirectory), !isDirectory.boolValue else {
+            return false
+        }
+        return fileManager.isExecutableFile(atPath: path)
+    }
+
     public static func resolve(
         configuredPath: String?,
         environmentPath: String?,
@@ -18,7 +26,7 @@ public enum CodexRuntimeLocator {
         var candidates: [String] = []
         if let configuredPath, !configuredPath.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty {
             let path = NSString(string: configuredPath.trimmingCharacters(in: .whitespacesAndNewlines)).expandingTildeInPath
-            return fileManager.isExecutableFile(atPath: path) ? URL(fileURLWithPath: path) : nil
+            return isExecutableRegularFile(atPath: path, fileManager: fileManager) ? URL(fileURLWithPath: path) : nil
         }
         if let environmentPath {
             candidates += environmentPath.split(separator: ":").map { String($0) + "/codex" }
@@ -45,7 +53,7 @@ public enum CodexRuntimeLocator {
         var seen = Set<String>()
         for path in candidates where seen.insert(path).inserted {
             let expanded = NSString(string: path).expandingTildeInPath
-            if fileManager.isExecutableFile(atPath: expanded) {
+            if isExecutableRegularFile(atPath: expanded, fileManager: fileManager) {
                 return URL(fileURLWithPath: expanded)
             }
         }
@@ -58,7 +66,7 @@ public enum CodexRuntimeLocator {
     ) -> URL? {
         let resolved = executableURL.resolvingSymlinksInPath().standardizedFileURL
         if resolved.pathExtension != "js" {
-            return fileManager.isExecutableFile(atPath: resolved.path) ? resolved : nil
+            return isExecutableRegularFile(atPath: resolved.path, fileManager: fileManager) ? resolved : nil
         }
 
         let packageRoot = resolved
@@ -78,7 +86,7 @@ public enum CodexRuntimeLocator {
             packageRoot.appendingPathComponent("vendor/\(target)/bin/codex")
         ]
         return candidates.first {
-            fileManager.isExecutableFile(atPath: $0.path)
+            isExecutableRegularFile(atPath: $0.path, fileManager: fileManager)
         }?.standardizedFileURL
     }
 }
@@ -260,14 +268,21 @@ public struct CodexAIProvider: Sendable {
         }
 
         guard process.terminationStatus == 0 else {
-            let detail = (try? String(contentsOf: errorURL, encoding: .utf8))?
-                .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+            let detail = Self.boundedUTF8Prefix(from: errorURL, maxBytes: 4096)
+                .trimmingCharacters(in: .whitespacesAndNewlines)
             throw AIError.requestFailed(detail.isEmpty ? "Codex 执行失败，退出码 \(process.terminationStatus)。" : String(detail.prefix(800)))
         }
         let output = (try? String(contentsOf: outputURL, encoding: .utf8))?
             .trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
         guard !output.isEmpty else { throw AIError.invalidResponse }
         return output
+    }
+
+    private static func boundedUTF8Prefix(from url: URL, maxBytes: Int) -> String {
+        guard let handle = try? FileHandle(forReadingFrom: url) else { return "" }
+        defer { try? handle.close() }
+        guard let data = try? handle.read(upToCount: maxBytes) else { return "" }
+        return String(decoding: data, as: UTF8.self)
     }
 
     public static func executionEnvironment(

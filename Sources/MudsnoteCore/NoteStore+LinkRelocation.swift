@@ -65,7 +65,7 @@ extension NoteStore {
                 }
                 continue
             }
-            let original = try String(contentsOf: url, encoding: .utf8)
+            guard let original = try? String(contentsOf: url, encoding: .utf8) else { continue }
             let replacement = rewritingRelocatedNoteLinks(
                 original, source: url, destination: movedURL(url),
                 knownPaths: paths, movedURL: movedURL
@@ -187,7 +187,9 @@ extension NoteStore {
                 continue
             }
             let relocatedTarget = movedURL(target)
-            guard source != destination || target != relocatedTarget else { continue }
+            let sourceDirectoryChanged = source.deletingLastPathComponent() != destination.deletingLastPathComponent()
+            let usesRelativePath = !rawPath.hasPrefix("/") && !rawPath.hasPrefix("~/") && !rawPath.hasPrefix("file:")
+            guard (sourceDirectoryChanged && usesRelativePath) || target != relocatedTarget else { continue }
 
             let replacementPath: String
             if rawPath.hasPrefix("file:") {

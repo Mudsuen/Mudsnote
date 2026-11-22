@@ -54,12 +54,37 @@ public struct NoteOverview: Codable, Equatable, Sendable {
         connections.removeAll { $0.from == id || $0.to == id }
     }
     public mutating func remap(_ old: URL, to new: URL) {
-        for index in cards.indices where cards[index].url.standardizedFileURL == old.standardizedFileURL { cards[index].url = new }
+        let oldURL = old.standardizedFileURL
+        let newURL = new.standardizedFileURL
+        guard oldURL != newURL else { return }
+        if let existingNewIndex = cards.firstIndex(where: { $0.url.standardizedFileURL == newURL }) {
+            let duplicateIDs = Set(cards.filter { $0.url.standardizedFileURL == oldURL }.map(\.id))
+            guard !duplicateIDs.isEmpty else { return }
+            let targetID = cards[existingNewIndex].id
+            cards.removeAll { duplicateIDs.contains($0.id) }
+            var remappedConnections: [Connection] = []
+            for edge in connections {
+                let from = duplicateIDs.contains(edge.from) ? targetID : edge.from
+                let to = duplicateIDs.contains(edge.to) ? targetID : edge.to
+                guard from != to,
+                      !remappedConnections.contains(where: {
+                          ($0.from == from && $0.to == to) || ($0.from == to && $0.to == from)
+                      }) else { continue }
+                remappedConnections.append(Connection(from: from, to: to))
+            }
+            connections = remappedConnections
+            return
+        }
+        for index in cards.indices where cards[index].url.standardizedFileURL == oldURL {
+            cards[index].url = newURL
+        }
     }
 }
 
 extension NoteStore {
     public func loadOverview() throws -> NoteOverview {
+        overviewPersistenceLock.lock()
+        defer { overviewPersistenceLock.unlock() }
         let file = appSupportDirectory.appendingPathComponent("Overview-v1.json")
         guard fileManager.fileExists(atPath: file.path) else { return NoteOverview() }
         return try JSONDecoder().decode(NoteOverview.self, from: Data(contentsOf: file))

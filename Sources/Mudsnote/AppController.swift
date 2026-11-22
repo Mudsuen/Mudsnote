@@ -908,7 +908,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
     @objc
     func saveDocumentFromMainMenu() {
-        (NSApp.keyWindow?.windowController as? EditorWindowController)?.savePressed()
+        if let editor = NSApp.keyWindow?.windowController as? EditorWindowController {
+            editor.savePressed()
+        } else if let library = NSApp.keyWindow?.windowController as? LibraryWindowController {
+            library.savePressed()
+        }
     }
 
     @objc
@@ -992,7 +996,13 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         case #selector(checkForApplicationUpdates):
             return applicationUpdates.enabled
         case #selector(saveDocumentFromMainMenu):
-            return NSApp.keyWindow?.windowController is EditorWindowController
+            if NSApp.keyWindow?.windowController is EditorWindowController {
+                return true
+            }
+            if let library = NSApp.keyWindow?.windowController as? LibraryWindowController {
+                return library.canEditCurrentDocument
+            }
+            return false
         case #selector(moveSelectedNotesFromMainMenu):
             return libraryWindowController?.canMoveSelectedNotesFromMenuForLibrary ?? false
         case #selector(deleteSelectedNotesFromMainMenu):
@@ -1091,7 +1101,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     }
 
     private func applyPreferences(_ settings: PreferencesSettings) {
+        let previousDirectories = noteStore.preferredDirectories.map(\.standardizedFileURL)
+        let previousDefaultDirectory = noteStore.notesDirectory.standardizedFileURL
         noteStore.configurePreferredDirectories(settings.directories, defaultDirectory: settings.directory)
+        let rootsChanged = previousDirectories != noteStore.preferredDirectories.map(\.standardizedFileURL)
+            || previousDefaultDirectory != noteStore.notesDirectory.standardizedFileURL
         noteStore.panelOpacity = settings.opacity
         noteStore.hotKeyString = settings.quickCaptureHotKey.displayString
         noteStore.floatingNoteHotKeyString = settings.floatingHotKey.displayString
@@ -1120,8 +1134,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         updateOpenWindowOpacity(settings.opacity)
         updateOpenEditorPreferences()
         updateFloatingNoteLevel()
-        libraryWindowController?.refreshFolderNoteVisibilityForLibrary()
-        libraryWindowController?.refreshThemeColorForLibrary()
+        libraryWindowController?.refreshAfterPreferencesChange(rootsChanged: rootsChanged)
+        searchWindowController?.refreshScopeOptions()
         synchronizeAIMemoryIfNeeded()
     }
 
@@ -1371,16 +1385,16 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         editorControllers = editorControllers.filter { !$0.value.isWindowClosed }
         refreshFloatingNoteClassification()
 
-        if libraryWindowController?.window?.isVisible != true {
-            libraryWindowController = nil
+        if let libraryWindowController, libraryWindowController.isWindowClosed || libraryWindowController.window == nil {
+            self.libraryWindowController = nil
         }
 
-        if searchWindowController?.window?.isVisible != true {
-            searchWindowController = nil
+        if let searchWindowController, searchWindowController.isWindowClosed || searchWindowController.window == nil {
+            self.searchWindowController = nil
         }
 
-        if preferencesWindowController?.window?.isVisible != true {
-            preferencesWindowController = nil
+        if let preferencesWindowController, preferencesWindowController.isWindowClosed || preferencesWindowController.window == nil {
+            self.preferencesWindowController = nil
         }
     }
 

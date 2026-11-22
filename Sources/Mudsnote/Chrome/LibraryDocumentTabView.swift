@@ -7,16 +7,18 @@ final class LibraryDocumentTabView: NSView {
     static let height: CGFloat = 26
 
     let tabID: UUID
+    private let isSelected: Bool
     var onSelect: (() -> Void)?
     var onClose: (() -> Void)?
 
     init(tab: LibraryDocumentTab, selected: Bool) {
         tabID = tab.id
+        isSelected = selected
         super.init(frame: .zero)
         identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTab-\(tab.id)")
         wantsLayer = true
         layer?.cornerRadius = 5
-        layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(selected ? 0.065 : 0).cgColor
+        updateBackgroundColor()
 
         let titleButton = NSButton(title: (tab.isDirty ? "• " : "") + tab.title, target: self, action: #selector(selectPressed))
         titleButton.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabTitle")
@@ -29,7 +31,12 @@ final class LibraryDocumentTabView: NSView {
         titleButton.setAccessibilityLabel(tab.title)
         titleButton.setAccessibilityValue(selected ? "已选中" : "未选中")
 
-        let closeButton = NSButton(image: NSImage(systemSymbolName: "xmark", accessibilityDescription: "关闭标签页")!, target: self, action: #selector(closePressed))
+        let closeButton: NSButton
+        if let closeImage = NSImage(systemSymbolName: "xmark", accessibilityDescription: "关闭标签页") {
+            closeButton = NSButton(image: closeImage, target: self, action: #selector(closePressed))
+        } else {
+            closeButton = NSButton(title: "×", target: self, action: #selector(closePressed))
+        }
         closeButton.identifier = NSUserInterfaceItemIdentifier("LibraryDocumentTabClose")
         closeButton.isBordered = false
         closeButton.image = closeButton.image?.withSymbolConfiguration(
@@ -68,6 +75,17 @@ final class LibraryDocumentTabView: NSView {
 
     @available(*, unavailable)
     required init?(coder: NSCoder) { fatalError() }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateBackgroundColor()
+    }
+
+    private func updateBackgroundColor() {
+        effectiveAppearance.performAsCurrentDrawingAppearance {
+            layer?.backgroundColor = NSColor.labelColor.withAlphaComponent(isSelected ? 0.065 : 0).cgColor
+        }
+    }
 
     @objc private func selectPressed() { onSelect?() }
     @objc private func closePressed() { onClose?() }

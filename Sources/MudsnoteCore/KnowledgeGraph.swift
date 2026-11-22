@@ -250,9 +250,10 @@ extension NoteStore {
         }
         let entries = includesUnlinkedAndArchivedNotes ? readView.entries : knowledgeEligibleEntries(readView.entries)
 
-        let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
-            ($0.url.standardizedFileURL.path, $0)
-        })
+        let entriesByPath = Dictionary(
+            entries.map { ($0.url.standardizedFileURL.path, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let entriesByBasename = Dictionary(grouping: entries) {
             $0.url.deletingPathExtension().lastPathComponent.lowercased()
         }
@@ -369,9 +370,10 @@ extension NoteStore {
         }
         let entries = knowledgeEligibleEntries(indexedEntries)
         let currentURL = noteURL.standardizedFileURL
-        let entriesByPath = Dictionary(uniqueKeysWithValues: entries.map {
-            ($0.url.standardizedFileURL.path, $0)
-        })
+        let entriesByPath = Dictionary(
+            entries.map { ($0.url.standardizedFileURL.path, $0) },
+            uniquingKeysWith: { first, _ in first }
+        )
         let entriesByBasename = Dictionary(grouping: entries) {
             $0.url.deletingPathExtension().lastPathComponent.lowercased()
         }
@@ -723,7 +725,7 @@ extension NoteStore {
             )
             let sharedTokens = currentTokens.intersection(candidateTokens)
             let tokenSimilarity: Double
-            let unionTokenCount = currentTokens.union(candidateTokens).count
+            let unionTokenCount = currentTokens.count + candidateTokens.count - sharedTokens.count
             if unionTokenCount == 0 {
                 tokenSimilarity = 0
             } else {

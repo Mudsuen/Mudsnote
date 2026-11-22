@@ -142,9 +142,16 @@ final class SuggestionListView: NSView {
         if selected {
             let selectedRect = rowRect.insetBy(dx: selectionInset, dy: 1)
             let path = NSBezierPath(roundedRect: selectedRect, xRadius: 5, yRadius: 5)
-            NSColor(calibratedWhite: 0.18, alpha: 1).setFill()
+            let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+            let fill = isDark
+                ? NSColor(calibratedWhite: 0.18, alpha: 1)
+                : NSColor.labelColor.withAlphaComponent(0.08)
+            let stroke = isDark
+                ? NSColor(calibratedWhite: 0.28, alpha: 1)
+                : NSColor.labelColor.withAlphaComponent(0.14)
+            fill.setFill()
             path.fill()
-            NSColor(calibratedWhite: 0.28, alpha: 1).setStroke()
+            stroke.setStroke()
             path.lineWidth = 1
             path.stroke()
         }
@@ -229,14 +236,33 @@ final class SuggestionPopoverController: NSViewController {
     private(set) var selectedIndex = 0
     private(set) var contentWidth: CGFloat = Metrics.fallbackWidth
 
+    private final class AdaptivePopoverContainerView: NSView {
+        override func viewDidChangeEffectiveAppearance() {
+            super.viewDidChangeEffectiveAppearance()
+            applyBackground()
+        }
+
+        func applyBackground() {
+            effectiveAppearance.performAsCurrentDrawingAppearance {
+                let isDark = effectiveAppearance.bestMatch(from: [.darkAqua, .aqua]) == .darkAqua
+                layer?.backgroundColor = (isDark
+                    ? NSColor(calibratedWhite: 0.08, alpha: 1)
+                    : NSColor.windowBackgroundColor).cgColor
+                layer?.borderWidth = isDark ? 0 : 0.5
+                layer?.borderColor = isDark
+                    ? NSColor.clear.cgColor
+                    : NSColor.separatorColor.cgColor
+            }
+        }
+    }
+
     override func loadView() {
-        view = NSView(frame: NSRect(x: 0, y: 0, width: Metrics.fallbackWidth, height: Metrics.maxHeight))
-        view.wantsLayer = true
-        view.layer?.cornerRadius = 8
-        view.layer?.masksToBounds = true
-        view.layer?.backgroundColor = NSColor(calibratedWhite: 0.08, alpha: 1).cgColor
-        view.layer?.borderWidth = 0
-        view.layer?.borderColor = NSColor.clear.cgColor
+        let container = AdaptivePopoverContainerView(frame: NSRect(x: 0, y: 0, width: Metrics.fallbackWidth, height: Metrics.maxHeight))
+        container.wantsLayer = true
+        container.layer?.cornerRadius = 8
+        container.layer?.masksToBounds = true
+        container.applyBackground()
+        view = container
 
         listView.rowHeight = Metrics.rowHeight
         listView.selectionInset = Metrics.selectionInset

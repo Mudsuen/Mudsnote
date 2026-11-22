@@ -879,6 +879,7 @@ struct NoteGallerySection: View {
 struct HomeTimelineCardSection: View {
     @EnvironmentObject private var appModel: AppModel
     var section: HomeTimelineSection
+    var dateBasis: NoteDateBasis = .modified
     var isSelecting: Bool
     var selectedIDs: Set<String>
     var toggleSelection: (HomeTimelineEntry) -> Void
@@ -894,6 +895,7 @@ struct HomeTimelineCardSection: View {
                 ForEach(section.entries) { entry in
                     HomeTimelineGalleryEntryButton(
                         entry: entry,
+                        dateBasis: dateBasis,
                         isSelecting: isSelecting,
                         isSelected: selectedIDs.contains(entry.id),
                         toggleSelection: { toggleSelection(entry) }
@@ -924,6 +926,7 @@ struct HomeTimelineCardSection: View {
 struct HomeTimelineListSection: View {
     @EnvironmentObject private var appModel: AppModel
     var section: HomeTimelineSection
+    var dateBasis: NoteDateBasis = .modified
     var isSelecting: Bool
     var selectedIDs: Set<String>
     var toggleSelection: (HomeTimelineEntry) -> Void
@@ -934,6 +937,7 @@ struct HomeTimelineListSection: View {
                 ForEach(section.entries) { entry in
                     HomeTimelineListEntryButton(
                         entry: entry,
+                        dateBasis: dateBasis,
                         isSelecting: isSelecting,
                         isSelected: selectedIDs.contains(entry.id),
                         toggleSelection: { toggleSelection(entry) }
@@ -970,6 +974,7 @@ struct HomeTimelineListSection: View {
 
 struct HomeTimelineGalleryEntryButton: View {
     var entry: HomeTimelineEntry
+    var dateBasis: NoteDateBasis = .modified
     var isSelecting: Bool
     var isSelected: Bool
     var toggleSelection: () -> Void
@@ -987,7 +992,7 @@ struct HomeTimelineGalleryEntryButton: View {
         } else {
             switch entry {
             case .file(let file):
-                NoteGalleryFileButton(file: file, dateBasis: .modified)
+                NoteGalleryFileButton(file: file, dateBasis: dateBasis)
             case .memo(let memo):
                 HomeMemoCardButton(memo: memo)
             }
@@ -998,7 +1003,7 @@ struct HomeTimelineGalleryEntryButton: View {
     private var galleryContent: some View {
         switch entry {
         case .file(let file):
-            NoteGalleryCard(file: file, dateBasis: .modified)
+            NoteGalleryCard(file: file, dateBasis: dateBasis)
         case .memo(let memo):
             HomeMemoCard(memo: memo)
         }
@@ -1014,6 +1019,7 @@ struct HomeTimelineGalleryEntryButton: View {
 struct HomeTimelineListEntryButton: View {
     @EnvironmentObject private var appModel: AppModel
     var entry: HomeTimelineEntry
+    var dateBasis: NoteDateBasis = .modified
     var isSelecting: Bool
     var isSelected: Bool
     var toggleSelection: () -> Void
@@ -1049,7 +1055,7 @@ struct HomeTimelineListEntryButton: View {
     private var listContent: some View {
         switch entry {
         case .file(let file):
-            RecentFileRow(file: file, dateBasis: .modified)
+            RecentFileRow(file: file, dateBasis: dateBasis)
         case .memo(let memo):
             HomeMemoListRow(memo: memo)
         }

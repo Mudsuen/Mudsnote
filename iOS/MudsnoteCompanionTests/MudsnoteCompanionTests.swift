@@ -6604,6 +6604,34 @@ final class MudsnoteCompanionTests: XCTestCase {
         }
     }
 
+    func testMacOSMudsnoteConflictCopyRecognitionAndRecoveryStem() {
+        XCTAssertTrue(MarkdownFileStore.isConflictCopyPath("Work/Plan (Mudsnote Conflict).md"))
+        XCTAssertTrue(MarkdownFileStore.isConflictCopyPath("Plan (Mudsnote Conflict 2).md"))
+        XCTAssertEqual(
+            MarkdownFileStore.recoveredConflictStem("Plan (Mudsnote Conflict)"),
+            "Plan"
+        )
+        XCTAssertEqual(
+            MarkdownFileStore.recoveredConflictStem("Plan (Mudsnote Conflict 2)"),
+            "Plan"
+        )
+    }
+
+    func testHomeTimelineEntryDateUsesCreatedBasisWhenSortedByCreated() {
+        let created = Date(timeIntervalSince1970: 1_700_000_000)
+        let modified = Date(timeIntervalSince1970: 1_800_000_000)
+        let file = RecentMarkdownFile(
+            id: "note.md",
+            relativePath: "note.md",
+            title: "Note",
+            modifiedAt: modified,
+            createdAt: created
+        )
+        let entry = HomeTimelineEntry.file(file)
+        XCTAssertEqual(entry.date(for: NoteDateBasis.created), created)
+        XCTAssertEqual(entry.date(for: NoteDateBasis.modified), modified)
+    }
+
     private func temporaryRoot() throws -> URL {
         let root = FileManager.default.temporaryDirectory
             .appendingPathComponent("MudsnoteCompanionTests-\(UUID().uuidString)", isDirectory: true)

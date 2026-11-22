@@ -1262,6 +1262,8 @@ actor MarkdownFileStore {
         guard let root else { throw FolderAccessError.missingFolder }
         try CaptureAttachmentPolicy.validate([attachment])
         let month = Self.monthFormatter.string(from: now)
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         let timestamp = Self.attachmentFormatter.string(from: now)
         let requestedWrite = (
             relativePath: "Attachments/\(month)/\(attachment.filePrefix)-\(timestamp).\(attachment.preferredExtension)",
@@ -1283,8 +1285,6 @@ actor MarkdownFileStore {
         let separator = markdown.isEmpty || markdown.hasSuffix("\n") ? "" : "\n"
         let updatedMarkdown = markdown + separator + reference.markdownLine + "\n"
 
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         try fileManager.createDirectory(
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
@@ -1345,6 +1345,8 @@ actor MarkdownFileStore {
         }), attachmentLine.contains(attachmentRelativePath) else {
             throw MarkdownDocumentError.attachmentReferenceNotFound
         }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard let source = AuthorizedLibraryPath.resolve(
             attachmentRelativePath,
             within: root,
@@ -1370,8 +1372,6 @@ actor MarkdownFileStore {
             )
         }
 
-        let accessed = root.startAccessingSecurityScopedResource()
-        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         if try attachmentIsReferencedOutsideDocument(
             attachmentRelativePath,
             documentRelativePath: relativePath,
@@ -1576,6 +1576,8 @@ actor MarkdownFileStore {
         guard let root else { throw FolderAccessError.missingFolder }
         let paths = Array(Set(relativePaths)).sorted()
         guard !paths.isEmpty else { return [] }
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         for relativePath in paths {
             guard Self.isTrashableNotePath(relativePath),
                   let source = AuthorizedLibraryPath.resolve(relativePath, within: root),
@@ -2652,7 +2654,7 @@ actor MarkdownFileStore {
     private static func isTrashableNotePath(_ relativePath: String) -> Bool {
         !relativePath.hasPrefix("Attachments/")
             && !relativePath.hasPrefix(".mudsnote/")
-            && relativePath.hasSuffix(".md")
+            && relativePath.lowercased().hasSuffix(".md")
     }
 
     static func isConflictCopyPath(_ relativePath: String) -> Bool {
@@ -2661,6 +2663,7 @@ actor MarkdownFileStore {
             .deletingPathExtension
             .lowercased()
         return stem.contains("conflicted copy")
+            || stem.contains("(mudsnote conflict")
             || stem.hasSuffix(" conflict")
             || stem.hasSuffix(" conflicted")
             || stem.hasSuffix("-conflict")
@@ -2673,6 +2676,11 @@ actor MarkdownFileStore {
         var value = filenameStem
         if let marker = value.range(
             of: "conflicted copy",
+            options: [.caseInsensitive, .diacriticInsensitive]
+        ) {
+            value = String(value[..<marker.lowerBound])
+        } else if let marker = value.range(
+            of: "(mudsnote conflict",
             options: [.caseInsensitive, .diacriticInsensitive]
         ) {
             value = String(value[..<marker.lowerBound])
@@ -2737,7 +2745,7 @@ actor MarkdownFileStore {
     private static func isPinnableNotePath(_ relativePath: String) -> Bool {
         !relativePath.hasPrefix("Attachments/")
             && !relativePath.hasPrefix(".mudsnote/")
-            && relativePath.hasSuffix(".md")
+            && relativePath.lowercased().hasSuffix(".md")
     }
 
     private func boundedSearchText(from url: URL) throws -> String {
@@ -2799,7 +2807,7 @@ actor MarkdownFileStore {
     }
 
     private func trimSearchCacheIfNeeded() {
-        let maximumEntries = 64
+        let maximumEntries = 512
         guard searchCache.count > maximumEntries else { return }
         let overflow = searchCache.count - maximumEntries
         let oldestKeys = searchCache
@@ -3169,7 +3177,17 @@ actor MarkdownFileStore {
     }
 
     private static func relativePath(for url: URL, root: URL) -> String {
-        String(url.path.dropFirst(root.path.count + 1))
+        let standardizedURL = url.standardizedFileURL.path
+        let standardizedRoot = root.standardizedFileURL.path
+        if standardizedURL.hasPrefix(standardizedRoot + "/") {
+            return String(standardizedURL.dropFirst(standardizedRoot.count + 1))
+        }
+        let resolvedURL = url.resolvingSymlinksInPath().standardizedFileURL.path
+        let resolvedRoot = root.resolvingSymlinksInPath().standardizedFileURL.path
+        if resolvedURL.hasPrefix(resolvedRoot + "/") {
+            return String(resolvedURL.dropFirst(resolvedRoot.count + 1))
+        }
+        return url.lastPathComponent
     }
 
     private static func relativeNotePath(filename: String, targetFolder: String?) -> String {

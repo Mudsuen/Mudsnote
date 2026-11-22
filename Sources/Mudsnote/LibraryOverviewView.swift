@@ -600,6 +600,16 @@ import MudsnoteCore
         }
     }
     func invalidatePreview(_ id: UUID) { previews[id] = nil; previewTasks.removeValue(forKey: id)?.cancel() }
+    func cancelPendingWork() {
+        previewTasks.values.forEach { $0.cancel() }
+        previewTasks.removeAll()
+        cardTransitionTask?.cancel()
+        cardTransitionTask = nil
+        cardTransition = nil
+        topicSaveWork?.cancel()
+        topicSaveWork = nil
+        zoomPopover.close()
+    }
     func nodeTitle(_ node: OverviewNodeID) -> String {
         OverviewContentIndex.displayTitle(rawNodeTitle(node), fallback: node == .root ? "我的生活" : "未命名主题")
     }

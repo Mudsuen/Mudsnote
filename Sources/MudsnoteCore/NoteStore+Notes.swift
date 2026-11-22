@@ -69,13 +69,13 @@ extension NoteStore {
         forgetRecentFile(url.standardizedFileURL)
     }
 
+    private static let leadingDatePrefixRegex = try! NSRegularExpression(pattern: #"^\d{4}-\d{2}-\d{2}-"#)
+    private static let consecutiveHyphensRegex = try! NSRegularExpression(pattern: #"-+"#)
+
     private func recentTitle(for url: URL) -> String {
         var stem = url.deletingPathExtension().lastPathComponent
-        stem = stem.replacingOccurrences(
-            of: #"^\d{4}-\d{2}-\d{2}-"#,
-            with: "",
-            options: .regularExpression
-        )
+        let range = NSRange(location: 0, length: (stem as NSString).length)
+        stem = Self.leadingDatePrefixRegex.stringByReplacingMatches(in: stem, range: range, withTemplate: "")
         let title = stem
             .replacingOccurrences(of: "-", with: " ")
             .trimmingCharacters(in: .whitespacesAndNewlines)
@@ -373,9 +373,12 @@ extension NoteStore {
         defer { noteMutationLock.unlock() }
         let sourceURL = url.standardizedFileURL
         let targetParent = parentDirectory.standardizedFileURL
+        let resolvedSource = sourceURL.resolvingSymlinksInPath()
+        let resolvedTarget = targetParent.resolvingSymlinksInPath()
         guard sourceURL != notesDirectory.standardizedFileURL,
               sourceURL.deletingLastPathComponent() != targetParent,
-              !targetParent.path.hasPrefix(sourceURL.path + "/") else {
+              resolvedTarget != resolvedSource,
+              !resolvedTarget.path.hasPrefix(resolvedSource.path + "/") else {
             return sourceURL
         }
         try fileManager.createDirectory(at: targetParent, withIntermediateDirectories: true)
@@ -630,8 +633,16 @@ extension NoteStore {
                     URL(fileURLWithPath: resolvedMetadata.metadata.originalPath)))
         } else { relocation = NoteAttachmentRelocation(markdown: originalText, copiedURLs: []) }
         do {
-            try commitUpdatedNote(from: standardizedTrashURL, to: restoredURL,
-                content: relocation.markdown, expectedContents: originalText)
+            if relocation.markdown == originalText {
+                try moveUnchangedCoordinatedNote(
+                    from: standardizedTrashURL,
+                    to: restoredURL,
+                    expectedContents: originalText
+                )
+            } else {
+                try commitUpdatedNote(from: standardizedTrashURL, to: restoredURL,
+                    content: relocation.markdown, expectedContents: originalText)
+            }
         } catch {
             removeRelocatedAttachments(relocation.copiedURLs, inside: relocation.cleanupRoot)
             throw error
@@ -732,6 +743,20 @@ extension NoteStore {
             preservingFrontMatterFrom: existingText
         )
             .write(to: url, atomically: true, encoding: .utf8)
+    }
+
+    public func matchesStoredNoteContent(
+        title: String,
+        body: String,
+        tags: [String] = [],
+        expectedContents: String
+    ) -> Bool {
+        storedNoteContent(
+            title: title,
+            body: body,
+            tags: tags,
+            preservingFrontMatterFrom: expectedContents
+        ) == expectedContents
     }
 
     func storedNoteContent(
@@ -862,7 +887,32 @@ extension NoteStore {
         try result.get()
     }
 
+    private func moveUnchangedCoordinatedNote(
+        from sourceURL: URL,
+        to destinationURL: URL,
+        expectedContents: String
+    ) throws {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var result: Result<Void, Error>?
+        coordinator.coordinate(
+            writingItemAt: sourceURL, options: .forMoving,
+            writingItemAt: destinationURL, options: [], error: &coordinationError
+        ) { coordinatedSource, coordinatedDestination in
+            result = Result {
+                guard try String(contentsOf: coordinatedSource, encoding: .utf8) == expectedContents else {
+                    throw NoteLinkRelocationError.changed(sourceURL)
+                }
+                try fileManager.moveItem(at: coordinatedSource, to: coordinatedDestination)
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let result else { throw CocoaError(.fileWriteUnknown) }
+        try result.get()
+    }
+
     private func commitCoordinatedNote(from sourceURL: URL, to destinationURL: URL, content: String, expectedContents: String) throws {
+        let originalCreationDate = (try? fileManager.attributesOfItem(atPath: sourceURL.path)[.creationDate]) as? Date
         let stagingURL = destinationURL.deletingLastPathComponent()
             .appendingPathComponent(".mudsnote-update-\(UUID().uuidString).tmp")
         defer {
@@ -872,6 +922,9 @@ extension NoteStore {
         }
 
         try content.write(to: stagingURL, atomically: true, encoding: .utf8)
+        if let originalCreationDate {
+            try? fileManager.setAttributes([.creationDate: originalCreationDate], ofItemAtPath: stagingURL.path)
+        }
         try updateNoteCommitHook?(.afterStaging)
         guard try String(contentsOf: sourceURL, encoding: .utf8) == expectedContents else {
             throw NoteLinkRelocationError.changed(sourceURL)
@@ -937,7 +990,9 @@ extension NoteStore {
             .appendingPathComponent(Self.attachmentDirectoryName)).standardizedFileURL.resolvingSymlinksInPath()
         let destinationRoot = (restoringFolder?.destination ?? destinationDirectory
             .appendingPathComponent(Self.attachmentDirectoryName)).standardizedFileURL
-        let cleanupRoot = destinationRoot.resolvingSymlinksInPath()
+        let cleanupRoot = (restoringFolder?.destination.resolvingSymlinksInPath()
+            ?? destinationDirectory.resolvingSymlinksInPath()
+                .appendingPathComponent(Self.attachmentDirectoryName)).standardizedFileURL
         var destinationsBySourcePath: [String: URL] = [:]
         var copiedURLs: [URL] = []
         let result = NSMutableString(string: markdown)
@@ -965,9 +1020,10 @@ extension NoteStore {
                 else {
                     let preferredURL = destinationRoot.appendingPathComponent(String(sourceURL.path.dropFirst(sourceRoot.path.count + 1)))
                     try fileManager.createDirectory(at: preferredURL.deletingLastPathComponent(), withIntermediateDirectories: true)
-                    let canonicalRoot = cleanupRoot.path
-                    guard preferredURL.deletingLastPathComponent().resolvingSymlinksInPath().path == canonicalRoot
-                        || preferredURL.deletingLastPathComponent().resolvingSymlinksInPath().path.hasPrefix(canonicalRoot + "/") else {
+                    let canonicalRoot = cleanupRoot.resolvingSymlinksInPath().path
+                    let canonicalParent = preferredURL.deletingLastPathComponent().resolvingSymlinksInPath().path
+                    guard canonicalParent == canonicalRoot
+                        || canonicalParent.hasPrefix(canonicalRoot + "/") else {
                         throw CocoaError(.fileWriteNoPermission)
                     }
                     let selected = attachmentDestination(for: sourceURL, preferred: preferredURL)
@@ -1015,13 +1071,17 @@ extension NoteStore {
 
     private func removeRelocatedAttachments(_ urls: [URL], inside cleanupRoot: URL?) {
         guard let cleanupRoot else { return }
+        let canonicalRoot = cleanupRoot.resolvingSymlinksInPath().standardizedFileURL
         for url in urls.reversed() {
-            guard url.resolvingSymlinksInPath().path.hasPrefix(cleanupRoot.path + "/") else { continue }
-            try? fileManager.removeItem(at: url)
-            var directory = url.deletingLastPathComponent()
-            while directory == cleanupRoot || directory.path.hasPrefix(cleanupRoot.path + "/") {
+            let canonicalURL = url.resolvingSymlinksInPath().standardizedFileURL
+            guard canonicalURL.path.hasPrefix(canonicalRoot.path + "/") else { continue }
+            try? fileManager.removeItem(at: canonicalURL)
+            var directory = canonicalURL.deletingLastPathComponent()
+            while directory == canonicalRoot || directory.path.hasPrefix(canonicalRoot.path + "/") {
                 // Only prune empty attachment directories, never the restored note tree.
-                guard directory.pathComponents.contains(Self.attachmentDirectoryName) else { break }
+                guard directory.pathComponents.contains(where: {
+                    $0.caseInsensitiveCompare(Self.attachmentDirectoryName) == .orderedSame
+                }) else { break }
                 guard let contents = try? fileManager.contentsOfDirectory(
                     at: directory,
                     includingPropertiesForKeys: nil
@@ -1029,7 +1089,10 @@ extension NoteStore {
                     break
                 }
                 try? fileManager.removeItem(at: directory)
-                if directory == cleanupRoot || directory.lastPathComponent == Self.attachmentDirectoryName { break }
+                if directory == canonicalRoot
+                    || directory.lastPathComponent.caseInsensitiveCompare(Self.attachmentDirectoryName) == .orderedSame {
+                    break
+                }
                 directory.deleteLastPathComponent()
             }
         }
@@ -1043,9 +1106,11 @@ extension NoteStore {
     private func uniqueUpdatedFileURL(for title: String, currentURL: URL, in directory: URL) -> URL {
         var base = filenameStem(for: title)
         // Title-driven renaming keeps the note's original date prefix.
-        if let oldPrefix = currentURL.lastPathComponent.range(of: #"^\d{4}-\d{2}-\d{2}-"#, options: .regularExpression),
-           let newPrefix = base.range(of: #"^\d{4}-\d{2}-\d{2}-"#, options: .regularExpression) {
-            base.replaceSubrange(newPrefix, with: currentURL.lastPathComponent[oldPrefix])
+        let currentName = currentURL.lastPathComponent as NSString
+        if let oldMatch = Self.leadingDatePrefixRegex.firstMatch(in: currentURL.lastPathComponent, range: NSRange(location: 0, length: currentName.length)),
+           let newMatch = Self.leadingDatePrefixRegex.firstMatch(in: base, range: NSRange(location: 0, length: (base as NSString).length)),
+           let newRange = Range(newMatch.range, in: base) {
+            base.replaceSubrange(newRange, with: currentName.substring(with: oldMatch.range))
         }
         let excludedURL = currentURL.deletingLastPathComponent() == directory ? currentURL : nil
         return uniqueURLPreservingExtension(
@@ -1134,9 +1199,12 @@ extension NoteStore {
             return "-"
         }
 
-        let slug = String(allowed)
-            .replacingOccurrences(of: "-+", with: "-", options: .regularExpression)
-            .trimmingCharacters(in: CharacterSet(charactersIn: "-"))
+        let allowedString = String(allowed)
+        let slug = Self.consecutiveHyphensRegex.stringByReplacingMatches(
+            in: allowedString,
+            range: NSRange(location: 0, length: (allowedString as NSString).length),
+            withTemplate: "-"
+        ).trimmingCharacters(in: CharacterSet(charactersIn: "-"))
 
         if slug.isEmpty {
             return fallback
@@ -1240,7 +1308,10 @@ extension NoteStore {
 
     private func dateFromFilename(for url: URL) -> Date? {
         let stem = url.deletingPathExtension().lastPathComponent
-        guard stem.range(of: #"^\d{4}-\d{2}-\d{2}-"#, options: .regularExpression) != nil else {
+        guard Self.leadingDatePrefixRegex.firstMatch(
+            in: stem,
+            range: NSRange(location: 0, length: (stem as NSString).length)
+        ) != nil else {
             return nil
         }
         return Self.datePrefix.date(from: String(stem.prefix(10)))

@@ -2476,11 +2476,12 @@ struct MarkdownPreviewView: View {
                 let transcript = try await noteAudioRecorder.transcribe(
                     url: recording.temporaryURL
                 )
+                let currentMarkdown = draftMarkdown
                 let updatedMarkdown = MarkdownAudioTranscript.appending(
                     transcript,
-                    to: updated.markdown
+                    to: currentMarkdown
                 )
-                guard updatedMarkdown != updated.markdown else {
+                guard updatedMarkdown != currentMarkdown else {
                     appModel.statusToast = .pending(
                         String(localized: "No speech detected. Audio kept.")
                     )

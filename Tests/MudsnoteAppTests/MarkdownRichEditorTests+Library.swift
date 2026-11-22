@@ -5100,7 +5100,7 @@ extension MarkdownRichEditorTests {
         )
         defer { controller.close() }
 
-        let window = try #require(controller.window)
+        _ = try #require(controller.window)
         controller.loadSourceFoldersForLibrary()
         #expect(controller.selectSourceForLibrary(titled: "Projects"))
         #expect(controller.selectedSourceTitleForLibrary == "Projects")

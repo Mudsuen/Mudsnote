@@ -60,6 +60,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
     private static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.settings.toolbar")
 
+    private(set) var isWindowClosed = false
     private let tabView = NSTabView()
     private let defaultDirectoryPathLabel = NSTextField(labelWithString: "")
     private let changeDefaultDirectoryButton = NSButton(title: "更改…", target: nil, action: nil)
@@ -432,12 +433,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 label: "主题色:",
                 control: themeColorPopUp,
                 help: "只用于资料库中选中文件夹的图标和名称。保存后立即应用到已打开的资料库。"
-            ),
-            sectionDivider(),
-            sectionTitle("编辑排版"),
-            preferenceRow(
-                label: "",
-                control: bodyText("后续的编辑字号、行距等阅读与排版选项会统一放在此页。")
             )
         ])
     }
@@ -877,6 +872,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     }
 
     func windowWillClose(_ notification: Notification) {
+        isWindowClosed = true
         if !didSavePreferences {
             onPreviewOpacity(initialOpacity)
         }

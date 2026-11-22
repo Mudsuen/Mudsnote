@@ -319,6 +319,9 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
     func windowWillClose(_ notification: Notification) {
         didCloseWindow = true
+        dismissInlineSuggestions()
+        editorTextView.dismissSelectionFormattingPanel()
+        floatingNoteBrowserController?.window?.close()
         aiTask?.cancel()
         aiTask = nil
         aiRequestID = UUID()
@@ -331,6 +334,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         observers.forEach(NotificationCenter.default.removeObserver)
         observers.removeAll()
         autosaveTimer?.invalidate()
+        autosaveTimer = nil
+        editorTextView.undoManager?.removeAllActions()
         onClose()
     }
 
@@ -339,6 +344,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
     }
 
     func windowDidResignKey(_ notification: Notification) {
+        dismissInlineSuggestions()
+        editorTextView.dismissSelectionFormattingPanel()
         updateWindowFocusAppearance(isFocused: false)
     }
 

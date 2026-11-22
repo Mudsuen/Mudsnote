@@ -49,8 +49,12 @@ enum HomeTimelineEntry: Identifiable {
     }
 
     var date: Date {
+        date(for: .modified)
+    }
+
+    func date(for basis: NoteDateBasis) -> Date {
         switch self {
-        case .file(let file): file.modifiedAt
+        case .file(let file): basis.date(for: file)
         case .memo(let memo):
             Self.memoDateFormatter.date(from: memo.dateText) ?? .distantPast
         }
@@ -130,7 +134,7 @@ enum HomeTimelinePresentation {
 
         for entry in otherEntries {
             let bucket = NoteListPresentation.dateBucket(
-                for: entry.date,
+                for: entry.date(for: order.dateBasis),
                 now: now,
                 calendar: calendar
             )
@@ -831,6 +835,7 @@ struct LibraryHomeView: View {
                             if viewStyle == .gallery {
                                 HomeTimelineCardSection(
                                     section: section,
+                                    dateBasis: sortOrder.dateBasis,
                                     isSelecting: isSelectingNotes,
                                     selectedIDs: selectedHomeEntryIDs,
                                     toggleSelection: toggleHomeSelection
@@ -838,6 +843,7 @@ struct LibraryHomeView: View {
                             } else {
                                 HomeTimelineListSection(
                                     section: section,
+                                    dateBasis: sortOrder.dateBasis,
                                     isSelecting: isSelectingNotes,
                                     selectedIDs: selectedHomeEntryIDs,
                                     toggleSelection: toggleHomeSelection
@@ -879,8 +885,10 @@ struct LibraryHomeView: View {
             let standard: Bool
             switch sortOrder {
             case .modified, .created:
-                if lhs.date != rhs.date {
-                    standard = lhs.date > rhs.date
+                let lhsDate = lhs.date(for: sortOrder.dateBasis)
+                let rhsDate = rhs.date(for: sortOrder.dateBasis)
+                if lhsDate != rhsDate {
+                    standard = lhsDate > rhsDate
                     return sortDirection == .standard ? standard : !standard
                 }
             case .title:
@@ -1151,11 +1159,21 @@ struct LibraryHomeView: View {
     private func deleteSelectedHomeEntries() {
         let selected = allHomeSelectableEntries
             .filter { selectedHomeEntryIDs.contains($0.id) }
+        var selectedFiles: [RecentMarkdownFile] = []
+        var selectedMemos: [MemoBlock] = []
         for entry in selected {
             switch entry {
-            case .file(let file): appModel.moveToRecentlyDeleted(file)
-            case .memo(let memo): appModel.deleteMemo(memo)
+            case .file(let file): selectedFiles.append(file)
+            case .memo(let memo): selectedMemos.append(memo)
             }
+        }
+        if !selectedFiles.isEmpty {
+            Task {
+                _ = await appModel.moveToRecentlyDeleted(selectedFiles)
+            }
+        }
+        for memo in selectedMemos {
+            appModel.deleteMemo(memo)
         }
         finishSelectingHomeNotes()
     }

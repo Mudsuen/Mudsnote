@@ -140,15 +140,16 @@ final class FileAttachmentPreviewCell: NSTextAttachmentCell {
         )
         icon.draw(in: iconRect)
 
+        let isFlipped = controlView?.isFlipped ?? true
         let titleRect = NSRect(
             x: iconRect.maxX + 8,
-            y: rect.minY + 16,
+            y: isFlipped ? (rect.minY + 3) : (rect.minY + 16),
             width: rect.width - 48,
             height: 16
         )
         let subtitleRect = NSRect(
             x: iconRect.maxX + 8,
-            y: rect.minY + 5,
+            y: isFlipped ? (rect.minY + 19) : (rect.minY + 5),
             width: rect.width - 48,
             height: 13
         )
@@ -178,6 +179,10 @@ enum MarkdownImageDecoding {
               width.doubleValue > 0,
               height.doubleValue > 0 else {
             return nil
+        }
+        let orientation = (properties[kCGImagePropertyOrientation] as? NSNumber)?.intValue ?? 1
+        if (5...8).contains(orientation) {
+            return NSSize(width: height.doubleValue, height: width.doubleValue)
         }
         return NSSize(width: width.doubleValue, height: height.doubleValue)
     }
@@ -309,12 +314,10 @@ final class AsyncImageAttachmentCell: NSTextAttachmentCell {
         let naturalSize = naturalSize
         weak let textView = controlView as? NSTextView
         decodeTask = Task { [weak self, weak textView] in
-            guard !Task.isCancelled,
-                  let thumbnail = await MarkdownImageDecodeService.shared.thumbnail(at: imageURL, forceReload: forceReload),
-                  !Task.isCancelled,
-                  let self else {
-                return
-            }
+            let thumbnail = await MarkdownImageDecodeService.shared.thumbnail(at: imageURL, forceReload: forceReload)
+            guard !Task.isCancelled, let self else { return }
+            self.decodeTask = nil
+            guard let thumbnail else { return }
             self.image = NSImage(cgImage: thumbnail, size: naturalSize)
             self.hasDecodedImage = true
             textView?.needsDisplay = true

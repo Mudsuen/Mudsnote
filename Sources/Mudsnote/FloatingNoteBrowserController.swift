@@ -533,7 +533,16 @@ final class FloatingNoteBrowserController: NSWindowController, NSWindowDelegate,
         let selectedIdentifier = items.indices.contains(tableView.selectedRow)
             ? items[tableView.selectedRow].selectionIdentifier
             : nil
-        let windows = openWindows()
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let searchQuery = trimmedQuery.isEmpty ? nil : NoteSearchQuery(trimmedQuery)
+        let allWindows = openWindows()
+        let windows = if let searchQuery {
+            allWindows.filter { window in
+                searchQuery.matches(title: window.title, body: window.subtitle, tags: [])
+            }
+        } else {
+            allWindows
+        }
         let openPaths = Set(windows.compactMap { $0.url?.standardizedFileURL.path })
         let visibleCandidates = candidates.filter {
             !openPaths.contains($0.url.standardizedFileURL.path)

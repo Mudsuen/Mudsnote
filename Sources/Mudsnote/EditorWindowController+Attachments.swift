@@ -59,7 +59,7 @@ extension EditorWindowController {
         userDidEdit()
     }
 
-    private var fileURLForRendering: URL {
-        fileURL ?? selectedDirectoryURL.appendingPathComponent(".mudsnote-unsaved.md")
+    var fileURLForRendering: URL {
+        activeFloatingNoteURL ?? fileURL ?? selectedDirectoryURL.appendingPathComponent(".mudsnote-unsaved.md")
     }
 }

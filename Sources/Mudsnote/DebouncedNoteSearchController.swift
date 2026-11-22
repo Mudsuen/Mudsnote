@@ -21,6 +21,10 @@ final class DebouncedNoteSearchController {
         self.limit = limit
     }
 
+    deinit {
+        searchTask?.cancel()
+    }
+
     func submit(
         query: String,
         roots: [URL]? = nil,

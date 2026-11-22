@@ -50,6 +50,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     private var results: [NoteSearchResult] = []
     private lazy var searchController = DebouncedNoteSearchController(noteStore: noteStore, limit: 60)
     private var isSearchPending = true
+    private(set) var isWindowClosed = false
     private var currentPanelOpacity: Double
     private weak var backdropView: GradientBackdropView?
     private weak var searchSurfaceView: NSView?
@@ -82,6 +83,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     }
 
     func showWindowAndFocus() {
+        isWindowClosed = false
         showWindow(nil)
         guard let window else { return }
         positionPanelNearTopCenter(window, topMargin: 96)
@@ -91,6 +93,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     }
 
     func windowWillClose(_ notification: Notification) {
+        isWindowClosed = true
         searchController.cancel()
         onClose()
     }
@@ -281,8 +284,61 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
         return NoteSearchFilter(rawValue: rawValue) ?? .all
     }
 
+    func refreshScopeOptions() {
+        let previousSelection = scopePopUp.selectedItem?.representedObject as? String
+        scopePopUp.removeAllItems()
+        scopePopUp.addItem(withTitle: "所有资料库")
+        scopePopUp.lastItem?.representedObject = ""
+        for directory in noteStore.preferredDirectories {
+            scopePopUp.addItem(withTitle: directory.lastPathComponent)
+            scopePopUp.lastItem?.representedObject = directory.standardizedFileURL.path
+            scopePopUp.lastItem?.toolTip = directory.path
+        }
+        if let previousSelection,
+           let index = scopePopUp.itemArray.firstIndex(where: {
+               ($0.representedObject as? String) == previousSelection
+           }) {
+            scopePopUp.selectItem(at: index)
+        } else if noteStore.searchDefaultScope == .defaultDirectory,
+                  let index = scopePopUp.itemArray.firstIndex(where: {
+                      ($0.representedObject as? String) == noteStore.notesDirectory.standardizedFileURL.path
+                  }) {
+            scopePopUp.selectItem(at: index)
+        } else {
+            scopePopUp.selectItem(at: 0)
+        }
+        searchController.cancel()
+        scheduleSearch(delay: .zero)
+    }
+
     func controlTextDidChange(_ obj: Notification) {
         scheduleSearch()
+    }
+
+    func control(_ control: NSControl, textView: NSTextView, doCommandBy commandSelector: Selector) -> Bool {
+        guard control === searchField else { return false }
+        if commandSelector == #selector(NSResponder.moveDown(_:)) {
+            moveResultSelection(by: 1)
+            return true
+        }
+        if commandSelector == #selector(NSResponder.moveUp(_:)) {
+            moveResultSelection(by: -1)
+            return true
+        }
+        return false
+    }
+
+    private func moveResultSelection(by delta: Int) {
+        guard !results.isEmpty else { return }
+        let current = tableView.selectedRow
+        let next: Int
+        if current < 0 {
+            next = delta > 0 ? 0 : results.count - 1
+        } else {
+            next = max(0, min(results.count - 1, current + delta))
+        }
+        tableView.selectRowIndexes(IndexSet(integer: next), byExtendingSelection: false)
+        tableView.scrollRowToVisible(next)
     }
 
     func numberOfRows(in tableView: NSTableView) -> Int {
