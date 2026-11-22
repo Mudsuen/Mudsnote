@@ -5,6 +5,7 @@ import MudsnoteCore
 
 enum SlashCommand: CaseIterable {
     case heading1, heading2, heading3, checklist, bulletList, orderedList, divider
+    case gridTable, codeBlock, blockquote, insertLink, insertAttachment, dailyTemplate
     case aiSummarize, aiFix, aiTodos
 
     var identifier: String {
@@ -16,6 +17,12 @@ enum SlashCommand: CaseIterable {
         case .bulletList: return "bulletList"
         case .orderedList: return "orderedList"
         case .divider: return "divider"
+        case .gridTable: return "gridTable"
+        case .codeBlock: return "codeBlock"
+        case .blockquote: return "blockquote"
+        case .insertLink: return "insertLink"
+        case .insertAttachment: return "insertAttachment"
+        case .dailyTemplate: return "dailyTemplate"
         case .aiSummarize: return "aiSummarize"
         case .aiFix: return "aiFix"
         case .aiTodos: return "aiTodos"
@@ -31,6 +38,12 @@ enum SlashCommand: CaseIterable {
         case .bulletList: return "项目符号列表"
         case .orderedList: return "编号列表"
         case .divider: return "分割线"
+        case .gridTable: return "表格"
+        case .codeBlock: return "代码块"
+        case .blockquote: return "引用"
+        case .insertLink: return "链接"
+        case .insertAttachment: return "附件"
+        case .dailyTemplate: return "每日笔记模板"
         case .aiSummarize: return "AI 总结"
         case .aiFix: return "AI 修正"
         case .aiTodos: return "AI 提取待办"
@@ -44,6 +57,12 @@ enum SlashCommand: CaseIterable {
         case .bulletList: return "开始一个项目符号项"
         case .orderedList: return "开始一个编号项"
         case .divider: return "插入分割线"
+        case .gridTable: return "插入 2×2 Markdown 表格"
+        case .codeBlock: return "插入围栏代码块"
+        case .blockquote: return "插入引用段落"
+        case .insertLink: return "插入超链接"
+        case .insertAttachment: return "插入本地文件或图片"
+        case .dailyTemplate: return "插入今日目标、待办与复盘结构"
         case .aiSummarize: return "总结选中内容或当前笔记"
         case .aiFix: return "修正选中内容或当前段落"
         case .aiTodos: return "提取 Markdown 待办项"
@@ -59,10 +78,34 @@ enum SlashCommand: CaseIterable {
         case .bulletList: return ["bullet", "bulleted", "list"]
         case .orderedList: return ["numbered", "ordered", "number"]
         case .divider: return ["divider", "line"]
+        case .gridTable: return ["grid", "markdown-table"]
+        case .codeBlock: return ["code", "fence"]
+        case .blockquote: return ["quote", "blockquote"]
+        case .insertLink: return ["link", "url"]
+        case .insertAttachment: return ["attach", "file", "image"]
+        case .dailyTemplate: return ["daily", "journal"]
         case .aiSummarize: return ["summarize", "summary", "sum", "tldr"]
         case .aiFix: return ["fix", "proofread", "grammar", "ai fix"]
         case .aiTodos: return ["todos", "actions", "tasks"]
         }
+    }
+
+    static func dailyNoteTemplateMarkdown(date: Date = Date()) -> String {
+        let formatter = DateFormatter()
+        formatter.dateFormat = "yyyy-MM-dd"
+        let today = formatter.string(from: date)
+        return [
+            "## \(today)",
+            "",
+            "### 今日重点",
+            "- [ ] ",
+            "",
+            "### 随手记录",
+            "- ",
+            "",
+            "### 复盘",
+            "- "
+        ].joined(separator: "\n")
     }
 
     var aiActionID: AIActionID? {

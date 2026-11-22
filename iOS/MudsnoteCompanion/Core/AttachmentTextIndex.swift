@@ -241,7 +241,13 @@ enum MarkdownAttachmentSearch {
             if path.hasPrefix("<"), path.hasSuffix(">") {
                 path = String(path.dropFirst().dropLast())
             }
-            path = path.removingPercentEncoding ?? path
+            path = (path.removingPercentEncoding ?? path).replacingOccurrences(of: "\\", with: "/")
+            while path.hasPrefix("./") {
+                path = String(path.dropFirst(2))
+            }
+            while path.hasPrefix("../") {
+                path = String(path.dropFirst(3))
+            }
             guard path.hasPrefix("Attachments/"),
                   seen.insert(path).inserted else { return }
             paths.append(path)

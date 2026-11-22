@@ -13,17 +13,25 @@ public struct AIMemorySyncResult: Equatable, Sendable {
 }
 
 public struct AIMemorySyncService: Sendable {
+    public static let defaultProjectKeywords = ["mudsnote", "quickmarkdown"]
+
     public let memoryDirectory: URL
     public let destinationRoot: URL
+    public let projectKeywords: [String]
     private let calendar: Calendar
 
     public init(
         memoryDirectory: URL,
         destinationRoot: URL,
+        projectKeywords: [String] = AIMemorySyncService.defaultProjectKeywords,
         calendar: Calendar = .current
     ) {
         self.memoryDirectory = memoryDirectory.standardizedFileURL
         self.destinationRoot = destinationRoot.standardizedFileURL
+        let normalizedKeywords = projectKeywords
+            .map { $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased() }
+            .filter { !$0.isEmpty }
+        self.projectKeywords = normalizedKeywords.isEmpty ? Self.defaultProjectKeywords : normalizedKeywords
         self.calendar = calendar
     }
 
@@ -65,7 +73,7 @@ public struct AIMemorySyncService: Sendable {
             let url = memoryDirectory.appendingPathComponent(name)
             guard FileManager.default.fileExists(atPath: url.path) else { return [] }
             let markdown = try String(contentsOf: url, encoding: .utf8)
-            return Self.mudsnoteSections(in: markdown)
+            return Self.mudsnoteSections(in: markdown, keywords: projectKeywords)
         }
         let uniqueSections = sections.reduce(into: [String]()) { result, section in
             if !result.contains(section) {
@@ -92,7 +100,10 @@ public struct AIMemorySyncService: Sendable {
         """
     }
 
-    static func mudsnoteSections(in markdown: String) -> [String] {
+    static func mudsnoteSections(
+        in markdown: String,
+        keywords: [String] = AIMemorySyncService.defaultProjectKeywords
+    ) -> [String] {
         let lines = markdown.replacingOccurrences(of: "\r\n", with: "\n")
             .components(separatedBy: "\n")
         var sections: [String] = []
@@ -144,9 +155,7 @@ public struct AIMemorySyncService: Sendable {
                 let heading = line
                     .trimmingCharacters(in: CharacterSet(charactersIn: "# "))
                     .lowercased()
-                let matches = heading.contains("mudsnote")
-                    || heading.contains("quickmarkdown")
-                    || heading.contains("/users/donald/code/mudsnote")
+                let matches = keywords.contains { heading.contains($0) }
                 if let activeHeadingLevel = capturedHeadingLevel {
                     if headingLevel <= activeHeadingLevel {
                         flush()

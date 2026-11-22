@@ -13,7 +13,11 @@ struct RootView: View {
     @State private var isReaderEditing = false
 
     private var usesFullReaderForUITests: Bool {
+        #if DEBUG
         ProcessInfo.processInfo.arguments.contains("-ui-testing-full-reader")
+        #else
+        false
+        #endif
     }
 
     var body: some View {

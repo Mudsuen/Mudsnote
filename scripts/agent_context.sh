@@ -55,6 +55,7 @@ load_topic() {
       DESCRIPTION="Cross-platform composition and product boundary"
       FILES=(
         Package.swift
+        Packages/MudsnoteSharedCore
         Sources/Mudsnote/AppController.swift
         Sources/MudsnoteCore/NoteStore.swift
         iOS/MudsnoteCompanion/App/AppModel.swift
@@ -64,9 +65,9 @@ load_topic() {
       SEARCH_HINT='@main|showLibrary|CaptureRoute|SystemEntryRequest|NoteStore'
       ;;
     core-store)
-      DESCRIPTION="macOS shared models, settings, migration, Markdown I/O, drafts, and search"
-      FILES=(Sources/MudsnoteCore)
-      TESTS=(Tests/MudsnoteCoreTests)
+      DESCRIPTION="Shared Markdown contracts, macOS models, settings, migration, Markdown I/O, drafts, and search"
+      FILES=(Packages/MudsnoteSharedCore/Sources Sources/MudsnoteCore)
+      TESTS=(Packages/MudsnoteSharedCore/Tests Tests/MudsnoteCoreTests)
       SEARCH_HINT='NoteStore|MarkdownEditorDocument|searchNotes|saveNewNote|updateNote|migrate'
       ;;
     macos-app)
@@ -93,6 +94,10 @@ load_topic() {
         Sources/Mudsnote/LibraryNotesLayout.swift
         Sources/Mudsnote/LibraryNoteListProjection.swift
         Sources/Mudsnote/LibraryGalleryView.swift
+        Sources/Mudsnote/LibraryNavigationRail.swift
+        Sources/Mudsnote/LibraryOverviewView*.swift
+        Sources/Mudsnote/Overview*.swift
+        Sources/Mudsnote/KnowledgeGraphWindowController.swift
         Sources/Mudsnote/LibraryFileSystemMonitor.swift
       )
       TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests*.swift scripts/library_smoke.sh)
@@ -140,6 +145,8 @@ load_topic() {
       FILES=(
         iOS/MudsnoteCompanion/App
         iOS/MudsnoteCompanion/MudsnoteCompanionApp.swift
+        iOS/MudsnoteCompanion/Features/Capture/CaptureConsoleView.swift
+        iOS/MudsnoteCompanion/Design/MudsnoteTokens.swift
         iOS/MudsnoteCompanion/SystemIntegrations
         iOS/MudsnoteCompanionWidget
       )
@@ -172,7 +179,7 @@ load_topic() {
       )
       TESTS=(iOS/MudsnoteCompanionTests iOS/MudsnoteCompanionUITests)
       DOCS=(docs/ios-apple-notes-parity-roadmap.md)
-      SEARCH_HINT='LibraryHomeView|FolderNotesListView|search|gallery|SmartFolder|AttachmentLibraryView'
+      SEARCH_HINT='LibraryHomeView|search|gallery|SmartFolder|AttachmentLibraryView'
       ;;
     ios-editor)
       DESCRIPTION="iOS note reader/editor, Markdown commands, tables, find, and native attachment bridges"
@@ -182,6 +189,7 @@ load_topic() {
         iOS/MudsnoteCompanion/Features/Reader/MarkdownEditorSheets.swift
         iOS/MudsnoteCompanion/Features/Reader/MarkdownTextEditor.swift
         iOS/MudsnoteCompanion/Features/Reader/MarkdownAttachmentPlayers.swift
+        iOS/MudsnoteCompanion/Features/Reader/ReaderAsyncImageView.swift
         iOS/MudsnoteCompanion/Features/Shared
         iOS/MudsnoteCompanion/Core/NotePDFExporter.swift
         iOS/MudsnoteCompanion/Core/AttachmentPresentationPreferences.swift
@@ -320,7 +328,7 @@ print_topic() {
   if command -v rg >/dev/null 2>&1; then
     matches="$(rg -n --no-heading --color never -m 12 -- "$query" "${FILES[@]}" "${TESTS[@]}")"
   else
-    matches="$(grep -n -E -m 12 -- "$query" "${FILES[@]}" "${TESTS[@]}")"
+    matches="$(grep -r -n -E -m 12 -- "$query" "${FILES[@]}" "${TESTS[@]}")"
   fi
   status=$?
   set -e

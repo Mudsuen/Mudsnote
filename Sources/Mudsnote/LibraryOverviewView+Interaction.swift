@@ -346,7 +346,11 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
             return true
         default:
             if !text.isEmpty && !event.modifierFlags.intersection([.control, .option]).isEmpty { return false }
-            if !text.isEmpty, !isCard(node), node != .unassigned {
+            let isPrintableText = !text.isEmpty && text.unicodeScalars.allSatisfy { scalar in
+                !CharacterSet.controlCharacters.contains(scalar)
+                    && !(0xF700...0xF8FF).contains(scalar.value)
+            }
+            if isPrintableText, !isCard(node), node != .unassigned {
                 beginTopicEdit(node)
                 topicEditor.setSelectedRange(NSRange(location: 0, length: (topicEditor.string as NSString).length))
                 topicEditor.insertText(event.characters ?? "", replacementRange: topicEditor.selectedRange())

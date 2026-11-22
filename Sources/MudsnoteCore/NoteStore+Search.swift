@@ -1,4 +1,5 @@
 import Foundation
+import MudsnoteSharedCore
 
 public final class NoteSearchSession: @unchecked Sendable {
     private let noteStore: NoteStore
@@ -698,7 +699,7 @@ extension NoteStore {
             if !requiresFullRefresh,
                !dirtyPaths.isEmpty,
                let reusableSnapshot {
-                guard let snapshot = incrementallyRefreshing(
+                guard let incremental = incrementallyRefreshing(
                     reusableSnapshot,
                     dirtyPaths: dirtyPaths,
                     rootsKey: rootsKey,
@@ -708,12 +709,13 @@ extension NoteStore {
                 }
                 guard !cancellationCheck() else { return nil }
                 if publishSearchIndexSnapshot(
-                    snapshot,
+                    incremental.snapshot,
                     consuming: dirtyPaths,
                     fullRefresh: false,
-                    stateRevision: stateRevision
+                    stateRevision: stateRevision,
+                    incrementalChanges: (incremental.upserts, incremental.deletes)
                 ) {
-                    return snapshot.entries
+                    return incremental.snapshot.entries
                 }
                 continue
             }
@@ -821,18 +823,23 @@ extension NoteStore {
         dirtyPaths: Set<String>,
         rootsKey: [String],
         cancellationCheck: @Sendable () -> Bool
-    ) -> NoteSearchIndexSnapshot? {
+    ) -> (snapshot: NoteSearchIndexSnapshot, upserts: [NoteSearchIndexEntry], deletes: [String])? {
         var signatures = reusableSnapshot.fileSignatures
         var entriesByPath = reusableSnapshot.entries.reduce(into: [String: NoteSearchIndexEntry]()) {
             $0[$1.url.standardizedFileURL.path] = $1
         }
+        var upserts: [NoteSearchIndexEntry] = []
+        var deletes: [String] = []
 
         for path in dirtyPaths.sorted() {
             guard !cancellationCheck() else { return nil }
             signatures.removeValue(forKey: path)
             entriesByPath.removeValue(forKey: path)
 
-            guard isSearchableMarkdownPath(path, rootsKey: rootsKey) else { continue }
+            guard isSearchableMarkdownPath(path, rootsKey: rootsKey) else {
+                deletes.append(path)
+                continue
+            }
             let fileURL = URL(fileURLWithPath: path).standardizedFileURL
             guard let signature = fileSignature(for: fileURL),
                   let entry = indexedEntry(
@@ -840,10 +847,12 @@ extension NoteStore {
                     signature: signature,
                     cancellationCheck: cancellationCheck
                   ) else {
+                deletes.append(path)
                 continue
             }
             signatures[path] = signature
             entriesByPath[path] = entry
+            upserts.append(entry)
         }
 
         let existingPaths = reusableSnapshot.entries.map { $0.url.standardizedFileURL.path }
@@ -854,11 +863,12 @@ extension NoteStore {
             .sorted { $0.key.localizedStandardCompare($1.key) == .orderedAscending }
             .map(\.value)
 
-        return NoteSearchIndexSnapshot(
+        let snapshot = NoteSearchIndexSnapshot(
             rootsKey: rootsKey,
             fileSignatures: signatures,
             entries: orderedEntries + insertedEntries
         )
+        return (snapshot, upserts, deletes)
     }
 
     private func isSearchableMarkdownPath(_ path: String, rootsKey: [String]) -> Bool {
@@ -885,7 +895,8 @@ extension NoteStore {
         consuming dirtyPaths: Set<String>,
         fullRefresh: Bool,
         stateRevision: UInt64,
-        writesDiskCache: Bool = true
+        writesDiskCache: Bool = true,
+        incrementalChanges: (upserts: [NoteSearchIndexEntry], deletes: [String])? = nil
     ) -> Bool {
         searchIndexLock.lock()
         let stateIsCurrent = searchIndexRevision == stateRevision
@@ -898,55 +909,154 @@ extension NoteStore {
         }
         searchIndexLock.unlock()
 
+        if stateIsCurrent {
+            knowledgeDerivedIndexLock.lock()
+            cachedKnowledgeDerivedIndex = nil
+            knowledgeDerivedIndexLock.unlock()
+        }
+
         if stateIsCurrent, writesDiskCache {
-            writeSearchIndexSnapshotToDisk(snapshot)
+            if let incrementalChanges,
+               estimatedDiskCacheSize(for: snapshot) <= Self.maximumSearchIndexDiskCacheSize {
+                let upsertRecords = incrementalChanges.upserts.map { entry in
+                    sqliteRecord(
+                        for: entry,
+                        signature: snapshot.fileSignatures[entry.url.standardizedFileURL.path]
+                    )
+                }
+                let updated = searchIndexSQLite.applyIncrementalChanges(
+                    rootsKey: snapshot.rootsKey,
+                    upserts: upsertRecords,
+                    deletes: incrementalChanges.deletes,
+                    schemaVersion: NoteSearchIndexDiskCache.currentSchemaVersion
+                )
+                if !updated {
+                    writeSearchIndexSnapshotToDisk(snapshot)
+                }
+            } else {
+                writeSearchIndexSnapshotToDisk(snapshot)
+            }
         }
         return stateIsCurrent
+    }
+
+    private struct SQLiteSearchEntryExtra: Codable {
+        let knowledgeLayer: KnowledgeLayer?
+        let knowledgeLinkTargets: [KnowledgeLinkTarget]
+        let hasAttachments: Bool
+        let thumbnailPath: String?
+        let isContentIndexed: Bool
+    }
+
+    private func sqliteRecord(
+        for entry: NoteSearchIndexEntry,
+        signature: NoteSearchFileSignature?
+    ) -> SQLiteNoteIndexRecord {
+        let extra = SQLiteSearchEntryExtra(
+            knowledgeLayer: entry.knowledgeLayer,
+            knowledgeLinkTargets: entry.knowledgeLinkTargets,
+            hasAttachments: entry.hasAttachments,
+            thumbnailPath: entry.thumbnailURL?.standardizedFileURL.path,
+            isContentIndexed: entry.isContentIndexed
+        )
+        let extraData = try? JSONEncoder().encode(extra)
+        return SQLiteNoteIndexRecord(
+            path: entry.url.standardizedFileURL.path,
+            modifiedAt: (signature?.modifiedAt ?? entry.modifiedAt).timeIntervalSinceReferenceDate,
+            createdAt: (signature?.createdAt ?? entry.createdAt).timeIntervalSinceReferenceDate,
+            fileSize: signature?.fileSize ?? UInt64(entry.body.utf8.count),
+            title: entry.title,
+            body: entry.body,
+            snippet: entry.snippet,
+            tags: entry.tags,
+            extraJSON: extraData
+        )
     }
 
     func readSearchIndexSnapshotFromDisk(rootsKey: [String]) -> NoteSearchIndexSnapshot? {
         guard let attributes = try? fileManager.attributesOfItem(atPath: searchIndexCacheURL.path),
               let cacheSize = (attributes[.size] as? NSNumber)?.uint64Value,
               cacheSize <= Self.maximumSearchIndexDiskCacheSize else {
-            try? fileManager.removeItem(at: searchIndexCacheURL)
-            return nil
-        }
-        guard let data = try? Data(contentsOf: searchIndexCacheURL) else {
+            searchIndexSQLite.removeDatabaseFiles()
             return nil
         }
 
-        do {
-            let cache = try JSONDecoder().decode(NoteSearchIndexDiskCache.self, from: data)
-            guard cache.schemaVersion == NoteSearchIndexDiskCache.currentSchemaVersion,
-                  cache.snapshot.rootsKey == rootsKey else {
-                return nil
-            }
-            return cache.snapshot
-        } catch {
-            try? fileManager.removeItem(at: searchIndexCacheURL)
+        guard let records = searchIndexSQLite.loadAll(
+            expectedRootsKey: rootsKey,
+            expectedSchemaVersion: NoteSearchIndexDiskCache.currentSchemaVersion
+        ) else {
             return nil
         }
+
+        let decoder = JSONDecoder()
+        var signatures: [String: NoteSearchFileSignature] = [:]
+        var entries: [NoteSearchIndexEntry] = []
+        signatures.reserveCapacity(records.count)
+        entries.reserveCapacity(records.count)
+
+        for record in records {
+            let fileURL = URL(fileURLWithPath: record.path).standardizedFileURL
+            let modifiedAt = Date(timeIntervalSinceReferenceDate: record.modifiedAt)
+            let createdAt = Date(timeIntervalSinceReferenceDate: record.createdAt)
+            signatures[fileURL.path] = NoteSearchFileSignature(
+                modifiedAt: modifiedAt,
+                createdAt: createdAt,
+                fileSize: record.fileSize
+            )
+            let extra = record.extraJSON.flatMap { try? decoder.decode(SQLiteSearchEntryExtra.self, from: $0) }
+            let entry = NoteSearchIndexEntry(
+                url: fileURL,
+                title: record.title,
+                titleLower: NoteSearchQuery.normalized(record.title),
+                body: record.body,
+                bodyLower: NoteSearchQuery.normalized(record.body),
+                snippet: record.snippet,
+                modifiedAt: modifiedAt,
+                createdAt: createdAt,
+                tags: record.tags,
+                tagsLower: record.tags.map(NoteSearchQuery.normalized),
+                knowledgeLayer: extra?.knowledgeLayer,
+                knowledgeLinkTargets: extra?.knowledgeLinkTargets ?? [],
+                hasAttachments: extra?.hasAttachments ?? false,
+                thumbnailURL: extra?.thumbnailPath.map { URL(fileURLWithPath: $0).standardizedFileURL },
+                isContentIndexed: extra?.isContentIndexed ?? true
+            )
+            entries.append(entry)
+        }
+
+        return NoteSearchIndexSnapshot(
+            rootsKey: rootsKey,
+            fileSignatures: signatures,
+            entries: entries
+        )
     }
 
     func writeSearchIndexSnapshotToDisk(_ snapshot: NoteSearchIndexSnapshot) {
         guard estimatedDiskCacheSize(for: snapshot) <= Self.maximumSearchIndexDiskCacheSize else {
-            try? fileManager.removeItem(at: searchIndexCacheURL)
+            searchIndexSQLite.removeDatabaseFiles()
             return
         }
-        let cache = NoteSearchIndexDiskCache(
-            schemaVersion: NoteSearchIndexDiskCache.currentSchemaVersion,
-            snapshot: snapshot
-        )
 
-        do {
-            try fileManager.createDirectory(
-                at: searchIndexCacheURL.deletingLastPathComponent(),
-                withIntermediateDirectories: true
+        let records = snapshot.entries.map { entry in
+            sqliteRecord(
+                for: entry,
+                signature: snapshot.fileSignatures[entry.url.standardizedFileURL.path]
             )
-            let data = try JSONEncoder().encode(cache)
-            try data.write(to: searchIndexCacheURL, options: .atomic)
-        } catch {
-            try? fileManager.removeItem(at: searchIndexCacheURL)
+        }
+        let wrote = searchIndexSQLite.replaceAll(
+            rootsKey: snapshot.rootsKey,
+            records: records,
+            schemaVersion: NoteSearchIndexDiskCache.currentSchemaVersion
+        )
+        if wrote {
+            let legacyJSON = appSupportDirectory
+                .appendingPathComponent("SearchIndex", isDirectory: true)
+                .appendingPathComponent("index-v1.json", isDirectory: false)
+            if fileManager.fileExists(atPath: legacyJSON.path) {
+                try? fileManager.removeItem(at: legacyJSON)
+            }
+        } else {
+            searchIndexSQLite.removeDatabaseFiles()
         }
     }
 

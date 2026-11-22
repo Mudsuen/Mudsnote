@@ -29,7 +29,11 @@ enum CameraTextCapture {
     }
 
     private static var isUITesting: Bool {
+        #if DEBUG
         ProcessInfo.processInfo.arguments.contains(uiTestingArgument)
+        #else
+        false
+        #endif
     }
 
     private static func firstResponder() -> UIResponder? {

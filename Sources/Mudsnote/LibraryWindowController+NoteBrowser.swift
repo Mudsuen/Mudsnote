@@ -83,53 +83,62 @@ extension LibraryWindowController {
         return fallback.isEmpty ? LibraryCopy.newNote : fallback
     }
 
-    func thumbnailImage(for note: NoteSearchResult) -> NSImage? {
+    func thumbnailImage(for note: NoteSearchResult, forGallery: Bool = false) -> NSImage? {
         guard let thumbnailURL = note.thumbnailURL else {
             return nil
         }
         let key = thumbnailURL.standardizedFileURL.path
-        if let cached = thumbnailImageCache.object(forKey: key as NSString) {
+        let cache = forGallery ? galleryThumbnailImageCache : thumbnailImageCache
+        if let cached = cache.object(forKey: key as NSString) {
             return cached.image
         }
 
         guard hasRequestedWindowPresentation else {
-            return decodeThumbnailImageSynchronously(at: thumbnailURL, key: key)
+            return decodeThumbnailImageSynchronously(at: thumbnailURL, key: key, forGallery: forGallery)
         }
 
-        scheduleThumbnailImageLoad(at: thumbnailURL, key: key)
+        scheduleThumbnailImageLoad(at: thumbnailURL, key: key, forGallery: forGallery)
         return nil
     }
 
-    func decodeThumbnailImageSynchronously(at url: URL, key: String) -> NSImage? {
+    func decodeThumbnailImageSynchronously(at url: URL, key: String, forGallery: Bool = false) -> NSImage? {
         thumbnailImageDecodeCountForLibrary += 1
-        let image = thumbnailDecoder(url).map {
-            NSImage(cgImage: $0, size: NSSize(width: 44, height: 44))
+        let decoder = forGallery ? galleryThumbnailDecoder : thumbnailDecoder
+        let image = decoder(url).map { cgImage in
+            let size = forGallery
+                ? NSSize(width: max(CGFloat(cgImage.width) / 2, 1), height: max(CGFloat(cgImage.height) / 2, 1))
+                : NSSize(width: 44, height: 44)
+            return NSImage(cgImage: cgImage, size: size)
         }
-        cacheThumbnailImage(image, key: key)
+        cacheThumbnailImage(image, key: key, forGallery: forGallery)
         return image
     }
 
-    func scheduleThumbnailImageLoad(at url: URL, key: String) {
-        guard thumbnailImageLoadTasks[key] == nil else { return }
+    func scheduleThumbnailImageLoad(at url: URL, key: String, forGallery: Bool = false) {
+        let taskKey = forGallery ? "gallery:\(key)" : key
+        guard thumbnailImageLoadTasks[taskKey] == nil else { return }
 
         thumbnailImageDecodeCountForLibrary += 1
-        let thumbnailDecoder = thumbnailDecoder
+        let decoder = forGallery ? galleryThumbnailDecoder : thumbnailDecoder
         let task = Task.detached(priority: .utility) { [weak self] in
-            let decoded = LibraryThumbnailDecodeResult(image: thumbnailDecoder(url))
+            let decoded = LibraryThumbnailDecodeResult(image: decoder(url))
             guard !Task.isCancelled else { return }
             await MainActor.run {
                 guard !Task.isCancelled, let self else { return }
-                self.thumbnailImageLoadTasks[key] = nil
+                self.thumbnailImageLoadTasks[taskKey] = nil
 
-                let image = decoded.image.map {
-                    NSImage(cgImage: $0, size: NSSize(width: 44, height: 44))
+                let image = decoded.image.map { cgImage in
+                    let size = forGallery
+                        ? NSSize(width: max(CGFloat(cgImage.width) / 2, 1), height: max(CGFloat(cgImage.height) / 2, 1))
+                        : NSSize(width: 44, height: 44)
+                    return NSImage(cgImage: cgImage, size: size)
                 }
-                self.cacheThumbnailImage(image, key: key)
+                self.cacheThumbnailImage(image, key: key, forGallery: forGallery)
                 guard self.window?.isVisible == true else { return }
                 self.scheduleThumbnailReload(for: key)
             }
         }
-        thumbnailImageLoadTasks[key] = task
+        thumbnailImageLoadTasks[taskKey] = task
     }
 
     func rebuildThumbnailRowIndex() {
@@ -200,14 +209,15 @@ extension LibraryWindowController {
             for indexPath in matchingItems {
                 guard let item = galleryCollectionView.item(at: indexPath) as? LibraryGalleryItem,
                       let note = galleryNote(at: indexPath) else { continue }
-                item.updateThumbnail(thumbnailImage(for: note))
+                item.updateThumbnail(thumbnailImage(for: note, forGallery: true))
             }
         }
     }
 
-    func cacheThumbnailImage(_ image: NSImage?, key: String) {
-        let pixelCost = image == nil ? 1 : 88 * 88 * 4
-        thumbnailImageCache.setObject(
+    func cacheThumbnailImage(_ image: NSImage?, key: String, forGallery: Bool = false) {
+        let pixelCost = image == nil ? 1 : (forGallery ? 320 * 224 * 4 : 88 * 88 * 4)
+        let cache = forGallery ? galleryThumbnailImageCache : thumbnailImageCache
+        cache.setObject(
             LibraryThumbnailCacheEntry(image: image),
             forKey: key as NSString,
             cost: pixelCost
@@ -215,11 +225,19 @@ extension LibraryWindowController {
     }
 
     nonisolated static func makeListThumbnailCGImage(at url: URL) -> CGImage? {
+        makeThumbnailCGImage(at: url, maxPixelSize: 88)
+    }
+
+    nonisolated static func makeGalleryThumbnailCGImage(at url: URL) -> CGImage? {
+        makeThumbnailCGImage(at: url, maxPixelSize: 320)
+    }
+
+    private nonisolated static func makeThumbnailCGImage(at url: URL, maxPixelSize: Int) -> CGImage? {
         guard let source = CGImageSourceCreateWithURL(url as CFURL, nil) else { return nil }
         let options: [CFString: Any] = [
             kCGImageSourceCreateThumbnailFromImageAlways: true,
             kCGImageSourceCreateThumbnailWithTransform: true,
-            kCGImageSourceThumbnailMaxPixelSize: 88,
+            kCGImageSourceThumbnailMaxPixelSize: maxPixelSize,
             kCGImageSourceShouldCacheImmediately: true
         ]
         return CGImageSourceCreateThumbnailAtIndex(source, 0, options as CFDictionary)
@@ -375,7 +393,7 @@ extension LibraryWindowController {
             preview: rawPreview.isEmpty ? LibraryCopy.noAdditionalText : rawPreview,
             date: noteListDateText(for: noteListDisplayDateForLibrary(note)),
             metadata: noteListFolderText(for: note),
-            thumbnail: thumbnailImage(for: note)
+            thumbnail: thumbnailImage(for: note, forGallery: true)
         )
         return galleryItem
     }

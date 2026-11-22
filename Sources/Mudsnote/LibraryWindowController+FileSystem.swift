@@ -68,10 +68,13 @@ extension LibraryWindowController {
             thumbnailImageLoadTasks.values.forEach { $0.cancel() }
             thumbnailImageLoadTasks.removeAll()
             thumbnailImageCache.removeAllObjects()
+            galleryThumbnailImageCache.removeAllObjects()
         } else {
             for path in imagePaths {
                 thumbnailImageLoadTasks.removeValue(forKey: path)?.cancel()
+                thumbnailImageLoadTasks.removeValue(forKey: "gallery:\(path)")?.cancel()
                 thumbnailImageCache.removeObject(forKey: path as NSString)
+                galleryThumbnailImageCache.removeObject(forKey: path as NSString)
                 scheduleThumbnailReload(for: path)
             }
         }

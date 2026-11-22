@@ -22,18 +22,26 @@ struct CaptureFolderPreferences {
         normalizedPath(defaults.string(forKey: Self.defaultFolderKey))
     }
 
-    func setDefaultFolder(_ relativePath: String) {
-        guard let path = normalizedPath(relativePath) else { return }
+    func setDefaultFolder(_ relativePath: String?) {
+        guard let path = normalizedPath(relativePath) else {
+            defaults.removeObject(forKey: Self.defaultFolderKey)
+            return
+        }
         defaults.set(path, forKey: Self.defaultFolderKey)
     }
 
-    func setDefaultFolder(_ relativePath: String, libraryRoot: URL?) {
-        guard let path = normalizedPath(relativePath) else { return }
+    func setDefaultFolder(_ relativePath: String?, libraryRoot: URL?) {
         guard let libraryRoot else {
-            setDefaultFolder(path)
+            setDefaultFolder(relativePath)
             return
         }
-        defaults.set(path, forKey: defaultFolderKey(libraryRoot: libraryRoot))
+        let key = defaultFolderKey(libraryRoot: libraryRoot)
+        guard let path = normalizedPath(relativePath) else {
+            defaults.removeObject(forKey: key)
+            defaults.removeObject(forKey: Self.defaultFolderKey)
+            return
+        }
+        defaults.set(path, forKey: key)
     }
 
     func resolveDefaultFolder(in folders: [LibraryFolderNode]) -> String? {

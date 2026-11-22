@@ -290,14 +290,15 @@ struct TagSelectionFilter: Equatable {
     var isEmpty: Bool { included.isEmpty && excluded.isEmpty }
 
     mutating func cycle(_ tag: String) {
+        let key = Self.key(tag)
         switch state(for: tag) {
         case .inactive:
             included.insert(tag)
         case .included:
-            included.remove(tag)
+            included = Set(included.filter { Self.key($0) != key })
             excluded.insert(tag)
         case .excluded:
-            excluded.remove(tag)
+            excluded = Set(excluded.filter { Self.key($0) != key })
         }
     }
 

@@ -119,6 +119,10 @@ enum MarkdownNoteLink {
         )
     }
 
+    private static let inlineCodeExpression = try! NSRegularExpression(
+        pattern: #"(`+)(?!`).*?(?<!`)\1(?!`)"#
+    )
+
     static func rewritingLinks(
         in markdown: String,
         sourceBefore: String,
@@ -126,36 +130,109 @@ enum MarkdownNoteLink {
         movedPaths: [String: String]
     ) -> String {
         let source = markdown as NSString
-        let matches = linkExpression.matches(
-            in: markdown,
-            range: NSRange(location: 0, length: source.length)
-        )
-        var rewritten = markdown as NSString
-        for match in matches.reversed() {
-            let destinationRange = match.range(at: 1)
-            let destination = source.substring(with: destinationRange)
-            guard let resolved = resolvedRelativePath(
-                for: destination,
-                from: sourceBefore
-            ) else { continue }
-            let targetAfter: String
-            if let movedTarget = movedPaths[resolved] {
-                targetAfter = movedTarget
-            } else if sourceBefore != sourceAfter {
-                targetAfter = resolved
-            } else {
+        guard source.length > 0 else { return markdown }
+
+        var replacements: [(range: NSRange, value: String)] = []
+        var fence: (Character, Int)?
+        var inFrontMatter = false
+        var lineIndex = 0
+        var offset = 0
+
+        while offset < source.length {
+            let lineRange = source.lineRange(for: NSRange(location: offset, length: 0))
+            var contentEnd = NSMaxRange(lineRange)
+            while contentEnd > lineRange.location {
+                let codeUnit = source.character(at: contentEnd - 1)
+                if codeUnit == 10 || codeUnit == 13 {
+                    contentEnd -= 1
+                } else {
+                    break
+                }
+            }
+            let contentRange = NSRange(location: lineRange.location, length: contentEnd - lineRange.location)
+            let rawLine = source.substring(with: contentRange)
+            let trimmed = rawLine.trimmingCharacters(in: .whitespaces)
+            offset = NSMaxRange(lineRange)
+            let currentLineIndex = lineIndex
+            lineIndex += 1
+
+            if currentLineIndex == 0 && trimmed == "---" {
+                inFrontMatter = true
                 continue
             }
-            guard let replacement = relativeDestination(
-                from: sourceAfter,
-                to: targetAfter
-            ) else { continue }
-            let suffix = destination.firstIndex(where: { $0 == "#" || $0 == "?" })
-                .map { String(destination[$0...]) } ?? ""
-            rewritten = rewritten.replacingCharacters(
-                in: destinationRange,
-                with: replacement + suffix
-            ) as NSString
+            if inFrontMatter {
+                if trimmed == "---" || trimmed == "..." { inFrontMatter = false }
+                continue
+            }
+            if let marker = trimmed.first, marker == "`" || marker == "~" {
+                let count = trimmed.prefix(while: { $0 == marker }).count
+                if count >= 3 {
+                    if let active = fence {
+                        if marker == active.0
+                            && count >= active.1
+                            && trimmed.dropFirst(count).trimmingCharacters(in: .whitespaces).isEmpty {
+                            fence = nil
+                        }
+                    } else {
+                        fence = (marker, count)
+                    }
+                    continue
+                }
+            }
+            guard fence == nil, !rawLine.hasPrefix("    "), !rawLine.hasPrefix("\t") else {
+                continue
+            }
+
+            let lineNS = rawLine as NSString
+            let fullLineRange = NSRange(location: 0, length: lineNS.length)
+            let codeRanges = inlineCodeExpression
+                .matches(in: rawLine, range: fullLineRange)
+                .map(\.range)
+
+            for match in linkExpression.matches(in: rawLine, range: fullLineRange) {
+                if codeRanges.contains(where: { NSIntersectionRange($0, match.range).length > 0 }) {
+                    continue
+                }
+                var precedingSlashes = 0
+                var cursor = match.range.location
+                while cursor > 0 && lineNS.character(at: cursor - 1) == 92 {
+                    precedingSlashes += 1
+                    cursor -= 1
+                }
+                guard precedingSlashes % 2 == 0 else { continue }
+
+                let localDestinationRange = match.range(at: 1)
+                let destination = lineNS.substring(with: localDestinationRange)
+                guard let resolved = resolvedRelativePath(
+                    for: destination,
+                    from: sourceBefore
+                ) else { continue }
+                let targetAfter: String
+                if let movedTarget = movedPaths[resolved] {
+                    targetAfter = movedTarget
+                } else if sourceBefore != sourceAfter {
+                    targetAfter = resolved
+                } else {
+                    continue
+                }
+                guard let replacement = relativeDestination(
+                    from: sourceAfter,
+                    to: targetAfter
+                ) else { continue }
+                let suffix = destination.firstIndex(where: { $0 == "#" || $0 == "?" })
+                    .map { String(destination[$0...]) } ?? ""
+                let globalRange = NSRange(
+                    location: contentRange.location + localDestinationRange.location,
+                    length: localDestinationRange.length
+                )
+                replacements.append((range: globalRange, value: replacement + suffix))
+            }
+        }
+
+        guard !replacements.isEmpty else { return markdown }
+        var rewritten = source
+        for item in replacements.reversed() {
+            rewritten = rewritten.replacingCharacters(in: item.range, with: item.value) as NSString
         }
         return rewritten as String
     }

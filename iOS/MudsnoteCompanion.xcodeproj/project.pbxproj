@@ -57,6 +57,10 @@
 		B30000000000000000000001 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B30000000000000000000003 /* Localizable.xcstrings */; };
 		B30000000000000000000002 /* Localizable.xcstrings in Resources */ = {isa = PBXBuildFile; fileRef = B30000000000000000000003 /* Localizable.xcstrings */; };
 		C40000000000000000000001 /* MudsnoteCompanionUITests.swift in Sources */ = {isa = PBXBuildFile; fileRef = C40000000000000000000002 /* MudsnoteCompanionUITests.swift */; };
+		F80000000000000000000003 /* MudsnoteSharedCore in Frameworks */ = {isa = PBXBuildFile; productRef = F80000000000000000000002 /* MudsnoteSharedCore */; };
+		F80000000000000000000005 /* MudsnoteSharedCore in Frameworks */ = {isa = PBXBuildFile; productRef = F80000000000000000000004 /* MudsnoteSharedCore */; };
+		F80000000000000000000010 /* AppStateDomains.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000000011 /* AppStateDomains.swift */; };
+		F80000000000000000000012 /* ReaderAsyncImageView.swift in Sources */ = {isa = PBXBuildFile; fileRef = F80000000000000000000013 /* ReaderAsyncImageView.swift */; };
 /* End PBXBuildFile section */
 
 /* Begin PBXContainerItemProxy section */
@@ -108,6 +112,8 @@
 		230C88C96F6142B1B6262AFC /* MudsnoteCompanionWidgetBundle.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanionWidgetBundle.swift; sourceTree = "<group>"; };
 		9DF93F767020491CAC9AAF7F /* QuickCaptureWidget.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = QuickCaptureWidget.swift; sourceTree = "<group>"; };
 		412CBF43604B493EA56023BB /* AppModel.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/App/AppModel.swift; sourceTree = "<group>"; };
+		F80000000000000000000011 /* AppStateDomains.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/App/AppStateDomains.swift; sourceTree = "<group>"; };
+		F80000000000000000000013 /* ReaderAsyncImageView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Features/Reader/ReaderAsyncImageView.swift; sourceTree = "<group>"; };
 		CE171B25E9844F44907B421D /* RootView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/App/RootView.swift; sourceTree = "<group>"; };
 		A76A1062657F45A39BA964EA /* OnboardingFolderView.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/App/OnboardingFolderView.swift; sourceTree = "<group>"; };
 		8517F746D00741A39CF7D01C /* MudsnoteTokens.swift */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.swift; path = MudsnoteCompanion/Design/MudsnoteTokens.swift; sourceTree = "<group>"; };
@@ -159,6 +165,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F80000000000000000000003 /* MudsnoteSharedCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -173,6 +180,7 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				F80000000000000000000005 /* MudsnoteSharedCore in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
 		};
@@ -231,6 +239,8 @@
 				B20000000000000000000002 /* PrivacyInfo.xcprivacy */,
 				B281677F4F1A49248075689A /* MudsnoteCompanionApp.swift */,
 				412CBF43604B493EA56023BB /* AppModel.swift */,
+				F80000000000000000000011 /* AppStateDomains.swift */,
+				F80000000000000000000013 /* ReaderAsyncImageView.swift */,
 				CE171B25E9844F44907B421D /* RootView.swift */,
 				A76A1062657F45A39BA964EA /* OnboardingFolderView.swift */,
 				8517F746D00741A39CF7D01C /* MudsnoteTokens.swift */,
@@ -303,6 +313,9 @@
 				C19504165AE34B47AC61AEEF /* PBXTargetDependency */,
 			);
 			name = MudsnoteCompanion;
+			packageProductDependencies = (
+				F80000000000000000000002 /* MudsnoteSharedCore */,
+			);
 			productName = MudsnoteCompanion;
 			productReference = 544C01C4630F41D6BA966C0F /* MudsnoteCompanion.app */;
 			productType = "com.apple.product-type.application";
@@ -338,6 +351,9 @@
 				A1000000000000000000000B /* PBXTargetDependency */,
 			);
 			name = MudsnoteCompanionTests;
+			packageProductDependencies = (
+				F80000000000000000000004 /* MudsnoteSharedCore */,
+			);
 			productName = MudsnoteCompanionTests;
 			productReference = A10000000000000000000004 /* MudsnoteCompanionTests.xctest */;
 			productType = "com.apple.product-type.bundle.unit-test";
@@ -396,6 +412,9 @@
 				Base,
 			);
 			mainGroup = 6431870D540048FE90D60906;
+			packageReferences = (
+				F80000000000000000000001 /* XCLocalSwiftPackageReference "../Packages/MudsnoteSharedCore" */,
+			);
 			productRefGroup = BB021710C229422095254580 /* Products */;
 			projectDirPath = "";
 			projectRoot = "";
@@ -450,6 +469,8 @@
 			files = (
 				1844D4C252E9493095948B7F /* MudsnoteCompanionApp.swift in Sources */,
 				BFE9A7E97AB0440EA1F694BC /* AppModel.swift in Sources */,
+				F80000000000000000000010 /* AppStateDomains.swift in Sources */,
+				F80000000000000000000012 /* ReaderAsyncImageView.swift in Sources */,
 				28022AA3D5C943B099DA23AA /* RootView.swift in Sources */,
 				3C7A3A40961F426D89BDA2E5 /* OnboardingFolderView.swift in Sources */,
 				7AA4B4D5289640049A343242 /* MudsnoteTokens.swift in Sources */,
@@ -905,6 +926,26 @@
 			defaultConfigurationName = Release;
 		};
 /* End XCConfigurationList section */
+
+/* Begin XCLocalSwiftPackageReference section */
+		F80000000000000000000001 /* XCLocalSwiftPackageReference "../Packages/MudsnoteSharedCore" */ = {
+			isa = XCLocalSwiftPackageReference;
+			relativePath = ../Packages/MudsnoteSharedCore;
+		};
+/* End XCLocalSwiftPackageReference section */
+
+/* Begin XCSwiftPackageProductDependency section */
+		F80000000000000000000002 /* MudsnoteSharedCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F80000000000000000000001 /* XCLocalSwiftPackageReference "../Packages/MudsnoteSharedCore" */;
+			productName = MudsnoteSharedCore;
+		};
+		F80000000000000000000004 /* MudsnoteSharedCore */ = {
+			isa = XCSwiftPackageProductDependency;
+			package = F80000000000000000000001 /* XCLocalSwiftPackageReference "../Packages/MudsnoteSharedCore" */;
+			productName = MudsnoteSharedCore;
+		};
+/* End XCSwiftPackageProductDependency section */
 	};
 	rootObject = 396D4DE4F5EC406CA591B3BA /* Project object */;
 }

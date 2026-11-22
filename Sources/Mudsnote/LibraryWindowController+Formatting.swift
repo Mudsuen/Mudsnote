@@ -96,7 +96,8 @@ extension LibraryWindowController {
         )
         let replacement = MarkdownRichTextCodec.renderLine(
             MarkdownRichTextCodec.markdownLine(for: .paragraph, inlineContent: inlineMarkdown),
-            theme: theme
+            theme: theme,
+            baseURL: selectedURL
         )
 
         let selection = editorTextView.selectedRange()
@@ -156,7 +157,12 @@ extension LibraryWindowController {
         }
 
         let probeLocation = max(min(location - 1, storage.length - 1), contentRange.location)
-        editorTextView.typingAttributes = storage.attributes(at: probeLocation, effectiveRange: nil)
+        let attrs = storage.attributes(at: probeLocation, effectiveRange: nil)
+        editorTextView.typingAttributes = MarkdownRichTextCodec.sanitizedTypingAttributes(
+            from: attrs,
+            paragraphKind: paragraphKind,
+            theme: theme
+        )
     }
 
     func visibleLineRangeForSelection() -> NSRange {
@@ -292,7 +298,7 @@ extension LibraryWindowController {
                 nextKind = target
             }
             let lineMarkdown = MarkdownRichTextCodec.markdownLine(for: nextKind, inlineContent: inlineMarkdown)
-            renderedLines.append(MarkdownRichTextCodec.renderLine(lineMarkdown, theme: theme))
+            renderedLines.append(MarkdownRichTextCodec.renderLine(lineMarkdown, theme: theme, baseURL: selectedURL))
         }
 
         let replacement = joinRenderedLines(renderedLines)
@@ -330,7 +336,8 @@ extension LibraryWindowController {
         )
         let replacement = MarkdownRichTextCodec.renderLine(
             MarkdownRichTextCodec.markdownLine(for: .checklist(checked: !checked), inlineContent: inlineMarkdown),
-            theme: theme
+            theme: theme,
+            baseURL: selectedURL
         )
 
         suppressEditorChanges = true

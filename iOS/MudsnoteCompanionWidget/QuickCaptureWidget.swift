@@ -32,19 +32,49 @@ struct MudsnoteActionsWidget: Widget {
 
 private struct QuickCaptureEntry: TimelineEntry {
     let date: Date
+    let latestTitle: String?
+    let pendingSyncCount: Int
+    let totalNoteCount: Int
+}
+
+private struct WidgetSharedSummary: Decodable {
+    let totalNoteCount: Int
+    let pinnedTitles: [String]
+    let recentTitles: [String]
+    let pendingSyncCount: Int
+
+    static func load() -> WidgetSharedSummary? {
+        guard let defaults = UserDefaults(suiteName: "group.app.mudsnote.companion"),
+              let data = defaults.data(forKey: "mudsnote.widget.sharedSnapshot.v1") else {
+            return nil
+        }
+        return try? JSONDecoder().decode(WidgetSharedSummary.self, from: data)
+    }
 }
 
 private struct QuickCaptureProvider: TimelineProvider {
+    private func makeEntry(date: Date = .now) -> QuickCaptureEntry {
+        let summary = WidgetSharedSummary.load()
+        let headline = summary?.pinnedTitles.first ?? summary?.recentTitles.first
+        return QuickCaptureEntry(
+            date: date,
+            latestTitle: headline,
+            pendingSyncCount: summary?.pendingSyncCount ?? 0,
+            totalNoteCount: summary?.totalNoteCount ?? 0
+        )
+    }
+
     func placeholder(in context: Context) -> QuickCaptureEntry {
-        QuickCaptureEntry(date: .now)
+        QuickCaptureEntry(date: .now, latestTitle: nil, pendingSyncCount: 0, totalNoteCount: 0)
     }
 
     func getSnapshot(in context: Context, completion: @escaping (QuickCaptureEntry) -> Void) {
-        completion(QuickCaptureEntry(date: .now))
+        completion(makeEntry())
     }
 
     func getTimeline(in context: Context, completion: @escaping (Timeline<QuickCaptureEntry>) -> Void) {
-        completion(Timeline(entries: [QuickCaptureEntry(date: .now)], policy: .never))
+        let nextRefresh = Calendar.current.date(byAdding: .minute, value: 30, to: .now) ?? .now.addingTimeInterval(1800)
+        completion(Timeline(entries: [makeEntry()], policy: .after(nextRefresh)))
     }
 }
 
@@ -78,9 +108,21 @@ private struct QuickCaptureWidgetView: View {
                 Text("Quick Note")
                     .font(.headline.weight(.semibold))
                     .foregroundStyle(.white)
-                Text("Capture an idea")
-                    .font(.caption2)
-                    .foregroundStyle(.white.opacity(0.55))
+                if entry.pendingSyncCount > 0 {
+                    Text("\(entry.pendingSyncCount) pending sync")
+                        .font(.caption2)
+                        .foregroundStyle(MudsnoteWidgetStyle.accent)
+                        .lineLimit(1)
+                } else if let latestTitle = entry.latestTitle, !latestTitle.isEmpty {
+                    Text(latestTitle)
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.62))
+                        .lineLimit(1)
+                } else {
+                    Text("Capture an idea")
+                        .font(.caption2)
+                        .foregroundStyle(.white.opacity(0.55))
+                }
             }
             .frame(maxWidth: .infinity, maxHeight: .infinity, alignment: .leading)
         }

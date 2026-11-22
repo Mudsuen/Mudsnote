@@ -340,8 +340,3 @@ final class LibrarySourceScrollView: NSScrollView {
         (documentView as? LibrarySourceOutlineView)?.reconcilePointerHover()
     }
 }
-
-@MainActor
-final class LibraryPassthroughTintView: NSView {
-    override func hitTest(_ point: NSPoint) -> NSView? { nil }
-}

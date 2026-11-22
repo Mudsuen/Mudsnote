@@ -7,22 +7,30 @@ final class CodexProcessExecution: @unchecked Sendable {
     private let process: Process
     private let lock = NSLock()
     private let terminationGrace: Duration
+    private let timeout: Duration?
     private var cancelled = false
+    private var timedOut = false
     private var started = false
     private var finished = false
     private var continuation: CheckedContinuation<Int32, Error>?
     private var killTask: Task<Void, Never>?
+    private var timeoutTask: Task<Void, Never>?
 
-    init(process: Process, terminationGrace: Duration = .seconds(1)) {
+    init(
+        process: Process,
+        terminationGrace: Duration = .seconds(1),
+        timeout: Duration? = nil
+    ) {
         self.process = process
         self.terminationGrace = terminationGrace
+        self.timeout = timeout
     }
 
     func run() async throws -> Int32 {
         let status = try await withTaskCancellationHandler {
             try Task.checkCancellation()
             return try await withCheckedThrowingContinuation { launch($0) }
-        } onCancel: { self.cancel() }
+        } onCancel: { self.cancel(dueToTimeout: false) }
         try Task.checkCancellation()
         return status
     }
@@ -30,8 +38,13 @@ final class CodexProcessExecution: @unchecked Sendable {
     private func launch(_ continuation: CheckedContinuation<Int32, Error>) {
         lock.lock()
         if cancelled {
+            let wasTimeout = timedOut
             lock.unlock()
-            continuation.resume(throwing: CancellationError())
+            if wasTimeout {
+                continuation.resume(throwing: AIError.requestFailed("Codex 执行超时，已终止。"))
+            } else {
+                continuation.resume(throwing: CancellationError())
+            }
             return
         }
         self.continuation = continuation
@@ -41,6 +54,12 @@ final class CodexProcessExecution: @unchecked Sendable {
             // check-before-launch race without a blocking input pipe.
             try process.run()
             started = true
+            if let timeout {
+                timeoutTask = Task.detached { [weak self] in
+                    do { try await Task.sleep(for: timeout) } catch { return }
+                    self?.cancel(dueToTimeout: true)
+                }
+            }
             lock.unlock()
         } catch {
             finished = true
@@ -50,13 +69,18 @@ final class CodexProcessExecution: @unchecked Sendable {
         }
     }
 
-    private func cancel() {
+    private func cancel(dueToTimeout: Bool) {
         lock.lock()
         defer { lock.unlock() }
         cancelled = true
+        if dueToTimeout {
+            timedOut = true
+        }
         guard started, !finished, killTask == nil else { return }
         let pid = process.processIdentifier
-        if process.isRunning { kill(pid, SIGTERM) }
+        if process.isRunning {
+            signalProcessAndGroup(pid: pid, signal: SIGTERM)
+        }
         let grace = terminationGrace
         killTask = Task.detached { [weak self] in
             do { try await Task.sleep(for: grace) } catch { return }
@@ -68,7 +92,17 @@ final class CodexProcessExecution: @unchecked Sendable {
         lock.lock()
         defer { lock.unlock() }
         guard started, !finished, process.isRunning, process.processIdentifier == pid else { return }
-        kill(pid, SIGKILL)
+        signalProcessAndGroup(pid: pid, signal: SIGKILL)
+    }
+
+    private func signalProcessAndGroup(pid: Int32, signal: Int32) {
+        guard pid > 0 else { return }
+        let childPGID = getpgid(pid)
+        let ownPGID = getpgrp()
+        if childPGID > 0, childPGID != ownPGID {
+            _ = kill(-childPGID, signal)
+        }
+        _ = kill(pid, signal)
     }
 
     private func didExit() {
@@ -77,17 +111,30 @@ final class CodexProcessExecution: @unchecked Sendable {
         finished = true
         killTask?.cancel()
         killTask = nil
+        timeoutTask?.cancel()
+        timeoutTask = nil
         let continuation = self.continuation
         self.continuation = nil
         let wasCancelled = cancelled
+        let wasTimeout = timedOut
         let status = process.terminationStatus
         lock.unlock()
-        if wasCancelled { continuation?.resume(throwing: CancellationError()) }
-        else { continuation?.resume(returning: status) }
+        if wasTimeout {
+            continuation?.resume(throwing: AIError.requestFailed("Codex 执行超时，已终止。"))
+        } else if wasCancelled {
+            continuation?.resume(throwing: CancellationError())
+        } else {
+            continuation?.resume(returning: status)
+        }
     }
 
-    static func runPrepared(_ process: Process, prompt: String, workingDirectory: URL,
-                            terminationGrace: Duration = .seconds(1)) async throws -> Int32 {
+    static func runPrepared(
+        _ process: Process,
+        prompt: String,
+        workingDirectory: URL,
+        terminationGrace: Duration = .seconds(1),
+        timeout: Duration? = nil
+    ) async throws -> Int32 {
         try Task.checkCancellation()
         let inputURL = workingDirectory.appendingPathComponent("mudsnote-input-\(UUID().uuidString).txt")
         try Data(prompt.utf8).write(to: inputURL, options: .withoutOverwriting)
@@ -96,7 +143,11 @@ final class CodexProcessExecution: @unchecked Sendable {
         let input = try FileHandle(forReadingFrom: inputURL)
         defer { try? input.close() }
         process.standardInput = input
-        let execution = CodexProcessExecution(process: process, terminationGrace: terminationGrace)
+        let execution = CodexProcessExecution(
+            process: process,
+            terminationGrace: terminationGrace,
+            timeout: timeout
+        )
         return try await execution.run()
     }
 }

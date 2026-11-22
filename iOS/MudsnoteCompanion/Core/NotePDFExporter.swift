@@ -1,4 +1,5 @@
 import Foundation
+import MudsnoteSharedCore
 import SwiftUI
 import UIKit
 
@@ -36,6 +37,7 @@ enum NotePDFExporter {
             at: outputDirectory,
             withIntermediateDirectories: true
         )
+        cleanupStaleExports(in: outputDirectory)
         let outputURL = outputDirectory
             .appendingPathComponent(safeFileName(title))
             .appendingPathExtension("pdf")
@@ -158,7 +160,8 @@ enum NotePDFExporter {
     }
 
     private static func printableLines(_ markdown: String, title: String) -> [String] {
-        var lines = markdown.components(separatedBy: .newlines)
+        let bodyWithoutFrontMatter = MarkdownTagContract.stripYAMLFrontMatter(from: markdown)
+        var lines = bodyWithoutFrontMatter.components(separatedBy: .newlines)
         if let first = lines.first,
            let heading = MarkdownHeading(first.trimmingCharacters(in: .whitespaces)),
            heading.title.localizedCaseInsensitiveCompare(title) == .orderedSame {
@@ -168,6 +171,21 @@ enum NotePDFExporter {
             }
         }
         return lines
+    }
+
+    private static func cleanupStaleExports(in directory: URL, maxAge: TimeInterval = 3600) {
+        let cutoff = Date().addingTimeInterval(-maxAge)
+        guard let urls = try? FileManager.default.contentsOfDirectory(
+            at: directory,
+            includingPropertiesForKeys: [.contentModificationDateKey],
+            options: [.skipsHiddenFiles]
+        ) else { return }
+        for url in urls where url.pathExtension.lowercased() == "pdf" {
+            let modified = (try? url.resourceValues(forKeys: [.contentModificationDateKey]).contentModificationDate) ?? .distantPast
+            if modified < cutoff {
+                try? FileManager.default.removeItem(at: url)
+            }
+        }
     }
 
     private static func safeFileName(_ title: String) -> String {

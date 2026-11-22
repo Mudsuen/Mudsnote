@@ -138,10 +138,14 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
     @Published private(set) var isPlaying = false
     @Published private(set) var errorMessage: String?
     private var player: AVAudioPlayer?
+    private var currentURL: URL?
 
     func toggle(url: URL) {
         do {
             errorMessage = nil
+            if currentURL != url {
+                stop()
+            }
             if player == nil {
                 let session = AVAudioSession.sharedInstance()
                 try? session.setCategory(.playback, mode: .default)
@@ -149,6 +153,7 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
                 let player = try AVAudioPlayer(contentsOf: url)
                 player.delegate = self
                 self.player = player
+                self.currentURL = url
             }
             guard let player else { return }
             if player.isPlaying {
@@ -173,6 +178,7 @@ final class AudioPlaybackController: NSObject, ObservableObject, AVAudioPlayerDe
     func stop() {
         player?.stop()
         player = nil
+        currentURL = nil
         isPlaying = false
     }
 
@@ -260,26 +266,26 @@ struct MarkdownAttachmentLine {
             let candidate = line
                 .replacingOccurrences(of: "![[", with: "")
                 .replacingOccurrences(of: "]]", with: "")
-            guard Self.isAttachmentPath(candidate) else { return nil }
-            path = candidate
+            guard let normalized = Self.normalizedAttachmentPath(candidate) else { return nil }
+            path = normalized
             systemImage = "paperclip"
             kind = .file
             return
         }
 
         if let match = Self.match(line, pattern: #"^!\[[^\]]*\]\(([^)]+)\)$"#) {
-            guard Self.isAttachmentPath(match) else { return nil }
-            path = match
+            guard let normalized = Self.normalizedAttachmentPath(match) else { return nil }
+            path = normalized
             systemImage = "photo"
             kind = .image
             return
         }
 
         if let match = Self.match(line, pattern: #"^\[[^\]]+\]\(([^)]+)\)$"#) {
-            guard Self.isAttachmentPath(match) else { return nil }
-            path = match
+            guard let normalized = Self.normalizedAttachmentPath(match) else { return nil }
+            path = normalized
             let libraryKind = LibraryAttachment.Kind(
-                fileExtension: (match as NSString).pathExtension
+                fileExtension: (normalized as NSString).pathExtension
             )
             if libraryKind == .video {
                 systemImage = "video"
@@ -308,9 +314,21 @@ struct MarkdownAttachmentLine {
         return String(matched[matched.index(after: open)..<close])
     }
 
-    private static func isAttachmentPath(_ value: String) -> Bool {
-        let decoded = value.removingPercentEncoding ?? value
-        return decoded.hasPrefix("Attachments/")
+    private static func normalizedAttachmentPath(_ value: String) -> String? {
+        let unwrapped = value
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+            .trimmingCharacters(in: CharacterSet(charactersIn: "<>"))
+        var decoded = unwrapped.removingPercentEncoding ?? unwrapped
+        while decoded.hasPrefix("./") {
+            decoded = String(decoded.dropFirst(2))
+        }
+        while decoded.hasPrefix("../") {
+            decoded = String(decoded.dropFirst(3))
+        }
+        guard decoded.hasPrefix("Attachments/"), !decoded.contains("..") else {
+            return nil
+        }
+        return decoded
     }
 }
 

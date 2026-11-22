@@ -45,6 +45,9 @@ final class SuggestionListView: NSView {
         super.init(frame: frameRect)
         wantsLayer = true
         layer?.backgroundColor = NSColor.clear.cgColor
+        setAccessibilityElement(true)
+        setAccessibilityRole(.list)
+        setAccessibilityLabel("建议列表")
     }
 
     required init?(coder: NSCoder) {
@@ -74,13 +77,26 @@ final class SuggestionListView: NSView {
         self.items = items
         self.selectedIndex = selectedIndex
         frame.size = NSSize(width: width, height: CGFloat(items.count) * rowHeight)
+        updateAccessibilityState()
         needsDisplay = true
     }
 
     func setSelectedIndex(_ index: Int) {
         guard selectedIndex != index else { return }
         selectedIndex = index
+        updateAccessibilityState()
         needsDisplay = true
+    }
+
+    private func updateAccessibilityState() {
+        guard items.indices.contains(selectedIndex) else {
+            setAccessibilityValue(nil)
+            return
+        }
+        let item = items[selectedIndex]
+        let description = item.subtitle.map { "\(item.title)，\($0)" } ?? item.title
+        setAccessibilityValue(description)
+        NSAccessibility.post(element: self, notification: .selectedChildrenChanged)
     }
 
     func rectForRow(at index: Int) -> NSRect {

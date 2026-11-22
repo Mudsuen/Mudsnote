@@ -1,4 +1,5 @@
 import Foundation
+import MudsnoteSharedCore
 
 /// `NoteStore` is the single public facade for all on-disk state that Mudsnote
 /// persists: settings, drafts, notes, recent files, and search. Behavior is
@@ -20,6 +21,9 @@ public final class NoteStore: @unchecked Sendable {
     let appSupportDirectory: URL
     let searchIndexLock = NSLock()
     let searchIndexBuildLock = NSLock()
+    let knowledgeDerivedIndexLock = NSLock()
+    var cachedKnowledgeDerivedIndex: KnowledgeDerivedIndex?
+    public var ignoredKnowledgeTags: Set<String> = NoteStore.defaultIgnoredKnowledgeTags
     var searchIndexSnapshot: NoteSearchIndexSnapshot?
     var dirtySearchIndexPaths = Set<String>()
     var searchIndexRequiresFullRefresh = false
@@ -31,11 +35,17 @@ public final class NoteStore: @unchecked Sendable {
     var searchIndexEntryWillMatchForTesting: (() -> Void)?
     var searchIndexEntryContentAvailabilityForTesting: ((URL) -> Bool)?
     var updateNoteCommitHook: ((NoteUpdateCommitCheckpoint) throws -> Void)?
+    let searchIndexSQLite: SQLiteFTSNoteIndex
     var searchIndexCacheURL: URL {
         appSupportDirectory
             .appendingPathComponent("SearchIndex", isDirectory: true)
-            .appendingPathComponent("index-v1.json", isDirectory: false)
+            .appendingPathComponent("index-v2.sqlite", isDirectory: false)
     }
+
+    public static let defaultIgnoredKnowledgeTags: Set<String> = [
+        "层级/点", "层级/线", "层级/面", "层级/体",
+        "layer/point", "layer/line", "layer/plane", "layer/body"
+    ]
 
     public init(
         defaults: UserDefaults = .standard,
@@ -46,7 +56,13 @@ public final class NoteStore: @unchecked Sendable {
         self.defaults = defaults
         self.fileManager = fileManager
         Self.migrateLegacyDefaultsIfNeeded(defaults: defaults, legacyDefaults: legacyDefaults)
-        self.appSupportDirectory = appSupportDirectory ?? Self.defaultAppSupportDirectory(fileManager: fileManager)
+        let resolvedAppSupport = appSupportDirectory ?? Self.defaultAppSupportDirectory(fileManager: fileManager)
+        self.appSupportDirectory = resolvedAppSupport
+        self.searchIndexSQLite = SQLiteFTSNoteIndex(
+            databaseURL: resolvedAppSupport
+                .appendingPathComponent("SearchIndex", isDirectory: true)
+                .appendingPathComponent("index-v2.sqlite", isDirectory: false)
+        )
     }
 
     public func prepareNotesDirectoryForLaunch() async throws {

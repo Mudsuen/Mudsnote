@@ -1,4 +1,5 @@
 import Foundation
+import MudsnoteSharedCore
 
 /// Shared query semantics for the index, provisional results and visible highlights.
 /// Every term must match; adjacent Latin/CJK runs also form separate terms.
@@ -6,61 +7,11 @@ public struct NoteSearchQuery: Sendable {
     public let terms: [String]
 
     public init(_ text: String) {
-        let normalizedText = Self.normalized(text)
-        var terms: [String] = []
-        var seen = Set<String>()
-        var token = ""
-        var previousWasCJK: Bool?
-        func appendToken() {
-            if !token.isEmpty, seen.insert(token).inserted { terms.append(token) }
-            token = ""
-        }
-        for scalar in normalizedText.unicodeScalars {
-            if CharacterSet.whitespacesAndNewlines.contains(scalar) {
-                appendToken()
-                previousWasCJK = nil
-                continue
-            }
-            let isCJK = (0x3400...0x9FFF).contains(scalar.value)
-                || (0x20000...0x323AF).contains(scalar.value)
-                || (0x3040...0x30FF).contains(scalar.value)
-                || (0xAC00...0xD7AF).contains(scalar.value)
-            if !isCJK,
-               (CharacterSet.punctuationCharacters.contains(scalar)
-                || CharacterSet.symbols.contains(scalar)),
-               previousWasCJK == true {
-                // Do not split CJK-adjacent punctuation (e.g. "苹果，香蕉", "苹果(测试)") into a mandatory literal token.
-                appendToken()
-                previousWasCJK = nil
-                continue
-            }
-            if let previousWasCJK, previousWasCJK != isCJK {
-                appendToken()
-            }
-            if !isCJK,
-               previousWasCJK == nil,
-               (CharacterSet.punctuationCharacters.contains(scalar)
-                || CharacterSet.symbols.contains(scalar)),
-               token.isEmpty {
-                // Skip leading punctuation before a CJK/word token; fallback handles punctuation-only queries below.
-                continue
-            }
-            token.unicodeScalars.append(scalar)
-            previousWasCJK = isCJK
-        }
-        appendToken()
-        if terms.isEmpty {
-            let trimmed = normalizedText.trimmingCharacters(in: .whitespacesAndNewlines)
-            if !trimmed.isEmpty {
-                terms = trimmed.components(separatedBy: .whitespacesAndNewlines).filter { !$0.isEmpty }
-            }
-        }
-        self.terms = terms
+        self.terms = NoteSearchTokenizer.terms(from: text)
     }
 
     static func normalized(_ text: String) -> String {
-        text.folding(options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-                     locale: Locale(identifier: "en_US_POSIX"))
+        NoteSearchTokenizer.normalized(text)
     }
 
     public func matches(title: String, body: String, tags: [String]) -> Bool {
@@ -74,20 +25,7 @@ public struct NoteSearchQuery: Sendable {
     }
 
     public func matchRanges(in text: String) -> [NSRange] {
-        let text = text as NSString
-        var ranges: [NSRange] = []
-        for term in terms {
-            var start = 0
-            while start < text.length {
-                let match = text.range(of: term,
-                    options: [.caseInsensitive, .diacriticInsensitive, .widthInsensitive],
-                    range: NSRange(location: start, length: text.length - start))
-                guard match.location != NSNotFound, match.length > 0 else { break }
-                ranges.append(match)
-                start = NSMaxRange(match)
-            }
-        }
-        return ranges
+        NoteSearchTokenizer.matchRanges(in: text, terms: terms)
     }
 
     func snippet(in body: String, fallback: @autoclosure () -> String) -> String {

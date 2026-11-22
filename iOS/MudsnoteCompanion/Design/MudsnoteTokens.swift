@@ -51,6 +51,11 @@ enum MudsnoteColors {
     static let muted = adaptive(light: 0x68686F, dark: 0xB8B8BD)
     static let primary = adaptive(light: 0x17171A, dark: 0xF7F7F7)
     static let primaryForeground = adaptive(light: 0xFFFFFF, dark: 0x111114)
+    /// WCAG AA (>= 4.5:1) link tint in both Light (#9A6300 on white) and Dark (#E5BF52 on black).
+    static let linkAccentUIColor = UIColor { traits in
+        traits.userInterfaceStyle == .dark ? UIColor(hex: 0xE5BF52) : UIColor(hex: 0x9A6300)
+    }
+    static let linkAccent = Color(uiColor: linkAccentUIColor)
 
     private static func adaptive(
         light: UInt32,

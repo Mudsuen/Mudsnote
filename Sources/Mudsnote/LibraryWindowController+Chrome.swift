@@ -39,7 +39,6 @@ extension LibraryWindowController {
 
         librarySplitViewController = splitController
         sourceSplitViewItem = sourceItem
-        noteListSplitViewItem = nil
         librarySplitView = splitController.splitView
         let shell = NSViewController()
         shell.addChild(splitController)
@@ -75,18 +74,12 @@ extension LibraryWindowController {
         surface.translatesAutoresizingMaskIntoConstraints = false
         container.addSubview(surface)
 
-        let tint = LibraryPassthroughTintView()
-        tint.identifier = NSUserInterfaceItemIdentifier("LibraryNavigationSidebarTint")
-        tint.wantsLayer = true
-        tint.layer?.backgroundColor = NSColor.clear.cgColor
         let modeContainer = NSView()
         modeContainer.identifier = NSUserInterfaceItemIdentifier("LibrarySidebarModeContent")
 
-        tint.translatesAutoresizingMaskIntoConstraints = false
         modeContainer.translatesAutoresizingMaskIntoConstraints = false
         tree.translatesAutoresizingMaskIntoConstraints = false
         list.translatesAutoresizingMaskIntoConstraints = false
-        surface.addSubview(tint)
         sidebarLibraryTitle.font = .systemFont(ofSize: 18, weight: .semibold)
         sidebarLibraryTitle.lineBreakMode = .byTruncatingTail
         sidebarLibraryTitle.setContentHuggingPriority(.defaultLow, for: .horizontal)
@@ -134,10 +127,6 @@ extension LibraryWindowController {
             surface.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             surface.topAnchor.constraint(equalTo: container.topAnchor),
             surface.bottomAnchor.constraint(equalTo: container.bottomAnchor),
-            tint.leadingAnchor.constraint(equalTo: surface.leadingAnchor),
-            tint.trailingAnchor.constraint(equalTo: surface.trailingAnchor),
-            tint.topAnchor.constraint(equalTo: surface.topAnchor),
-            tint.bottomAnchor.constraint(equalTo: surface.bottomAnchor),
             modeContainer.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             modeContainer.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             sidebarChrome.leadingAnchor.constraint(equalTo: container.leadingAnchor),
@@ -157,10 +146,16 @@ extension LibraryWindowController {
         return container
     }
 
-    func setSidebarPresentation(_ presentation: LibrarySidebarPresentation, animated: Bool) {
+    func setSidebarPresentation(
+        _ presentation: LibrarySidebarPresentation,
+        animated: Bool,
+        persists: Bool = true
+    ) {
         guard presentation != sidebarPresentation else { return }
         sidebarPresentation = presentation
-        noteStore.librarySidebarPresentationRawValue = presentation.rawValue
+        if persists {
+            noteStore.librarySidebarPresentationRawValue = presentation.rawValue
+        }
         applySidebarPresentation(animated: animated)
     }
 
@@ -771,8 +766,16 @@ extension LibraryWindowController {
             openOverviewNote(note)
             return
         }
-        guard let tab = documentTabs.first(where: { $0.id == id }),
-              activeDocumentTabID != tab.id else { return }
+        guard let tab = documentTabs.first(where: { $0.id == id }) else { return }
+        if isShowingOverview {
+            guard leaveOverview() else { return }
+            if activeDocumentTabID == tab.id {
+                updateDocumentTabBar()
+                window?.makeFirstResponder(editorTextView)
+                return
+            }
+        }
+        guard activeDocumentTabID != tab.id else { return }
         if capturesCurrentDocument {
             do {
                 drainBackgroundAutosaves()
@@ -866,8 +869,18 @@ extension LibraryWindowController {
         editorTextView.commandDelegate = self
         editorTextView.delegate = self
         editorTextView.markdownPasteTheme = theme
-        editorTextView.configureContextMenu = { [weak self] menu, _ in
-            self?.configureEditorInsertContextMenu(menu)
+        editorTextView.configureContextMenu = { [weak self] menu, event in
+            guard let self else { return }
+            self.configureEditorInsertContextMenu(menu)
+            if let characterIndex = self.editorTextView.characterIndex(at: event) {
+                if let link = self.editorTextView.linkReference(atCharacterIndex: characterIndex) {
+                    _ = self.configureLinkContextMenuForLibrary(menu, for: link)
+                } else if let attachment = self.editorTextView.fileAttachmentReference(atCharacterIndex: characterIndex) {
+                    _ = self.configureAttachmentContextMenu(menu, forAttachment: attachment)
+                } else {
+                    _ = self.configureMarkdownTableContextMenuForLibrary(menu, atCharacterIndex: characterIndex)
+                }
+            }
         }
         editorTextView.contextMenuOptionsProvider = { [weak self] in
             self?.noteStore.enabledEditorContextMenuOptions ?? Set(EditorContextMenuOption.allCases)

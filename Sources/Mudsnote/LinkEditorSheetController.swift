@@ -6,6 +6,17 @@ private final class LinkEditorWindow: NSWindow {
 }
 
 @MainActor
+private final class AdaptiveBorderSurfaceView: NSView {
+    var onAppearanceChanged: (() -> Void)?
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        layer?.borderColor = panelSeparatorColor(alpha: 0.22).cgColor
+        onAppearanceChanged?()
+    }
+}
+
+@MainActor
 final class LinkEditorSheetController: NSWindowController, NSTextFieldDelegate {
     static let compactContentSize = NSSize(width: 332, height: 156)
 
@@ -172,13 +183,19 @@ final class LinkEditorSheetController: NSWindowController, NSTextFieldDelegate {
     }
 
     private func makeCompactSurface() -> NSView {
-        let surface = NSView(frame: NSRect(origin: .zero, size: Self.compactContentSize))
+        let surface = AdaptiveBorderSurfaceView(frame: NSRect(origin: .zero, size: Self.compactContentSize))
         surface.identifier = NSUserInterfaceItemIdentifier("LinkEditorCompactSurface")
         surface.wantsLayer = true
         surface.layer?.cornerRadius = 12
         surface.layer?.masksToBounds = true
         surface.layer?.borderWidth = 1
         surface.layer?.borderColor = panelSeparatorColor(alpha: 0.22).cgColor
+        surface.onAppearanceChanged = { [weak self] in
+            guard let self else { return }
+            let borderColor = panelSeparatorColor(alpha: 0.30).cgColor
+            self.destinationField.layer?.borderColor = borderColor
+            self.nameField.layer?.borderColor = borderColor
+        }
 
         let material = NSVisualEffectView()
         material.identifier = NSUserInterfaceItemIdentifier("LinkEditorMaterial")

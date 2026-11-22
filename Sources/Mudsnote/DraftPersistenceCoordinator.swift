@@ -28,7 +28,7 @@ final class DraftPersistenceCoordinator: @unchecked Sendable {
         qos: .utility
     )
     private let lock = NSLock()
-    private var pendingRequest: Request?
+    private var pendingQueue: [Request] = []
     private var isWorkerScheduled = false
 
     init(
@@ -45,11 +45,28 @@ final class DraftPersistenceCoordinator: @unchecked Sendable {
         _ action: DraftPersistenceAction,
         completion: @escaping Completion
     ) {
+        var supersededCompletions: [Completion] = []
         lock.lock()
-        pendingRequest = Request(action: action, completion: completion)
+        // Only coalesce back-to-back `.save` requests for the same draft ID so
+        // `.delete` and `.publish` actions are never dropped or overwritten.
+        if case .save(let incoming) = action,
+           let last = pendingQueue.last,
+           case .save(let existing) = last.action,
+           existing.id == incoming.id {
+            supersededCompletions.append(last.completion)
+            pendingQueue[pendingQueue.count - 1] = Request(action: action, completion: completion)
+        } else {
+            pendingQueue.append(Request(action: action, completion: completion))
+        }
         let shouldScheduleWorker = !isWorkerScheduled
         isWorkerScheduled = true
         lock.unlock()
+
+        for superseded in supersededCompletions {
+            Task { @MainActor in
+                superseded(.success(nil))
+            }
+        }
 
         guard shouldScheduleWorker else { return }
         queue.async { [weak self] in
@@ -60,8 +77,15 @@ final class DraftPersistenceCoordinator: @unchecked Sendable {
     @discardableResult
     func flush(_ action: DraftPersistenceAction) throws -> NoteUpdateResult? {
         lock.lock()
-        pendingRequest = nil
+        let droppedRequests = pendingQueue
+        pendingQueue.removeAll()
         lock.unlock()
+
+        for request in droppedRequests {
+            Task { @MainActor in
+                request.completion(.success(nil))
+            }
+        }
 
         var result: Result<NoteUpdateResult?, Error> = .success(nil)
         queue.sync {
@@ -83,12 +107,12 @@ final class DraftPersistenceCoordinator: @unchecked Sendable {
     private func drainPendingRequests() {
         while true {
             lock.lock()
-            guard let request = pendingRequest else {
+            guard !pendingQueue.isEmpty else {
                 isWorkerScheduled = false
                 lock.unlock()
                 return
             }
-            pendingRequest = nil
+            let request = pendingQueue.removeFirst()
             lock.unlock()
 
             let result = Result {

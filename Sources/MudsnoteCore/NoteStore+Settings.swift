@@ -1,4 +1,5 @@
 import Foundation
+import MudsnoteSharedCore
 
 extension NoteStore {
     public enum SearchDefaultScope: String, CaseIterable, Sendable {
@@ -468,7 +469,7 @@ extension NoteStore {
         let rootPath = root.standardizedFileURL.path
         guard path.hasPrefix(rootPath + "/") else { return nil }
         let relativePath = String(path.dropFirst(rootPath.count + 1))
-        guard relativePath.hasSuffix(".md"),
+        guard MarkdownConflictContract.isMarkdownFilename(relativePath),
               !relativePath.hasPrefix("Attachments/"),
               !relativePath.hasPrefix(".mudsnote/") else { return nil }
         return relativePath
@@ -476,15 +477,22 @@ extension NoteStore {
 
     private func loadSharedPinnedNotePaths(in root: URL) -> Set<String> {
         let url = root.appendingPathComponent(".mudsnote/pins.json")
-        guard fileManager.fileExists(atPath: url.path),
-              let size = try? url.resourceValues(forKeys: [.fileSizeKey]).fileSize,
-              size <= 1_048_576,
-              let data = try? Data(contentsOf: url),
-              let paths = try? JSONDecoder().decode([String].self, from: data) else {
+        guard fileManager.fileExists(atPath: url.path) else {
             return []
         }
+        var coordinationError: NSError?
+        var paths: [String]?
+        NSFileCoordinator().coordinate(readingItemAt: url, options: [], error: &coordinationError) { coordinated in
+            guard let size = try? coordinated.resourceValues(forKeys: [.fileSizeKey]).fileSize,
+                  size <= 1_048_576,
+                  let data = try? Data(contentsOf: coordinated) else {
+                return
+            }
+            paths = try? JSONDecoder().decode([String].self, from: data)
+        }
+        guard let paths else { return [] }
         return Set(paths.filter {
-            $0.hasSuffix(".md")
+            MarkdownConflictContract.isMarkdownFilename($0)
                 && !$0.hasPrefix("Attachments/")
                 && !$0.hasPrefix(".mudsnote/")
         })
@@ -493,10 +501,47 @@ extension NoteStore {
     private func saveSharedPinnedNotePaths(_ paths: Set<String>, in root: URL) throws {
         let directory = root.appendingPathComponent(".mudsnote", isDirectory: true)
         try fileManager.createDirectory(at: directory, withIntermediateDirectories: true)
-        try JSONEncoder().encode(paths.sorted()).write(
-            to: directory.appendingPathComponent("pins.json"),
-            options: .atomic
+        let targetURL = directory.appendingPathComponent("pins.json")
+        let data = try JSONEncoder().encode(paths.sorted())
+        var coordinationError: NSError?
+        var writeError: Error?
+        NSFileCoordinator().coordinate(writingItemAt: targetURL, options: .forReplacing, error: &coordinationError) { coordinated in
+            do {
+                try data.write(to: coordinated, options: .atomic)
+            } catch {
+                writeError = error
+            }
+        }
+        if let error = coordinationError ?? (writeError as NSError?) {
+            throw error
+        }
+        syncVaultMetadataManifest(in: root, pinnedRelativePaths: paths.sorted())
+    }
+
+    /// Synchronizes folder order, folder icons, and pinned note paths into `<vault>/.mudsnote/metadata.json`
+    /// so iOS and macOS share portable vault organization via iCloud Drive.
+    public func syncVaultMetadataManifest(
+        in root: URL,
+        pinnedRelativePaths: [String]? = nil
+    ) {
+        let rootPath = root.standardizedFileURL.path
+        let prefix = rootPath.hasSuffix("/") ? rootPath : rootPath + "/"
+        let relativeFolderOrder = libraryFolderOrderPaths.compactMap { path -> String? in
+            guard path.hasPrefix(prefix) else { return nil }
+            return String(path.dropFirst(prefix.count))
+        }
+        var relativeFolderIcons: [String: String] = [:]
+        for (path, icon) in libraryFolderIconNames where path.hasPrefix(prefix) {
+            relativeFolderIcons[String(path.dropFirst(prefix.count))] = icon
+        }
+        let pins = pinnedRelativePaths ?? loadSharedPinnedNotePaths(in: root).sorted()
+        let localManifest = VaultMetadataManifest(
+            pinnedRelativePaths: pins,
+            folderOrder: relativeFolderOrder,
+            folderIcons: relativeFolderIcons
         )
+        let merged = VaultMetadataManifest.load(in: root).map { localManifest.merged(with: $0) } ?? localManifest
+        try? VaultMetadataManifest.save(merged, in: root)
     }
 
     private func migrateLegacyPinnedNotePathsIfPossible() {

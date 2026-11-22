@@ -1,5 +1,6 @@
 import CryptoKit
 import Foundation
+import MudsnoteSharedCore
 
 enum DirectoryWriteCoordinationMode: Equatable {
     case coordinated
@@ -83,11 +84,23 @@ actor MarkdownFileStore {
         var folders: [SmartFolderDefinition]
     }
 
+    private struct SQLiteListMetadataPayload: Codable {
+        var fileIdentity: String
+        var galleryImagePath: String?
+        var galleryChecklistItems: [MarkdownGalleryChecklistItem]
+        var hasAttachments: Bool
+        var hasChecklist: Bool
+        var hasUncheckedChecklist: Bool
+        var attachmentPaths: [String]
+    }
+
     private var root: URL?
     private var cachedLibrarySnapshot: MarkdownLibrarySnapshot?
     private var libraryInventoryState: LibraryInventoryState?
     private var searchCache: [String: SearchCacheEntry] = [:]
     private var listMetadataCache: [String: ListMetadataCacheEntry] = [:]
+    private var sqliteMetadataIndex: SQLiteFTSNoteIndex?
+    private var didHydrateSQLiteMetadataCache = false
     private var reservedPendingTargets = Set<String>()
     private let fileManager = FileManager.default
     private let attachmentTextIndex: AttachmentTextIndex
@@ -107,7 +120,57 @@ actor MarkdownFileStore {
         libraryInventoryState = nil
         searchCache = [:]
         listMetadataCache = [:]
+        didHydrateSQLiteMetadataCache = false
+        sqliteMetadataIndex?.close()
+        sqliteMetadataIndex = Self.makeSQLiteMetadataIndex(for: root)
         reservedPendingTargets = []
+    }
+
+    private static func makeSQLiteMetadataIndex(for root: URL) -> SQLiteFTSNoteIndex? {
+        guard let cachesDir = FileManager.default.urls(for: .cachesDirectory, in: .userDomainMask).first else {
+            return nil
+        }
+        let digest = SHA256.hash(data: Data(root.standardizedFileURL.path.utf8))
+            .prefix(12)
+            .map { String(format: "%02x", $0) }
+            .joined()
+        let dbURL = cachesDir
+            .appendingPathComponent("MudsnoteIndex", isDirectory: true)
+            .appendingPathComponent("ios-library-\(digest).sqlite")
+        return SQLiteFTSNoteIndex(databaseURL: dbURL)
+    }
+
+    private func hydrateListMetadataFromSQLiteIfNeeded(root: URL) {
+        guard !didHydrateSQLiteMetadataCache else { return }
+        didHydrateSQLiteMetadataCache = true
+        guard let sqliteMetadataIndex,
+              let records = sqliteMetadataIndex.loadAll(expectedRootsKey: [root.standardizedFileURL.path]) else {
+            return
+        }
+        let decoder = JSONDecoder()
+        for record in records {
+            guard let extraData = record.extraJSON,
+                  let payload = try? decoder.decode(SQLiteListMetadataPayload.self, from: extraData) else {
+                continue
+            }
+            let metadata = MarkdownListMetadata(
+                title: record.title,
+                preview: record.snippet,
+                galleryImagePath: payload.galleryImagePath,
+                galleryChecklistItems: payload.galleryChecklistItems,
+                hasAttachments: payload.hasAttachments,
+                hasChecklist: payload.hasChecklist,
+                hasUncheckedChecklist: payload.hasUncheckedChecklist,
+                tags: record.tags,
+                attachmentPaths: payload.attachmentPaths
+            )
+            listMetadataCache[record.path] = ListMetadataCacheEntry(
+                modifiedAt: Date(timeIntervalSinceReferenceDate: record.modifiedAt),
+                byteCount: Int(record.fileSize),
+                fileIdentity: payload.fileIdentity,
+                metadata: metadata
+            )
+        }
     }
 
     func configureAndInitialize(root: URL) throws {
@@ -137,44 +200,15 @@ actor MarkdownFileStore {
             .isRegularFileKey,
             .isSymbolicLinkKey,
         ]
-        let folderPaths = loadLibraryFolderPaths(root: root)
         libraryInventoryState = LibraryInventoryState(
             enumerator: fileManager.enumerator(
                 at: root,
                 includingPropertiesForKeys: Array(resourceKeys),
                 options: [.skipsHiddenFiles]
             ),
-            folderPaths: folderPaths
+            folderPaths: []
         )
         return try loadNextLibraryPageWithinAccess(root: root, resourceKeys: resourceKeys)
-    }
-
-    private func loadLibraryFolderPaths(root: URL) -> Set<String> {
-        let resourceKeys: Set<URLResourceKey> = [
-            .isDirectoryKey,
-            .isSymbolicLinkKey,
-        ]
-        guard let enumerator = fileManager.enumerator(
-            at: root,
-            includingPropertiesForKeys: Array(resourceKeys),
-            options: [.skipsHiddenFiles]
-        ) else {
-            return []
-        }
-
-        var folderPaths = Set<String>()
-        while let url = enumerator.nextObject() as? URL {
-            guard let values = try? url.resourceValues(forKeys: resourceKeys) else {
-                continue
-            }
-            if values.isSymbolicLink == true {
-                enumerator.skipDescendants()
-                continue
-            }
-            guard values.isDirectory == true else { continue }
-            folderPaths.insert(Self.relativePath(for: url, root: root))
-        }
-        return folderPaths
     }
 
     func loadNextLibraryPage() throws -> MarkdownLibrarySnapshot {
@@ -253,6 +287,12 @@ actor MarkdownFileStore {
                 continue
             }
             if values.isDirectory == true {
+                if url.lastPathComponent == "Attachments" {
+                    if relativePath != "Attachments" {
+                        state.enumerator?.skipDescendants()
+                    }
+                    continue
+                }
                 state.folderPaths.insert(relativePath)
                 continue
             }
@@ -372,9 +412,6 @@ actor MarkdownFileStore {
             listMetadataCache = listMetadataCache.filter { activePaths.contains($0.key) }
         }
         let pinnedPaths = storedPinnedPaths.intersection(activePaths)
-        if state.isComplete, pinnedPaths != storedPinnedPaths {
-            try savePinnedPaths(pinnedPaths, root: root)
-        }
         for index in state.markdownFiles.indices {
             state.markdownFiles[index].isPinned = pinnedPaths.contains(
                 state.markdownFiles[index].relativePath
@@ -647,6 +684,42 @@ actor MarkdownFileStore {
         return matches.sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
     }
 
+    func outgoingLinks(from sourcePath: String, markdown: String) throws -> [RecentMarkdownFile] {
+        let snapshot = try cachedLibrarySnapshot ?? loadLibrarySnapshot()
+        let destinations = Set(MarkdownNoteLink.destinations(in: markdown, from: sourcePath))
+        guard !destinations.isEmpty else { return [] }
+        return snapshot.allFiles
+            .filter { $0.relativePath != sourcePath && destinations.contains($0.relativePath) }
+            .sorted { $0.title.localizedStandardCompare($1.title) == .orderedAscending }
+    }
+
+    func relatedNotes(
+        for targetPath: String,
+        tags: [String],
+        excluding excludedPaths: Set<String>,
+        limit: Int = 5
+    ) throws -> [RecentMarkdownFile] {
+        guard limit > 0 else { return [] }
+        let snapshot = try cachedLibrarySnapshot ?? loadLibrarySnapshot()
+        let targetTagKeys = Set(tags.map(MarkdownTagSyntax.key))
+        guard !targetTagKeys.isEmpty else { return [] }
+        let scored: [(RecentMarkdownFile, Int)] = snapshot.allFiles.compactMap { file in
+            guard file.relativePath != targetPath,
+                  !excludedPaths.contains(file.relativePath),
+                  !file.tags.isEmpty else { return nil }
+            let overlap = Set(file.tags.map(MarkdownTagSyntax.key)).intersection(targetTagKeys).count
+            guard overlap > 0 else { return nil }
+            return (file, overlap)
+        }
+        return scored
+            .sorted { lhs, rhs in
+                if lhs.1 != rhs.1 { return lhs.1 > rhs.1 }
+                return lhs.0.modifiedAt > rhs.0.modifiedAt
+            }
+            .prefix(limit)
+            .map(\.0)
+    }
+
     func search(
         query: String,
         scope: MarkdownSearchScope = .all,
@@ -774,8 +847,15 @@ actor MarkdownFileStore {
 
     func prepareAttachmentPreview(relativePath: String) throws -> PreparedAttachmentPreview {
         guard let root else { throw FolderAccessError.missingFolder }
+        var normalizedRelativePath = relativePath.removingPercentEncoding ?? relativePath
+        while normalizedRelativePath.hasPrefix("./") {
+            normalizedRelativePath = String(normalizedRelativePath.dropFirst(2))
+        }
+        while normalizedRelativePath.hasPrefix("../") {
+            normalizedRelativePath = String(normalizedRelativePath.dropFirst(3))
+        }
         guard let fileURL = AuthorizedLibraryPath.resolve(
-            relativePath,
+            normalizedRelativePath,
             within: root,
             constrainedTo: "Attachments"
         ) else {
@@ -786,14 +866,17 @@ actor MarkdownFileStore {
             if accessed { root.stopAccessingSecurityScopedResource() }
         }
         let values = try fileURL.resourceValues(forKeys: [.isRegularFileKey, .fileSizeKey])
+        let maximumBytes = CaptureAttachmentPolicy.maximumPreviewBytes(
+            forPathExtension: fileURL.pathExtension
+        )
         guard values.isRegularFile == true,
               let byteCount = values.fileSize,
               byteCount > 0,
-              byteCount <= CaptureAttachmentPolicy.maximumFileBytes else {
+              byteCount <= maximumBytes else {
             throw AttachmentPreviewError.invalidPath
         }
 
-        let originalData = try Data(contentsOf: fileURL, options: .mappedIfSafe)
+        let originalData = try coordinatedRead(at: fileURL)
 
         let previewDirectory = fileManager.temporaryDirectory
             .appendingPathComponent("MudsnoteAttachmentPreview", isDirectory: true)
@@ -803,7 +886,7 @@ actor MarkdownFileStore {
         try originalData.write(to: previewURL, options: .atomic)
         return PreparedAttachmentPreview(
             url: previewURL,
-            relativePath: relativePath,
+            relativePath: normalizedRelativePath,
             originalDigest: Data(SHA256.hash(data: originalData))
         )
     }
@@ -1278,8 +1361,12 @@ actor MarkdownFileStore {
         }
         let destination = uniqueAttachmentDestination(for: requestedURL, root: root)
         let destinationPath = Self.relativePath(for: destination, root: root)
+        let markdownDestinationPath = MarkdownAttachmentContract.relativeMarkdownDestination(
+            attachmentRelativeToRoot: destinationPath,
+            noteRelativeToRoot: relativePath
+        )
         let reference = MarkdownAttachmentReference(
-            relativePath: destinationPath,
+            relativePath: markdownDestinationPath,
             kind: attachment.referenceKind
         )
         let separator = markdown.isEmpty || markdown.hasSuffix("\n") ? "" : "\n"
@@ -1289,7 +1376,7 @@ actor MarkdownFileStore {
             at: destination.deletingLastPathComponent(),
             withIntermediateDirectories: true
         )
-        try requestedWrite.data.write(to: destination, options: .withoutOverwriting)
+        try coordinatedWrite(requestedWrite.data, to: destination, options: .withoutOverwriting)
         do {
             let saved = try saveMarkdownDocument(
                 relativePath: relativePath,
@@ -1339,16 +1426,25 @@ actor MarkdownFileStore {
         to name: String
     ) throws -> MarkdownDocument {
         guard let root else { throw FolderAccessError.missingFolder }
+        let normalizedVaultAttachmentPath = MarkdownAttachmentContract.normalizeVaultRelativePath(
+            from: attachmentRelativePath,
+            noteRelativeToRoot: relativePath
+        ) ?? attachmentRelativePath
+        let encodedVaultAttachmentPath = MarkdownAttachmentContract.encodePathForMarkdown(
+            normalizedVaultAttachmentPath
+        )
         guard markdown.components(separatedBy: .newlines).contains(where: {
             $0.trimmingCharacters(in: .whitespaces)
                 == attachmentLine.trimmingCharacters(in: .whitespaces)
-        }), attachmentLine.contains(attachmentRelativePath) else {
+        }), (attachmentLine.contains(attachmentRelativePath)
+            || attachmentLine.contains(normalizedVaultAttachmentPath)
+            || attachmentLine.contains(encodedVaultAttachmentPath)) else {
             throw MarkdownDocumentError.attachmentReferenceNotFound
         }
         let accessed = root.startAccessingSecurityScopedResource()
         defer { if accessed { root.stopAccessingSecurityScopedResource() } }
         guard let source = AuthorizedLibraryPath.resolve(
-            attachmentRelativePath,
+            normalizedVaultAttachmentPath,
             within: root,
             constrainedTo: "Attachments"
         ), fileManager.fileExists(atPath: source.path) else {
@@ -1373,25 +1469,56 @@ actor MarkdownFileStore {
         }
 
         if try attachmentIsReferencedOutsideDocument(
-            attachmentRelativePath,
+            normalizedVaultAttachmentPath,
             documentRelativePath: relativePath,
             root: root
         ) {
             throw MarkdownDocumentError.attachmentReferencedElsewhere
         }
         let destination = uniqueAttachmentDestination(for: requested, root: root)
-        let destinationPath = Self.relativePath(for: destination, root: root)
+        let destinationVaultPath = Self.relativePath(for: destination, root: root)
+        let expectedRelativeToken = MarkdownAttachmentContract.relativeMarkdownDestination(
+            attachmentRelativeToRoot: normalizedVaultAttachmentPath,
+            noteRelativeToRoot: relativePath
+        )
+        let rawRelativeToken = MarkdownAttachmentContract.relativeMarkdownDestination(
+            attachmentRelativeToRoot: normalizedVaultAttachmentPath,
+            noteRelativeToRoot: relativePath,
+            percentEncode: false
+        )
+        let usesRelativeToken = attachmentLine.contains(expectedRelativeToken)
+            || attachmentLine.contains(rawRelativeToken)
+        let oldToken: String
+        if attachmentLine.contains(expectedRelativeToken) {
+            oldToken = expectedRelativeToken
+        } else if attachmentLine.contains(rawRelativeToken) {
+            oldToken = rawRelativeToken
+        } else if attachmentLine.contains(encodedVaultAttachmentPath) {
+            oldToken = encodedVaultAttachmentPath
+        } else {
+            oldToken = normalizedVaultAttachmentPath
+        }
+        let destinationMarkdownPath = usesRelativeToken
+            ? MarkdownAttachmentContract.relativeMarkdownDestination(
+                attachmentRelativeToRoot: destinationVaultPath,
+                noteRelativeToRoot: relativePath
+            )
+            : MarkdownAttachmentContract.encodePathForMarkdown(destinationVaultPath)
         let renamedLine = Self.renamedAttachmentLine(
             attachmentLine,
-            oldPath: attachmentRelativePath,
-            newPath: destinationPath
+            oldPath: oldToken,
+            newPath: destinationMarkdownPath
         )
         let updatedMarkdown = markdown.components(separatedBy: .newlines).map { line in
             if line.trimmingCharacters(in: .whitespaces)
                 == attachmentLine.trimmingCharacters(in: .whitespaces) {
                 return renamedLine
             }
-            return line.replacingOccurrences(of: attachmentRelativePath, with: destinationPath)
+            return line
+                .replacingOccurrences(of: expectedRelativeToken, with: destinationMarkdownPath)
+                .replacingOccurrences(of: rawRelativeToken, with: destinationMarkdownPath)
+                .replacingOccurrences(of: encodedVaultAttachmentPath, with: destinationMarkdownPath)
+                .replacingOccurrences(of: normalizedVaultAttachmentPath, with: destinationMarkdownPath)
         }.joined(separator: "\n")
 
         try coordinatedMove(from: source, to: destination)
@@ -1654,6 +1781,7 @@ actor MarkdownFileStore {
             try rewritePinnedPathPrefix(from: relativePath, to: newRelativePath, root: root)
         } catch {
             restoreMarkdownLinkRewrites(linkBackups)
+            try? rewritePinnedPathPrefix(from: newRelativePath, to: relativePath, root: root)
             try? rewriteTrashedOriginalPathPrefix(
                 from: newRelativePath,
                 to: relativePath,
@@ -2162,16 +2290,51 @@ actor MarkdownFileStore {
         coordinator.coordinate(
             writingItemAt: source,
             options: .forMoving,
+            writingItemAt: destination,
+            options: .forReplacing,
             error: &coordinationError
-        ) { coordinatedSource in
+        ) { coordinatedSource, coordinatedDestination in
             do {
-                try fileManager.moveItem(at: coordinatedSource, to: destination)
+                coordinator.item(at: coordinatedSource, willMoveTo: coordinatedDestination)
+                try fileManager.moveItem(at: coordinatedSource, to: coordinatedDestination)
+                coordinator.item(at: coordinatedSource, didMoveTo: coordinatedDestination)
             } catch {
                 moveError = error
             }
         }
         if let coordinationError { throw coordinationError }
         if let moveError { throw moveError }
+    }
+
+    private func coordinatedRead(at url: URL) throws -> Data {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var readResult: Result<Data, Error>?
+        coordinator.coordinate(readingItemAt: url, options: [], error: &coordinationError) { coordinatedURL in
+            readResult = Result { try Data(contentsOf: coordinatedURL, options: .mappedIfSafe) }
+        }
+        if let coordinationError { throw coordinationError }
+        guard let readResult else { throw CocoaError(.fileReadUnknown) }
+        return try readResult.get()
+    }
+
+    private func coordinatedWrite(
+        _ data: Data,
+        to url: URL,
+        options: Data.WritingOptions = .atomic
+    ) throws {
+        let coordinator = NSFileCoordinator()
+        var coordinationError: NSError?
+        var writeError: Error?
+        coordinator.coordinate(writingItemAt: url, options: .forReplacing, error: &coordinationError) { coordinatedURL in
+            do {
+                try data.write(to: coordinatedURL, options: options)
+            } catch {
+                writeError = error
+            }
+        }
+        if let coordinationError { throw coordinationError }
+        if let writeError { throw writeError }
     }
 
     private func coordinatedDirectoryWrite<T>(
@@ -2535,10 +2698,16 @@ actor MarkdownFileStore {
 
     private func loadPinnedPaths(root: URL) throws -> Set<String> {
         let url = root.appendingPathComponent(".mudsnote/pins.json")
-        guard fileManager.fileExists(atPath: url.path) else { return [] }
+        guard fileManager.fileExists(atPath: url.path) else {
+            if let manifest = VaultMetadataManifest.load(in: root) {
+                return Set(manifest.pinnedRelativePaths.filter(Self.isPinnableNotePath))
+            }
+            return []
+        }
         let size = try url.resourceValues(forKeys: [.fileSizeKey]).fileSize ?? 0
         guard size <= 1_048_576,
-              let paths = try? JSONDecoder().decode([String].self, from: Data(contentsOf: url))
+              let data = try? coordinatedRead(at: url),
+              let paths = try? JSONDecoder().decode([String].self, from: data)
         else { return [] }
         return Set(paths.filter(Self.isPinnableNotePath))
     }
@@ -2580,7 +2749,7 @@ actor MarkdownFileStore {
     ) throws {
         let url = root.appendingPathComponent(".mudsnote/smart-folders.json")
         let configuration = SmartFolderConfiguration(version: 1, folders: folders)
-        try JSONEncoder.mudsnote.encode(configuration).write(to: url, options: .atomic)
+        try coordinatedWrite(try JSONEncoder.mudsnote.encode(configuration), to: url, options: .atomic)
     }
 
     private static func sameSmartFolderName(_ lhs: String, _ rhs: String) -> Bool {
@@ -2596,8 +2765,16 @@ actor MarkdownFileStore {
 
     private func savePinnedPaths(_ paths: Set<String>, root: URL) throws {
         let url = root.appendingPathComponent(".mudsnote/pins.json")
-        let data = try JSONEncoder().encode(paths.sorted())
-        try data.write(to: url, options: .atomic)
+        let sorted = paths.sorted()
+        let data = try JSONEncoder().encode(sorted)
+        try coordinatedWrite(data, to: url, options: .atomic)
+        let existing = VaultMetadataManifest.load(in: root)
+        let updatedManifest = VaultMetadataManifest(
+            pinnedRelativePaths: sorted,
+            folderOrder: existing?.folderOrder ?? [],
+            folderIcons: existing?.folderIcons ?? [:]
+        )
+        try? VaultMetadataManifest.save(updatedManifest, in: root)
     }
 
     private func addPinnedPath(_ path: String, root: URL) throws {
@@ -2763,6 +2940,9 @@ actor MarkdownFileStore {
         byteCount: Int,
         fileIdentity: String
     ) throws -> MarkdownListMetadata {
+        if let root {
+            hydrateListMetadataFromSQLiteIfNeeded(root: root)
+        }
         if let cached = listMetadataCache[relativePath],
            cached.modifiedAt == modifiedAt,
            cached.byteCount == byteCount,
@@ -2784,6 +2964,33 @@ actor MarkdownFileStore {
             fileIdentity: fileIdentity,
             metadata: metadata
         )
+        if let root, let sqliteMetadataIndex {
+            let payload = SQLiteListMetadataPayload(
+                fileIdentity: fileIdentity,
+                galleryImagePath: metadata.galleryImagePath,
+                galleryChecklistItems: metadata.galleryChecklistItems,
+                hasAttachments: metadata.hasAttachments,
+                hasChecklist: metadata.hasChecklist,
+                hasUncheckedChecklist: metadata.hasUncheckedChecklist,
+                attachmentPaths: metadata.attachmentPaths
+            )
+            let record = SQLiteNoteIndexRecord(
+                path: relativePath,
+                modifiedAt: modifiedAt.timeIntervalSinceReferenceDate,
+                createdAt: modifiedAt.timeIntervalSinceReferenceDate,
+                fileSize: UInt64(max(0, byteCount)),
+                title: metadata.title,
+                body: markdown,
+                snippet: metadata.preview,
+                tags: metadata.tags,
+                extraJSON: try? JSONEncoder().encode(payload)
+            )
+            _ = sqliteMetadataIndex.applyIncrementalChanges(
+                rootsKey: [root.standardizedFileURL.path],
+                upserts: [record],
+                deletes: []
+            )
+        }
         trimListMetadataCacheIfNeeded()
         return metadata
     }
@@ -2997,7 +3204,8 @@ actor MarkdownFileStore {
         }
         let prefix = line.hasPrefix("![") ? "![" : "["
         let indentation = String(line.prefix { $0 == " " || $0 == "\t" })
-        let displayName = (newPath as NSString).lastPathComponent
+        let rawDisplayName = (newPath as NSString).lastPathComponent
+        let displayName = rawDisplayName.removingPercentEncoding ?? rawDisplayName
         return "\(indentation)\(prefix)\(displayName)](\(newPath))"
     }
 
@@ -3011,9 +3219,11 @@ actor MarkdownFileStore {
             includingPropertiesForKeys: [.isRegularFileKey],
             options: [.skipsHiddenFiles]
         ) else { return false }
+        let encodedAttachmentPath = MarkdownAttachmentContract.encodePathForMarkdown(attachmentPath)
         for case let url as URL in enumerator where url.pathExtension.lowercased() == "md" {
             guard Self.relativePath(for: url, root: root) != documentRelativePath else { continue }
-            if try String(contentsOf: url, encoding: .utf8).contains(attachmentPath) {
+            let contents = try String(contentsOf: url, encoding: .utf8)
+            if contents.contains(attachmentPath) || contents.contains(encodedAttachmentPath) {
                 return true
             }
         }
@@ -3240,22 +3450,43 @@ actor MarkdownFileStore {
             now: now,
             operationID: operationID
         )
-        let markdownBlock = Self.markdownBlock(
-            body: Self.captureBodyExcludingTitle(from: draft.body),
-            tags: draft.tags,
+        let preferredStem = Self.captureNoteFilenameStem(for: draft)
+        let simulatedRelativeNotePath = Self.relativeNotePath(
+            filename: "\(preferredStem).md",
+            targetFolder: draft.target.relativeFolderPath
+        )
+        let captureBody = Self.captureBodyPreservingContent(from: draft.body, filenameStem: preferredStem)
+        let rawCapturedTagTokens = ([draft.tags] + draft.attachments.map(\.markdownTag))
+            .joined(separator: " ")
+            .split(whereSeparator: \.isWhitespace)
+            .map(String.init)
+            .compactMap { MarkdownTagSyntax.normalizedTag($0) }
+        let markdownBlockRaw = Self.markdownBlock(
+            body: captureBody,
+            tags: "",
             attachmentReferences: zip(attachmentWrites, draft.attachments).map {
-                MarkdownAttachmentReference(
-                    relativePath: $0.0.relativePath,
+                let relativeAttachmentDest = MarkdownAttachmentContract.relativeMarkdownDestination(
+                    attachmentRelativeToRoot: $0.0.relativePath,
+                    noteRelativeToRoot: simulatedRelativeNotePath
+                )
+                return MarkdownAttachmentReference(
+                    relativePath: relativeAttachmentDest,
                     kind: $0.1.referenceKind
                 )
             },
-            attachmentTags: draft.attachments.map(\.markdownTag),
+            attachmentTags: [],
             now: now,
             createdAt: draft.createdAt,
             locationStamp: draft.locationStamp,
             weatherStamp: draft.weatherStamp
         )
-        let preferredStem = Self.captureNoteFilenameStem(for: draft)
+        let markdownBlock = rawCapturedTagTokens.isEmpty
+            ? markdownBlockRaw
+            : MarkdownTagContract.replacingFrontMatterTags(
+                in: markdownBlockRaw,
+                with: rawCapturedTagTokens,
+                strict: true
+            )
         var createdAttachmentURLs: [URL] = []
 
         do {
@@ -3271,7 +3502,8 @@ actor MarkdownFileStore {
                     at: attachmentURL.deletingLastPathComponent(),
                     withIntermediateDirectories: true
                 )
-                try attachment.data.write(
+                try coordinatedWrite(
+                    attachment.data,
                     to: attachmentURL,
                     options: .withoutOverwriting
                 )
@@ -3381,6 +3613,23 @@ actor MarkdownFileStore {
         return lines.joined(separator: "\n") + "\n"
     }
 
+    /// Excludes the first line from the body ONLY when the sanitized filename stem
+    /// faithfully preserves it (preventing silent loss of URLs or >180-byte first lines).
+    static func captureBodyPreservingContent(from body: String, filenameStem: String) -> String {
+        let lines = body.components(separatedBy: .newlines)
+        guard let firstIndex = lines.firstIndex(where: {
+            !$0.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty
+        }) else { return "" }
+        let rawFirstLine = lines[firstIndex].trimmingCharacters(in: .whitespacesAndNewlines)
+        let strippedHeading = rawFirstLine.hasPrefix("# ")
+            ? String(rawFirstLine.dropFirst(2)).trimmingCharacters(in: .whitespaces)
+            : rawFirstLine
+        if strippedHeading == filenameStem {
+            return captureBodyExcludingTitle(from: body)
+        }
+        return body.trimmingCharacters(in: .whitespacesAndNewlines)
+    }
+
     static func captureBodyExcludingTitle(from body: String) -> String {
         var lines = body.components(separatedBy: .newlines)
         guard let titleIndex = lines.firstIndex(where: {
@@ -3474,7 +3723,7 @@ struct LibraryFolderNode: Identifiable, Equatable {
                 .map(String.init)
             guard let root = components.first,
                   !excludedRoots.contains(root),
-                  !root.hasPrefix(".") else { return }
+                  !components.contains(where: { excludedRoots.contains($0) || $0.hasPrefix(".") }) else { return }
 
             for depth in 1...components.count {
                 let candidate = components.prefix(depth).joined(separator: "/")
@@ -3810,7 +4059,9 @@ extension MarkdownAttachmentReference {
         case .audio:
             return "[Audio](\(relativePath))"
         case .file:
-            return "[\((relativePath as NSString).lastPathComponent)](\(relativePath))"
+            let rawName = (relativePath as NSString).lastPathComponent
+            let displayName = rawName.removingPercentEncoding ?? rawName
+            return "[\(displayName)](\(relativePath))"
         }
     }
 }

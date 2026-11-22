@@ -25,6 +25,24 @@ extension EditorWindowController {
         return true
     }
 
+    func chooseAndInsertAttachment() {
+        let panel = NSOpenPanel()
+        panel.title = "添加附件"
+        panel.prompt = "添加"
+        panel.canChooseFiles = true
+        panel.canChooseDirectories = false
+        panel.allowsMultipleSelection = true
+        guard panel.runModal() == .OK else { return }
+        do {
+            for url in panel.urls {
+                let storedURL = try MarkdownAttachmentStorage.storeFile(url, in: selectedDirectoryURL)
+                insertStoredAttachment(storedURL)
+            }
+        } catch {
+            presentErrorAlert(message: "添加附件失败", details: error.localizedDescription)
+        }
+    }
+
     private func insertStoredAttachment(_ fileURL: URL) {
         guard let storage = editorTextView.textStorage else { return }
         window?.makeFirstResponder(editorTextView)

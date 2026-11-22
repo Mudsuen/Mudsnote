@@ -92,10 +92,14 @@ public enum CodexRuntimeLocator {
 }
 
 public struct CodexAIProvider: Sendable {
-    public let executableURL: URL
+    public static let defaultTimeout: Duration = .seconds(90)
 
-    public init(executableURL: URL) {
+    public let executableURL: URL
+    public let timeout: Duration
+
+    public init(executableURL: URL, timeout: Duration = CodexAIProvider.defaultTimeout) {
         self.executableURL = executableURL
+        self.timeout = timeout
     }
 
     public func generate(request: AIRequest) async throws -> String {
@@ -137,7 +141,8 @@ public struct CodexAIProvider: Sendable {
             return try await Self.run(
                 executableURL: agentExecutableURL,
                 workingDirectory: isolatedWorkingDirectory,
-                prompt: prompt
+                prompt: prompt,
+                timeout: timeout
             )
         }
         return try await withTaskCancellationHandler {
@@ -198,7 +203,8 @@ public struct CodexAIProvider: Sendable {
     private static func run(
         executableURL: URL,
         workingDirectory: URL,
-        prompt: String
+        prompt: String,
+        timeout: Duration
     ) async throws -> String {
         try Task.checkCancellation()
         let fileManager = FileManager.default
@@ -259,9 +265,14 @@ public struct CodexAIProvider: Sendable {
         )
 
         do {
-            _ = try await CodexProcessExecution.runPrepared(process, prompt: prompt, workingDirectory: workingDirectory)
+            _ = try await CodexProcessExecution.runPrepared(
+                process,
+                prompt: prompt,
+                workingDirectory: workingDirectory,
+                timeout: timeout
+            )
         } catch {
-            if error is CancellationError {
+            if error is CancellationError || error is AIError {
                 throw error
             }
             throw AIError.localProviderUnavailable(executableURL.path)

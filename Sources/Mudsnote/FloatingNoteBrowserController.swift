@@ -82,18 +82,27 @@ final class FloatingNoteBrowserResultCellView: NSTableCellView {
         let label = isOpen ? "关闭 \(titleLabel.stringValue)" : "添加 \(titleLabel.stringValue)"
         actionButton.toolTip = label
         actionButton.setAccessibilityLabel(label)
-        setAccessibilityElement(true)
-        setAccessibilityRole(.row)
+        setAccessibilityElement(false)
+        setAccessibilityRole(.group)
         setAccessibilityLabel(subtitle.isEmpty ? title : "\(title)，\(subtitle)")
         self.onAction = onAction
     }
 
     func setSelected(_ isSelected: Bool) {
         isSelectedForPresentation = isSelected
-        layer?.backgroundColor = panelPrimaryTextColor()
-            .withAlphaComponent(isSelected ? 0.18 : 0.08)
-            .cgColor
+        updateSelectionAppearance()
         setAccessibilitySelected(isSelected)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateSelectionAppearance()
+    }
+
+    private func updateSelectionAppearance() {
+        layer?.backgroundColor = panelPrimaryTextColor()
+            .withAlphaComponent(isSelectedForPresentation ? 0.18 : 0.08)
+            .cgColor
     }
 
     @objc private func actionPressed() {

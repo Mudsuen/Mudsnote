@@ -426,12 +426,27 @@ enum MarkdownRenderBlock: Equatable {
     }
 
     static func parseWithRanges(_ markdown: String) -> [(block: MarkdownRenderBlock, range: NSRange)] {
-        let lines = markdown.components(separatedBy: .newlines)
+        let source = markdown as NSString
+        var lines: [String] = []
         var offsets: [Int] = []
-        var offset = 0
-        for line in lines {
-            offsets.append(offset)
-            offset += line.utf16.count + 1
+        var cursor = 0
+        while cursor < source.length {
+            let lineRange = source.lineRange(for: NSRange(location: cursor, length: 0))
+            var contentEnd = NSMaxRange(lineRange)
+            while contentEnd > lineRange.location {
+                let codeUnit = source.character(at: contentEnd - 1)
+                if codeUnit == 10 || codeUnit == 13 {
+                    contentEnd -= 1
+                } else {
+                    break
+                }
+            }
+            offsets.append(lineRange.location)
+            lines.append(source.substring(with: NSRange(
+                location: lineRange.location,
+                length: contentEnd - lineRange.location
+            )))
+            cursor = NSMaxRange(lineRange)
         }
         var blocks: [(block: MarkdownRenderBlock, range: NSRange)] = []
         var index = 0
@@ -457,7 +472,7 @@ enum MarkdownRenderBlock: Equatable {
                     index += 1
                 }
                 if index < lines.count { index += 1 }
-                let end = index < lines.count ? offsets[index] : markdown.utf16.count
+                let end = index < lines.count ? offsets[index] : source.length
                 blocks.append((.code(
                     language: language.isEmpty ? nil : language,
                     content: codeLines.joined(separator: "\n")
@@ -474,7 +489,7 @@ enum MarkdownRenderBlock: Equatable {
                     rows.append(row)
                     index += 1
                 }
-                let end = index < lines.count ? offsets[index] : markdown.utf16.count
+                let end = index < lines.count ? offsets[index] : source.length
                 blocks.append((.table(headers: headers, rows: rows), NSRange(location: start, length: end - start)))
                 continue
             }
@@ -1000,7 +1015,7 @@ enum MarkdownInlineRendering {
             guard value != nil else { return }
             attributed.addAttribute(
                 .foregroundColor,
-                value: UIColor.systemYellow,
+                value: MudsnoteColors.linkAccentUIColor,
                 range: range
             )
         }

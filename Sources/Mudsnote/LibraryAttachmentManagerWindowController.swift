@@ -104,7 +104,7 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         tableView.identifier = NSUserInterfaceItemIdentifier("LibraryAttachmentManagerTable")
         tableView.delegate = self
         tableView.dataSource = self
-        tableView.allowsMultipleSelection = false
+        tableView.allowsMultipleSelection = true
         tableView.usesAlternatingRowBackgroundColors = true
         tableView.rowHeight = 28
         tableView.doubleAction = #selector(previewPressed)
@@ -172,7 +172,7 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
 
     private func refresh() { scan() }
 
-    private func scan(removing item: LibraryAttachmentItem? = nil) {
+    private func scan(removing items: [LibraryAttachmentItem] = []) {
         scanTask?.cancel()
         loadGeneration += 1
         let generation = loadGeneration
@@ -185,11 +185,18 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
                 try Task.checkCancellation()
                 var scan = try loader(roots)
                 try Task.checkCancellation()
-                if let item, scan.isComplete, scan.items.contains(where: {
-                    $0.url.standardizedFileURL == item.url.standardizedFileURL && $0.state == .unreferenced
-                }) {
-                    try remove(item.url)
-                    scan.items.removeAll { $0.url.standardizedFileURL == item.url.standardizedFileURL }
+                if !items.isEmpty, scan.isComplete {
+                    let targetPaths = Set(items.map { $0.url.standardizedFileURL.path })
+                    let removable = scan.items.filter {
+                        targetPaths.contains($0.url.standardizedFileURL.path) && $0.state == .unreferenced
+                    }
+                    var removedPaths = Set<String>()
+                    for target in removable {
+                        try Task.checkCancellation()
+                        try remove(target.url)
+                        removedPaths.insert(target.url.standardizedFileURL.path)
+                    }
+                    scan.items.removeAll { removedPaths.contains($0.url.standardizedFileURL.path) }
                 }
                 return scan
             }
@@ -204,7 +211,7 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
                     self.loadState = .loaded
                 case .failure(let error):
                     self.allItems = []
-                    self.loadState = .failed(message: item == nil ? "扫描失败，请重试" : "删除未完成，请重试", detail: error.localizedDescription)
+                    self.loadState = .failed(message: items.isEmpty ? "扫描失败，请重试" : "删除未完成，请重试", detail: error.localizedDescription)
                 }
                 self.applyFilter(preserving: selectedPath)
             }
@@ -322,9 +329,21 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         updateSelectionActions()
     }
 
+    private var selectedItems: [LibraryAttachmentItem] {
+        tableView.selectedRowIndexes.compactMap { row in
+            visibleItems.indices.contains(row) ? visibleItems[row] : nil
+        }
+    }
+
     private var selectedItem: LibraryAttachmentItem? {
         let row = tableView.selectedRow
-        return visibleItems.indices.contains(row) ? visibleItems[row] : nil
+        return visibleItems.indices.contains(row) ? visibleItems[row] : selectedItems.first
+    }
+
+    private var removableSelectedItems: [LibraryAttachmentItem] {
+        selectedItems.filter {
+            $0.state == .unreferenced && FileManager.default.fileExists(atPath: $0.url.path)
+        }
     }
 
     private func updateSelectionActions() {
@@ -332,9 +351,17 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
         let exists = item.map { FileManager.default.fileExists(atPath: $0.url.path) } ?? false
         previewButton.isEnabled = exists
         revealButton.isEnabled = exists
-        openNoteButton.isEnabled = !(item?.referencingNotes.isEmpty ?? true)
-        if case .loaded = loadState { deleteButton.isEnabled = item?.state == .unreferenced && exists }
-        else { deleteButton.isEnabled = false }
+        let referenceCount = item?.referencingNotes.count ?? 0
+        openNoteButton.isEnabled = referenceCount > 0
+        openNoteButton.title = referenceCount > 1 ? "打开引用笔记 (\(referenceCount))…" : "打开引用笔记"
+
+        let removableCount = removableSelectedItems.count
+        if case .loaded = loadState {
+            deleteButton.isEnabled = removableCount > 0
+        } else {
+            deleteButton.isEnabled = false
+        }
+        deleteButton.title = removableCount > 1 ? "删除 \(removableCount) 个未引用附件…" : "删除未引用附件…"
     }
 
     @objc
@@ -358,39 +385,70 @@ final class LibraryAttachmentManagerWindowController: NSWindowController,
 
     @objc
     private func revealPressed() {
-        guard let item = selectedItem,
-              FileManager.default.fileExists(atPath: item.url.path) else {
-            return
-        }
-        NSWorkspace.shared.activateFileViewerSelecting([item.url])
+        let existingURLs = selectedItems.map(\.url).filter { FileManager.default.fileExists(atPath: $0.path) }
+        guard !existingURLs.isEmpty else { return }
+        NSWorkspace.shared.activateFileViewerSelecting(existingURLs)
     }
 
     @objc
     private func openNotePressed() {
-        guard let noteURL = selectedItem?.referencingNotes.first else { return }
+        guard let references = selectedItem?.referencingNotes, !references.isEmpty else { return }
+        if references.count == 1 {
+            onOpenNote(references[0])
+            return
+        }
+        let menu = NSMenu(title: "选择引用笔记")
+        for noteURL in references {
+            let menuItem = NSMenuItem(
+                title: noteURL.deletingPathExtension().lastPathComponent,
+                action: #selector(openSpecificReferencingNote(_:)),
+                keyEquivalent: ""
+            )
+            menuItem.target = self
+            menuItem.representedObject = noteURL
+            menuItem.toolTip = noteURL.path
+            menu.addItem(menuItem)
+        }
+        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: openNoteButton.bounds.height + 4), in: openNoteButton)
+    }
+
+    @objc
+    private func openSpecificReferencingNote(_ sender: NSMenuItem) {
+        guard let noteURL = sender.representedObject as? URL else { return }
         onOpenNote(noteURL)
     }
 
     @objc
     private func deletePressed() {
-        guard let item = selectedItem, item.state == .unreferenced else { return }
+        let targets = removableSelectedItems
+        guard !targets.isEmpty else { return }
         let alert = NSAlert()
         alert.alertStyle = .warning
-        alert.messageText = "删除未引用附件？"
-        alert.informativeText = """
-        \(item.filename) 当前没有被资料库中的笔记引用。此操作会把文件移到废纸篓，无法通过 Mudsnote 撤销。
-        """
+        if targets.count == 1 {
+            alert.messageText = "删除未引用附件？"
+            alert.informativeText = """
+            \(targets[0].filename) 当前没有被资料库中的笔记引用。此操作会把文件移到废纸篓，无法通过 Mudsnote 撤销。
+            """
+        } else {
+            alert.messageText = "批量删除 \(targets.count) 个未引用附件？"
+            let sample = targets.prefix(4).map(\.filename).joined(separator: "、")
+            let suffix = targets.count > 4 ? " 等 \(targets.count) 个文件" : ""
+            alert.informativeText = """
+            将把 \(sample)\(suffix) 移到废纸篓，无法通过 Mudsnote 撤销。
+            """
+        }
         alert.addButton(withTitle: "移到废纸篓")
         alert.addButton(withTitle: "取消")
         guard alert.runModal() == .alertFirstButtonReturn else { return }
-        scan(removing: item)
+        scan(removing: targets)
     }
 
     func refreshAttachmentInventoryForTesting() { refresh() }
     func waitForAttachmentInventoryForTesting() async { await scanTask?.value }
     func deleteSelectedAttachmentForTesting() {
-        guard let item = selectedItem, item.state == .unreferenced else { return }
-        scan(removing: item)
+        let targets = removableSelectedItems
+        guard !targets.isEmpty else { return }
+        scan(removing: targets)
     }
     var selectedAttachmentPathForTesting: String? { selectedItem?.url.path }
     var attachmentSummaryForTesting: String { summaryLabel.stringValue }

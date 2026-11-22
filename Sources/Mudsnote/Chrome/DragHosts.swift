@@ -69,7 +69,9 @@ class WindowMoveBackgroundView: NSView {
 @MainActor
 class SubviewPassthroughView: NSView {
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point) else { return nil }
+        guard !isHidden else { return nil }
+        let localPoint = superview == nil ? point : convert(point, from: superview)
+        guard bounds.contains(localPoint) else { return nil }
         let hit = super.hitTest(point)
         return hit === self ? nil : hit
     }
@@ -80,7 +82,9 @@ final class FocusProxyContainerView: NSView {
     var onFocusRequested: (() -> Void)?
 
     override func hitTest(_ point: NSPoint) -> NSView? {
-        guard bounds.contains(point) else { return nil }
+        guard !isHidden else { return nil }
+        let localPoint = superview == nil ? point : convert(point, from: superview)
+        guard bounds.contains(localPoint) else { return nil }
         let hit = super.hitTest(point)
         return hit === self ? self : hit
     }
@@ -237,6 +241,11 @@ final class DragHandleView: WindowMoveBackgroundView {
 
     override func mouseDown(with event: NSEvent) {
         super.mouseDown(with: event)
+    }
+
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        updateAppearance()
     }
 
     private func updateAppearance() {

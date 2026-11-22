@@ -177,6 +177,16 @@ enum CaptureAttachmentPolicy {
     static let maximumFileBytes = 25 * 1_024 * 1_024
     static let maximumDraftBytes = 64 * 1_024 * 1_024
 
+    static func maximumPreviewBytes(forPathExtension fileExtension: String) -> Int {
+        let normalized = fileExtension.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        if !normalized.isEmpty,
+           let type = UTType(filenameExtension: normalized),
+           type.conforms(to: .movie) {
+            return maximumVideoBytes
+        }
+        return maximumFileBytes
+    }
+
     static func validateAppending(_ attachment: CaptureAttachment, to existing: [CaptureAttachment]) throws {
         guard existing.count < maximumAttachmentCount else {
             throw CaptureAttachmentError.tooMany(maximum: maximumAttachmentCount)

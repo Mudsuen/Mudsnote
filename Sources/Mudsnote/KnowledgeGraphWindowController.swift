@@ -598,10 +598,12 @@ final class KnowledgeGraphCanvasView: NSView {
             guard !isLoading else { return }
             selectedURL = hit.node.url
             updateAccessibilitySelection()
-            if event.clickCount >= 2, snapshot.focusedURL == hit.node.url {
-                onOpenNode?(hit.node.url)
-            } else if snapshot.focusedURL != hit.node.url {
-                onFocusNode?(hit.node.url)
+            if event.clickCount >= 2 {
+                if snapshot.focusedURL == hit.node.url {
+                    onOpenNode?(hit.node.url)
+                } else {
+                    onFocusNode?(hit.node.url)
+                }
             }
             needsDisplay = true
             return

@@ -374,10 +374,12 @@ extension LibraryWindowController {
     func deleteFolderMenuItemPressed(_ sender: NSMenuItem) {
         guard let directory = sender.representedObject as? URL else { return }
 
+        let previousScope = selectedScope
         do {
             selectedScope = .folder(directory)
             try deleteSelectedFolderForLibrary()
         } catch {
+            selectedScope = previousScope
             presentErrorAlert(message: "无法删除文件夹", details: error.localizedDescription)
         }
     }

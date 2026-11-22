@@ -55,11 +55,12 @@ enum MudsnoteThemeColor: String, CaseIterable {
 
     var swatchImage: NSImage {
         let size = NSSize(width: 14, height: 14)
-        let image = NSImage(size: size)
-        image.lockFocus()
-        foregroundColor.setFill()
-        NSBezierPath(ovalIn: NSRect(origin: .zero, size: size)).fill()
-        image.unlockFocus()
+        let color = foregroundColor
+        let image = NSImage(size: size, flipped: false) { rect in
+            color.setFill()
+            NSBezierPath(ovalIn: rect).fill()
+            return true
+        }
         image.isTemplate = false
         return image
     }

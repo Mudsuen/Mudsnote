@@ -4,7 +4,7 @@ struct SettingsRulesView: View {
     @EnvironmentObject private var appModel: AppModel
     @State private var isDiscardRecoveryPresented = false
     @AppStorage("mudsnote.ios.appearance") private var appearanceRawValue =
-        MudsnoteAppearance.dark.rawValue
+        MudsnoteAppearance.system.rawValue
     var chooseFolder: () -> Void
 
     var body: some View {
@@ -166,6 +166,28 @@ private struct DefaultCaptureFolderView: View {
     var body: some View {
         List {
             Section {
+                Button {
+                    appModel.setDefaultCaptureFolder(nil)
+                    dismiss()
+                } label: {
+                    HStack {
+                        Label("Library Root", systemImage: "tray")
+                            .foregroundStyle(MudsnoteColors.text)
+                        Spacer()
+                        if appModel.defaultCaptureFolderPath == nil {
+                            Image(systemName: "checkmark")
+                                .foregroundStyle(MudsnoteColors.primary)
+                        }
+                    }
+                    .contentShape(Rectangle())
+                }
+                .accessibilityValue(
+                    appModel.defaultCaptureFolderPath == nil
+                        ? String(localized: "Selected")
+                        : ""
+                )
+                .accessibilityIdentifier("default-capture-folder-root")
+
                 ForEach(appModel.allFolders) { folder in
                     Button {
                         appModel.setDefaultCaptureFolder(folder.relativePath)

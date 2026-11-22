@@ -26,7 +26,7 @@ final class QuickEntryPanel: NSPanel {
     var onLeftMouseDownPreflight: ((NSEvent) -> Void)?
     var onEditorCommand: ((NSEvent) -> Bool)?
     var onStandardEditCommand: ((Selector) -> Bool)?
-    private let sideResizeHandleWidth: CGFloat = 8
+    private let sideResizeHandleWidth: CGFloat = 5
     private let bottomResizeHandleWidth: CGFloat = 6
     private let topResizeHandleWidth: CGFloat = 4
 
@@ -104,13 +104,14 @@ final class QuickEntryPanel: NSPanel {
         }
 
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        let char = event.charactersIgnoringModifiers?.lowercased()
 
-        if modifiers == [.command], event.keyCode == 3 {
+        if modifiers == [.command], (char == "f" || event.keyCode == 3) {
             onCommandF?()
             return
         }
 
-        if modifiers == [.command], event.keyCode == UInt16(kVK_ANSI_Comma) {
+        if modifiers == [.command], (char == "," || event.keyCode == UInt16(kVK_ANSI_Comma)) {
             onCommandComma?()
             return
         }
@@ -133,6 +134,17 @@ final class QuickEntryPanel: NSPanel {
 
     private func standardEditSelector(for event: NSEvent) -> Selector? {
         let modifiers = event.modifierFlags.intersection(.deviceIndependentFlagsMask)
+        if let char = event.charactersIgnoringModifiers?.lowercased() {
+            switch (modifiers, char) {
+            case ([.command], "c"): return #selector(NSText.copy(_:))
+            case ([.command], "x"): return #selector(NSText.cut(_:))
+            case ([.command], "v"): return #selector(NSText.paste(_:))
+            case ([.command], "a"): return #selector(NSResponder.selectAll(_:))
+            case ([.command], "z"): return #selector(UndoManager.undo)
+            case ([.command, .shift], "z"): return #selector(UndoManager.redo)
+            default: break
+            }
+        }
 
         switch (modifiers, event.keyCode) {
         case ([.command], 8): return #selector(NSText.copy(_:)) // c
@@ -149,7 +161,8 @@ final class QuickEntryPanel: NSPanel {
         guard let contentView else { return false }
 
         let contentPoint = contentView.convert(event.locationInWindow, from: nil)
-        if let hitView = contentView.hitTest(contentPoint), hitView.isDescendantOfControl {
+        if let hitView = contentView.hitTest(contentPoint),
+           hitView.isDescendantOfControl || hitView.isDescendantOfScroller {
             return false
         }
 
@@ -257,6 +270,15 @@ private extension NSView {
         var candidate: NSView? = self
         while let view = candidate {
             if view is NSControl { return true }
+            candidate = view.superview
+        }
+        return false
+    }
+
+    var isDescendantOfScroller: Bool {
+        var candidate: NSView? = self
+        while let view = candidate {
+            if view is NSScroller { return true }
             candidate = view.superview
         }
         return false

@@ -113,6 +113,10 @@ struct AppendToInboxIntent: AppIntent {
 
 enum IntentCaptureWriter {
     static func write(_ draft: CaptureDraft, root: URL) async throws {
+        let accessed = root.startAccessingSecurityScopedResource()
+        defer {
+            if accessed { root.stopAccessingSecurityScopedResource() }
+        }
         let store = MarkdownFileStore()
         await store.configure(root: root)
         let queue = PendingWriteQueue(root: root)

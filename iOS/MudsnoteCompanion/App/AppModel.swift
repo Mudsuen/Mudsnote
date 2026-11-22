@@ -94,10 +94,19 @@ final class AppModel: ObservableObject {
     @Published private(set) var recentCaptureFolders: [LibraryFolderNode] = []
     @Published private(set) var currentLibraryID = ""
 
+    let libraryState = LibraryDomainState()
+    let captureState = CaptureDomainState()
+    let searchState = SearchDomainState()
+    let readerState = ReaderDomainState()
+    let syncState = SyncDomainState()
+
     let folderAccess: FolderAccessService
     let fileStore: MarkdownFileStore
     let draftRecoveryStore: CaptureDraftRecoveryStore
     let audioRecorder = AudioCaptureService()
+
+    private var backgroundHydrationTask: Task<Void, Never>?
+    private var lastKnownPendingSyncCount = 0
 
     private var queue: PendingWriteQueue?
     private var pendingCaptureRoute: CaptureRoute?
@@ -246,6 +255,8 @@ final class AppModel: ObservableObject {
 
     func forgetFolderAndChooseAgain() {
         libraryConfigurationID = UUID()
+        backgroundHydrationTask?.cancel()
+        backgroundHydrationTask = nil
         folderAccess.forgetPersistedFolder()
         isInitialLibraryLoading = false
         folderStatus = .missing
@@ -270,6 +281,7 @@ final class AppModel: ObservableObject {
         defaultCaptureFolderPath = nil
         recentCaptureFolders = []
         captureTargetWasExplicitlySelected = false
+        syncDomainStoresAndWidget(pendingCount: 0)
     }
 
     func showCapture(
@@ -300,7 +312,7 @@ final class AppModel: ObservableObject {
         draft.target = .folder(relativePath)
     }
 
-    func setDefaultCaptureFolder(_ relativePath: String) {
+    func setDefaultCaptureFolder(_ relativePath: String?) {
         captureFolderPreferences.setDefaultFolder(
             relativePath,
             libraryRoot: folderAccess.currentRoot
@@ -2209,6 +2221,102 @@ final class AppModel: ObservableObject {
             syncStatus = .idle
         }
         libraryRevision += 1
+        syncDomainStoresAndWidget(pendingCount: pendingCount)
+        if hasMoreLibraryFiles {
+            scheduleBackgroundFullLibraryHydration(configurationID: libraryConfigurationID)
+        }
+    }
+
+    private func syncDomainStoresAndWidget(pendingCount: Int? = nil) {
+        if let pendingCount {
+            lastKnownPendingSyncCount = pendingCount
+        }
+        libraryState.folderStatus = folderStatus
+        libraryState.libraryFiles = libraryFiles
+        libraryState.recentFiles = recentFiles
+        libraryState.folders = folders
+        libraryState.trashedFiles = trashedFiles
+        libraryState.attachments = attachments
+        libraryState.smartFolders = smartFolders
+        libraryState.librarySummary = librarySummary
+        libraryState.tagSummaries = tagSummaries
+        libraryState.libraryRevision = libraryRevision
+        libraryState.isInitialLibraryLoading = isInitialLibraryLoading
+        libraryState.hasMoreLibraryFiles = hasMoreLibraryFiles
+        libraryState.currentLibraryID = currentLibraryID
+
+        captureState.captureRoute = captureRoute
+        captureState.isCapturePresented = isCapturePresented
+        captureState.isSendingDraft = isSendingDraft
+        captureState.audioCapturePhase = audioCapturePhase
+        captureState.attachmentPreparationCount = attachmentPreparationCount
+        captureState.draftRecoveryIssue = draftRecoveryIssue
+        captureState.captureAttachmentIssue = captureAttachmentIssue
+        captureState.captureSubmissionIssue = captureSubmissionIssue
+        captureState.defaultCaptureFolderPath = defaultCaptureFolderPath
+        captureState.recentCaptureFolders = recentCaptureFolders
+
+        searchState.query = query
+        searchState.searchResults = searchResults
+        searchState.isSearching = isSearching
+        searchState.completedSearchQuery = completedSearchQuery
+        searchState.completedSearchScope = completedSearchScope
+        searchState.completedSearchFilter = completedSearchFilter
+        searchState.isLibrarySearchRequested = isLibrarySearchRequested
+
+        readerState.selectedDocument = selectedDocument
+        readerState.selectedMemo = selectedMemo
+        readerState.noteOpenMode = noteOpenMode
+        readerState.isReaderExpanded = isReaderExpanded
+        readerState.attachmentPresentationRevision = attachmentPresentationRevision
+
+        syncState.syncStatus = syncStatus
+        syncState.conflictWarnings = conflictWarnings
+        syncState.statusToast = statusToast
+        syncState.activeTagMutation = activeTagMutation
+
+        let pinnedTitles = libraryFiles.filter(\.isPinned).prefix(3).map(\.title)
+        let recentTitles = recentFiles.prefix(5).map(\.title)
+        WidgetSharedSnapshot.save(WidgetSharedSnapshot(
+            updatedAt: Date(),
+            totalNoteCount: libraryFiles.count,
+            pinnedTitles: Array(pinnedTitles),
+            recentTitles: Array(recentTitles),
+            pendingSyncCount: lastKnownPendingSyncCount
+        ))
+    }
+
+    private func scheduleBackgroundFullLibraryHydration(configurationID: UUID) {
+        guard backgroundHydrationTask == nil else { return }
+        backgroundHydrationTask = Task(priority: .utility) { [weak self] in
+            defer {
+                Task { @MainActor [weak self] in
+                    self?.backgroundHydrationTask = nil
+                }
+            }
+            // Let initial launch animations and immediate user interactions settle
+            // before hydrating remaining metadata pages in the background.
+            try? await Task.sleep(for: .milliseconds(350))
+            while !Task.isCancelled {
+                guard let self else { return }
+                let shouldContinue = await MainActor.run {
+                    self.libraryConfigurationID == configurationID && self.hasMoreLibraryFiles
+                }
+                guard shouldContinue else { return }
+                await Task.yield()
+                do {
+                    let snapshot = try await self.fileStore.loadNextLibraryPage()
+                    guard !Task.isCancelled else { return }
+                    let pendingCount = await self.queue?.pendingCount() ?? 0
+                    await MainActor.run {
+                        guard self.libraryConfigurationID == configurationID else { return }
+                        self.apply(snapshot, pendingCount: pendingCount)
+                    }
+                } catch {
+                    return
+                }
+            }
+        }
     }
 
     private func applyTrashedProjection(_ items: [TrashedMarkdownFile]) {
@@ -2236,6 +2344,7 @@ final class AppModel: ObservableObject {
             return paths.contains(file.relativePath)
         }
         libraryRevision += 1
+        syncDomainStoresAndWidget()
     }
 
     private func applyCreatedProjection(_ file: RecentMarkdownFile) {
@@ -2250,9 +2359,12 @@ final class AppModel: ObservableObject {
         librarySummary.allNotesCount = libraryFiles.count
         tagSummaries = Self.tagSummaries(from: inboxItems, files: libraryFiles)
         libraryRevision += 1
+        syncDomainStoresAndWidget()
     }
 
     private func beginLibraryConfiguration() -> UUID {
+        backgroundHydrationTask?.cancel()
+        backgroundHydrationTask = nil
         postWriteRefreshGeneration += 1
         postWriteRefreshTask?.cancel()
         postWriteRefreshTask = nil

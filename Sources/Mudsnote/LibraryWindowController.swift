@@ -154,6 +154,7 @@ final class LibraryWindowController: NSWindowController,
     let fileModificationDateLoader: @Sendable (URL) -> Date?
 
     let thumbnailDecoder: @Sendable (URL) -> CGImage?
+    let galleryThumbnailDecoder: @Sendable (URL) -> CGImage?
 
     let backgroundAutosaveWillPersist: @Sendable () -> Void
 
@@ -393,6 +394,13 @@ final class LibraryWindowController: NSWindowController,
         return cache
     }()
 
+    let galleryThumbnailImageCache: NSCache<NSString, LibraryThumbnailCacheEntry> = {
+        let cache = NSCache<NSString, LibraryThumbnailCacheEntry>()
+        cache.countLimit = 96
+        cache.totalCostLimit = 96 * 320 * 224 * 4
+        return cache
+    }()
+
     var thumbnailImageLoadTasks: [String: Task<Void, Never>] = [:]
 
     var thumbnailRowsByPath: [String: IndexSet] = [:]
@@ -479,8 +487,6 @@ final class LibraryWindowController: NSWindowController,
 
     weak var sourceSplitViewItem: NSSplitViewItem?
 
-    weak var noteListSplitViewItem: NSSplitViewItem?
-
     weak var sourceListView: NSView?
 
     weak var sidebarTreeView: NSView?
@@ -553,6 +559,7 @@ final class LibraryWindowController: NSWindowController,
         }
         self.fileModificationDateLoader = fileModificationDateLoader ?? Self.fileModificationDate(at:)
         self.thumbnailDecoder = thumbnailDecoder ?? Self.makeListThumbnailCGImage(at:)
+        self.galleryThumbnailDecoder = thumbnailDecoder ?? Self.makeGalleryThumbnailCGImage(at:)
         self.backgroundAutosaveWillPersist = backgroundAutosaveWillPersist
         self.persistenceErrorHandler = persistenceErrorHandler
         self.backgroundSourceCountWillLoad = backgroundSourceCountWillLoad

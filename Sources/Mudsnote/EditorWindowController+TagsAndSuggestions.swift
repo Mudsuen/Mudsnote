@@ -400,6 +400,42 @@ extension EditorWindowController {
         case .divider:
             insertTextAtSelection("---")
             userDidEdit()
+        case .gridTable:
+            let tableMarkdown = "| 列 1 | 列 2 |\n| --- | --- |\n|  |  |"
+            let rendered = MarkdownRichTextCodec.render(markdown: tableMarkdown, theme: theme, baseURL: fileURLForRendering)
+            replaceText(in: editorTextView.selectedRange(), withAttributed: rendered)
+            userDidEdit()
+        case .codeBlock:
+            insertTextAtSelection("```\n\n```")
+            let caret = max(editorTextView.selectedRange().location - 4, 0)
+            editorTextView.setSelectedRange(NSRange(location: caret, length: 0))
+            userDidEdit()
+        case .blockquote:
+            insertTextAtSelection("> ")
+            userDidEdit()
+        case .insertLink:
+            let selection = editorTextView.selectedRange()
+            presentLinkEditor(title: "添加链接", destination: "", name: "") { [weak self] destination, name in
+                guard let self else { return }
+                let label = name.isEmpty ? destination : name
+                let rendered = MarkdownRichTextCodec.render(
+                    markdown: "[\(label)](\(destination))",
+                    theme: self.theme,
+                    baseURL: self.fileURLForRendering
+                )
+                self.replaceText(in: selection, withAttributed: rendered)
+                self.userDidEdit()
+            }
+        case .insertAttachment:
+            chooseAndInsertAttachment()
+        case .dailyTemplate:
+            let rendered = MarkdownRichTextCodec.render(
+                markdown: SlashCommand.dailyNoteTemplateMarkdown(),
+                theme: theme,
+                baseURL: fileURLForRendering
+            )
+            replaceText(in: editorTextView.selectedRange(), withAttributed: rendered)
+            userDidEdit()
         case .aiSummarize, .aiFix, .aiTodos:
             guard let actionID = command.aiActionID else { return }
             runAIAction(actionID)

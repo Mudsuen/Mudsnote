@@ -16,14 +16,14 @@ extension EditorWindowController {
         }
     }
 
-    func persistDraft(force: Bool) throws {
+    func persistDraft(force: Bool, notifiesSave: Bool = true) throws {
         autosaveTimer?.invalidate()
         autosaveTimer = nil
         guard isDirty || force else { return }
 
         draftPersistenceGeneration &+= 1
         let result = try draftPersistenceCoordinator.flush(currentDraftPersistenceAction())
-        applyPublishedFloatingNote(result)
+        applyPublishedFloatingNote(result, notifiesSave: notifiesSave)
         isDirty = false
     }
 
@@ -83,13 +83,15 @@ extension EditorWindowController {
         ))
     }
 
-    private func applyPublishedFloatingNote(_ result: NoteUpdateResult?) {
+    private func applyPublishedFloatingNote(_ result: NoteUpdateResult?, notifiesSave: Bool = true) {
         guard let result else { return }
         activeFloatingNoteURL = result.url
         if fileURL != nil { fileURL = result.url }
         selectedDirectoryURL = result.url.deletingLastPathComponent()
         sourceContentsAtLoad = result.sourceContents
-        onSave(result.url)
+        if notifiesSave {
+            onSave(result.url)
+        }
         if let original = result.conflictedOriginalURL {
             presentErrorAlert(message: "检测到外部修改",
                               details: "外部版本保留在：\n\(original.path)\n\n浮窗内容另存为：\n\(result.url.path)")

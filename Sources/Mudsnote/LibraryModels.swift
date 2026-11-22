@@ -231,7 +231,6 @@ enum LibraryNotesPalette {
     static let hoverBackground = gray(0x2B)
     static let selectionBackground = gray(0x34)
     static let separator = gray(0x30)
-    static let sidebarMaterialTint = NSColor.black.withAlphaComponent(0.10)
 
     private static func gray(_ value: Int) -> NSColor {
         let component = CGFloat(value) / 255
@@ -242,12 +241,6 @@ enum LibraryNotesPalette {
 @MainActor
 enum LibrarySourceSelectionPalette {
     static let backgroundColor = NSColor(calibratedWhite: 0.20, alpha: 0.86)
-    static let noteBackgroundColor = NSColor(
-        calibratedRed: 0.492,
-        green: 0.377,
-        blue: 0.09,
-        alpha: 0.96
-    )
     static let foregroundColor = MudsnoteThemeColor.ocean.foregroundColor
     static let selectedCountColor = NSColor.labelColor.withAlphaComponent(0.42)
     static let unselectedForegroundColor = NSColor.labelColor.withAlphaComponent(0.92)

@@ -109,6 +109,12 @@ final class GradientBackdropView: NSView {
         fatalError("init(coder:) has not been implemented")
     }
 
+    override func viewDidChangeEffectiveAppearance() {
+        super.viewDidChangeEffectiveAppearance()
+        layer?.borderColor = panelSeparatorColor(alpha: 0.18).cgColor
+        applyAppearance()
+    }
+
     override func layout() {
         super.layout()
         layer?.cornerRadius = 14

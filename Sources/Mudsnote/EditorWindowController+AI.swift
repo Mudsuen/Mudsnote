@@ -121,54 +121,107 @@ extension EditorWindowController {
     }
 
     private func presentAIResult(_ output: String, actionID: AIActionID, context: AIEditorContext) {
+        let contextIsCurrent = aiContextIsCurrent(context)
+        let primaryIsReplace = actionID.defaultOutputMode == .replaceInput
+
+        let handleChoice: (NSApplication.ModalResponse) -> Void = { [weak self] result in
+            guard let self else { return }
+            guard result == .alertThirdButtonReturn || self.aiContextIsCurrent(context) else { return }
+            switch (actionID.defaultOutputMode, result) {
+            case (.replaceInput, .alertFirstButtonReturn):
+                self.applyAIReplacement(output, range: context.range)
+            case (.replaceInput, .alertSecondButtonReturn):
+                self.applyAIInsertion(output, after: context.range)
+            case (.insertBelow, .alertFirstButtonReturn), (.copyOnly, .alertFirstButtonReturn):
+                self.applyAIInsertion(output, after: context.range)
+            case (.insertBelow, .alertSecondButtonReturn), (.copyOnly, .alertSecondButtonReturn):
+                self.applyAIReplacement(output, range: context.range)
+            case (_, .alertThirdButtonReturn):
+                NSPasteboard.general.clearContents()
+                NSPasteboard.general.setString(output, forType: .string)
+            default:
+                break
+            }
+            self.window?.makeFirstResponder(self.editorTextView)
+        }
+
         let alert = NSAlert()
-        alert.messageText = "AI 结果"
-        alert.informativeText = "作用范围：\(context.scope.userVisibleName)。AI 输出仅在你应用后写入笔记。"
+        alert.messageText = "AI 结果预览"
+        alert.informativeText = contextIsCurrent
+            ? "作用范围：\(context.scope.userVisibleName)。上方为原文，下方为 AI 生成内容，确认后才写入笔记。"
+            : "原文已变化，结果仅供复制。请重新发起请求后再替换。"
         alert.alertStyle = .informational
 
-        let scrollView = NSScrollView(frame: NSRect(x: 0, y: 0, width: 520, height: 240))
-        let textView = NSTextView(frame: scrollView.bounds)
-        textView.isEditable = false
-        textView.isSelectable = true
-        textView.string = output
-        textView.font = .monospacedSystemFont(ofSize: 12, weight: .regular)
-        scrollView.documentView = textView
-        scrollView.hasVerticalScroller = true
-        alert.accessoryView = scrollView
+        let container = NSView(frame: NSRect(x: 0, y: 0, width: 540, height: 300))
 
-        switch actionID.defaultOutputMode {
-        case .replaceInput:
+        let diffScroll = NSScrollView(frame: container.bounds)
+        diffScroll.autoresizingMask = [.width, .height]
+        diffScroll.hasVerticalScroller = true
+        diffScroll.borderType = .bezelBorder
+
+        let diffTextView = NSTextView(frame: diffScroll.bounds)
+        diffTextView.isEditable = false
+        diffTextView.isSelectable = true
+        diffTextView.textContainerInset = NSSize(width: 8, height: 8)
+        diffTextView.textStorage?.setAttributedString(Self.makeAIDiffPreview(original: context.markdown, proposed: output))
+        diffScroll.documentView = diffTextView
+        container.addSubview(diffScroll)
+        alert.accessoryView = container
+
+        if primaryIsReplace {
             alert.addButton(withTitle: "替换")
             alert.addButton(withTitle: "插入下方")
-        case .insertBelow, .copyOnly:
+        } else {
             alert.addButton(withTitle: "插入下方")
             alert.addButton(withTitle: "替换")
         }
         alert.addButton(withTitle: "复制")
         alert.addButton(withTitle: "取消")
 
-        if !aiContextIsCurrent(context) {
-            alert.informativeText = "原文已变化，结果仅供复制。请重新发起请求后再替换。"
+        if !contextIsCurrent {
             alert.buttons.prefix(2).forEach { $0.isEnabled = false }
         }
-        let result = alert.runModal()
-        guard result == .alertThirdButtonReturn || aiContextIsCurrent(context) else { return }
-        switch (actionID.defaultOutputMode, result) {
-        case (.replaceInput, .alertFirstButtonReturn):
-            applyAIReplacement(output, range: context.range)
-        case (.replaceInput, .alertSecondButtonReturn):
-            applyAIInsertion(output, after: context.range)
-        case (.insertBelow, .alertFirstButtonReturn), (.copyOnly, .alertFirstButtonReturn):
-            applyAIInsertion(output, after: context.range)
-        case (.insertBelow, .alertSecondButtonReturn), (.copyOnly, .alertSecondButtonReturn):
-            applyAIReplacement(output, range: context.range)
-        case (_, .alertThirdButtonReturn):
-            NSPasteboard.general.clearContents()
-            NSPasteboard.general.setString(output, forType: .string)
-        default:
-            break
+
+        if let hostWindow = window, hostWindow.isVisible {
+            alert.beginSheetModal(for: hostWindow) { response in
+                handleChoice(response)
+            }
+        } else {
+            handleChoice(alert.runModal())
         }
-        window?.makeFirstResponder(editorTextView)
+    }
+
+    private static func makeAIDiffPreview(original: String, proposed: String) -> NSAttributedString {
+        let result = NSMutableAttributedString()
+        let headerFont = NSFont.systemFont(ofSize: 11, weight: .semibold)
+        let bodyFont = NSFont.monospacedSystemFont(ofSize: 12, weight: .regular)
+
+        result.append(NSAttributedString(
+            string: "原文\n",
+            attributes: [.font: headerFont, .foregroundColor: NSColor.secondaryLabelColor]
+        ))
+        let originalExcerpt = original.count > 1200 ? String(original.prefix(1200)) + "…" : original
+        result.append(NSAttributedString(
+            string: originalExcerpt + "\n\n",
+            attributes: [
+                .font: bodyFont,
+                .foregroundColor: NSColor.secondaryLabelColor,
+                .backgroundColor: NSColor.systemRed.withAlphaComponent(0.08)
+            ]
+        ))
+        result.append(NSAttributedString(
+            string: "AI 建议\n",
+            attributes: [.font: headerFont, .foregroundColor: NSColor.controlAccentColor]
+        ))
+        result.append(NSAttributedString(
+            string: proposed,
+            attributes: [
+                .font: bodyFont,
+                .foregroundColor: NSColor.labelColor,
+                .backgroundColor: NSColor.systemGreen.withAlphaComponent(0.10)
+            ]
+        ))
+        return result
     }
 
     private func aiContextIsCurrent(_ context: AIEditorContext) -> Bool {
@@ -179,8 +232,13 @@ extension EditorWindowController {
     }
 
     private func applyAIReplacement(_ output: String, range: NSRange) {
+        let rendered = MarkdownRichTextCodec.render(
+            markdown: output,
+            theme: theme,
+            baseURL: fileURLForRendering
+        )
         editorTextView.undoManager?.beginUndoGrouping()
-        replaceText(in: range, with: output, attributes: theme.baseAttributes(for: .paragraph))
+        replaceText(in: range, withAttributed: rendered)
         editorTextView.undoManager?.endUndoGrouping()
         userDidEdit()
     }
@@ -195,12 +253,17 @@ extension EditorWindowController {
             let previousUnit = text.character(at: insertionPoint - 1)
             separator = (previousUnit == 0x000A || previousUnit == 0x000D) ? "\n" : "\n\n"
         }
+        let combined = NSMutableAttributedString()
+        if !separator.isEmpty {
+            combined.append(NSAttributedString(string: separator, attributes: theme.baseAttributes(for: .paragraph)))
+        }
+        combined.append(MarkdownRichTextCodec.render(
+            markdown: output,
+            theme: theme,
+            baseURL: fileURLForRendering
+        ))
         editorTextView.undoManager?.beginUndoGrouping()
-        replaceText(
-            in: NSRange(location: insertionPoint, length: 0),
-            with: "\(separator)\(output)",
-            attributes: theme.baseAttributes(for: .paragraph)
-        )
+        replaceText(in: NSRange(location: insertionPoint, length: 0), withAttributed: combined)
         editorTextView.undoManager?.endUndoGrouping()
         userDidEdit()
     }

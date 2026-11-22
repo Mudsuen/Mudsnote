@@ -508,6 +508,7 @@ extension EditorWindowController {
         button.performsActionOnMouseDown = true
         button.tag = action.rawValue
         button.toolTip = action.toolTip
+        button.setAccessibilityLabel(action.toolTip)
         button.controlSize = .small
         button.font = .systemFont(ofSize: 12, weight: .semibold)
         button.preferredSize = NSSize(width: toolbarButtonWidth, height: toolbarButtonVisualHeight)
@@ -536,11 +537,11 @@ extension EditorWindowController {
             .withSymbolConfiguration(.init(pointSize: 14, weight: .semibold))
         button.imagePosition = .imageOnly
         button.title = ""
+        button.setAccessibilityLabel(toolTip)
         button.setAccessibilityIdentifier("FloatingNoteManagerButton")
         button.isBordered = false
         button.bezelStyle = .shadowlessSquare
-        button.focusRingType = .none
-        button.contentTintColor = NSColor.white.withAlphaComponent(0.74)
+        button.contentTintColor = panelSecondaryTextColor()
         button.translatesAutoresizingMaskIntoConstraints = false
         button.widthAnchor.constraint(equalToConstant: 24).isActive = true
         button.heightAnchor.constraint(equalToConstant: 24).isActive = true

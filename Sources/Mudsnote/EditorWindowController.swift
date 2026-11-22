@@ -242,7 +242,8 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
         guard let window else { return }
         didCloseWindow = false
 
-        if !hasPresentedWindow {
+        let isFirstPresentation = !hasPresentedWindow
+        if isFirstPresentation {
             if let initialWindowFrame {
                 window.setFrame(initialWindowFrame, display: false)
             } else {
@@ -271,7 +272,16 @@ final class EditorWindowController: NSWindowController, NSWindowDelegate, Window
 
         if isFloatingNoteMode && isDirty { markDocumentDirty() }
         window.makeFirstResponder(editorTextView)
-        editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
+        if isFirstPresentation {
+            editorTextView.setSelectedRange(NSRange(location: editorTextView.string.utf16.count, length: 0))
+        } else {
+            let maxLength = editorTextView.string.utf16.count
+            let current = editorTextView.selectedRange()
+            let clampedLocation = min(max(current.location, 0), maxLength)
+            let clampedLength = min(max(current.length, 0), maxLength - clampedLocation)
+            editorTextView.setSelectedRange(NSRange(location: clampedLocation, length: clampedLength))
+            editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
+        }
     }
 
     var isWindowClosed: Bool { didCloseWindow }

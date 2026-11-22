@@ -128,6 +128,9 @@ struct StatusToastView: View {
             Capsule().stroke(MudsnoteColors.line.opacity(toast.style == .saved ? 0 : 1), lineWidth: 1)
         }
         .allowsHitTesting(false)
+        .onAppear {
+            UIAccessibility.post(notification: .announcement, argument: toast.message)
+        }
     }
 
     private var foreground: Color {

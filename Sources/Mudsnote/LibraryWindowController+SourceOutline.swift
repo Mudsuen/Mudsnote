@@ -126,8 +126,8 @@ extension LibraryWindowController {
             return cell
         case .inlineFolderEdit(let operation):
             return makeSourceOutlineInlineEditCell(for: operation, item: item)
-        case .scope:
-            let identifier = NSUserInterfaceItemIdentifier("LibrarySourceOutlineCell")
+        case .scope(let scope):
+            let identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(sourceLegacyTag(for: scope))")
             let cell: LibrarySourceOutlineCellView
             if let reused = outlineView.makeView(withIdentifier: identifier, owner: nil)
                 as? LibrarySourceOutlineCellView {

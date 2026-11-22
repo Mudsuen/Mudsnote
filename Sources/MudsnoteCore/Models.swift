@@ -1,4 +1,5 @@
 import Foundation
+import MudsnoteSharedCore
 
 public struct LoadedNoteDocument: Equatable, Sendable {
     public let title: String
@@ -402,9 +403,12 @@ public struct MarkdownEditorDocument: Equatable, Sendable {
                    characters[index] == "#",
                    (index == 0 || characters[index - 1].isWhitespace) {
                     if let end = inlineTagEnd(in: characters, markerIndex: index) {
-                        tags.append(String(characters[(index + 1)..<end]))
-                        ranges.append(index..<end)
-                        occurrenceCount += 1
+                        let candidate = String(characters[(index + 1)..<end])
+                        if !MarkdownTagContract.isIgnoredInlineHashToken(candidate) {
+                            tags.append(candidate)
+                            ranges.append(index..<end)
+                            occurrenceCount += 1
+                        }
                         index = end
                         continue
                     }

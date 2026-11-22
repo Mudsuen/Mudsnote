@@ -1,4 +1,5 @@
 import Foundation
+import MudsnoteSharedCore
 
 enum MarkdownTagMutation: Equatable {
     case rename(to: String)
@@ -244,74 +245,18 @@ enum MarkdownTagSyntax {
     }
 
     private static func frontMatterTags(in markdown: String) -> [String] {
-        let lines = markdown.replacingOccurrences(of: "\r\n", with: "\n")
-            .components(separatedBy: "\n")
-        guard lines.first?.trimmingCharacters(in: .whitespaces) == "---",
-              let closing = lines.indices.dropFirst().first(where: {
-                  let marker = lines[$0].trimmingCharacters(in: .whitespaces)
-                  return marker == "---" || marker == "..."
-              })
-        else { return [] }
-        let metadata = Array(lines[1..<closing])
-        guard let tagLine = metadata.firstIndex(where: {
-            $0.trimmingCharacters(in: .whitespaces).hasPrefix("tags:")
-        }) else { return [] }
-        let line = metadata[tagLine]
-        let value = line.drop(while: { $0 != ":" }).dropFirst()
-            .trimmingCharacters(in: .whitespaces)
-        if value.hasPrefix("["), value.hasSuffix("]") {
-            return value.dropFirst().dropLast().split(separator: ",").map {
-                String($0).trimmingCharacters(in: CharacterSet.whitespaces.union(
-                    CharacterSet(charactersIn: "\"'")
-                ))
-            }
-        }
-        var values: [String] = []
-        for candidate in metadata.dropFirst(tagLine + 1) {
-            let trimmed = candidate.trimmingCharacters(in: .whitespaces)
-            guard trimmed.hasPrefix("- ") else { break }
-            values.append(String(trimmed.dropFirst(2)))
-        }
-        return values
+        MarkdownTagContract.frontMatterBareTags(in: markdown, strict: true)
     }
 
     private static func replacingFrontMatterTags(
         in markdown: String,
         with tags: [String]
     ) -> String {
-        let normalizedMarkdown = markdown.replacingOccurrences(of: "\r\n", with: "\n")
-        var lines = normalizedMarkdown.components(separatedBy: "\n")
-        let normalized = normalizedTags(tags)
-        if lines.first?.trimmingCharacters(in: .whitespaces) == "---",
-           let closing = lines.indices.dropFirst().first(where: {
-               let marker = lines[$0].trimmingCharacters(in: .whitespaces)
-               return marker == "---" || marker == "..."
-           }) {
-            var metadata = Array(lines[1..<closing])
-            if let start = metadata.firstIndex(where: {
-                $0.trimmingCharacters(in: .whitespaces).hasPrefix("tags:")
-            }) {
-                var end = start + 1
-                while end < metadata.count,
-                      metadata[end].trimmingCharacters(in: .whitespaces).hasPrefix("- ") {
-                    end += 1
-                }
-                metadata.removeSubrange(start..<end)
-                if !normalized.isEmpty {
-                    metadata.insert(contentsOf: tagLines(normalized), at: start)
-                }
-            } else if !normalized.isEmpty {
-                metadata.append(contentsOf: tagLines(normalized))
-            }
-            lines.replaceSubrange(1..<closing, with: metadata)
-            return lines.joined(separator: "\n")
-        }
-        guard !normalized.isEmpty else { return normalizedMarkdown }
-        return "---\n\(tagLines(normalized).joined(separator: "\n"))\n---\n\n\(normalizedMarkdown)"
+        MarkdownTagContract.replacingFrontMatterTags(in: markdown, with: tags, strict: true)
     }
 
     private static func tagLines(_ tags: [String]) -> [String] {
-        ["tags:"] + tags.map { "  - \($0)" }
+        MarkdownTagContract.yamlTagLines(for: tags, strict: true)
     }
 
     private static func rewritingMemoTagMarkers(
@@ -375,7 +320,12 @@ enum MarkdownTagSyntax {
         let range = NSRange(location: 0, length: source.length)
         let codeRanges = inlineCodeRanges(in: source)
         return tagExpression.matches(in: line, range: range).filter { match in
-            codeRanges.allSatisfy { NSIntersectionRange($0, match.range).length == 0 }
+            guard codeRanges.allSatisfy({ NSIntersectionRange($0, match.range).length == 0 }) else {
+                return false
+            }
+            guard match.numberOfRanges > 1 else { return false }
+            let bare = source.substring(with: match.range(at: 1))
+            return !MarkdownTagContract.isIgnoredInlineHashToken(bare)
         }
     }
 

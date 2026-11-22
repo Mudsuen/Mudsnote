@@ -137,4 +137,85 @@ struct CoreAuditRegressionTests {
         #expect(overview.cards.filter { $0.url.standardizedFileURL == newURL.standardizedFileURL }.count == 1)
         #expect(overview.connections == [NoteOverview.Connection(from: newID, to: peerID)])
     }
+
+    @Test func inlineTagExtractionIgnoresHexColorsAndNumericReferences() {
+        let migration = MarkdownEditorDocument.extractingInlineTags(
+            from: "Color #ff00aa issue #123 real #swift/ios"
+        )
+        #expect(migration.tags == ["swift/ios"])
+        #expect(migration.occurrenceCount == 1)
+        #expect(migration.body.contains("#ff00aa"))
+        #expect(migration.body.contains("#123"))
+    }
+
+    @Test func sqliteIncrementalSearchCachePersistsUpdatesWithoutRebuildingAllNotes() throws {
+        let env = try makeStore()
+        defer { env.cleanup() }
+        let aURL = try env.store.saveNewNote(title: "Alpha", body: "SQLite 增量索引基准测试", tags: ["sqlite"])
+        let bURL = try env.store.saveNewNote(title: "Beta", body: "知识图谱缓存验证", tags: ["graph"])
+
+        #expect(env.store.prewarmSearchIndex() == 2)
+        #expect(env.store.searchIndexCacheURL.pathExtension == "sqlite")
+        #expect(FileManager.default.fileExists(atPath: env.store.searchIndexCacheURL.path))
+
+        env.store.searchIndexEntryReadCountForTesting = 0
+        _ = try env.store.updateNote(at: bURL, title: "Beta", body: "更新后的全文搜索内容", tags: ["graph", "updated"])
+        #expect(env.store.prewarmSearchIndex() == 2)
+        #expect(env.store.searchIndexEntryReadCountForTesting == 1)
+        #expect(env.store.searchNotes(query: "更新后的全文", limit: 5).first?.url.standardizedFileURL == bURL.standardizedFileURL)
+        #expect(env.store.searchNotes(query: "增量索引", limit: 5).first?.url.standardizedFileURL == aURL.standardizedFileURL)
+    }
+
+    @Test func cachedKnowledgeDerivedIndexReturnsConsistentBacklinksAndSuggestions() throws {
+        let env = try makeStore()
+        defer { env.cleanup() }
+        let targetURL = try env.store.saveNewNote(
+            title: "Architecture",
+            body: "SQLite FTS5 indexing architecture design",
+            tags: ["architecture", "storage"]
+        )
+        let targetStem = targetURL.deletingPathExtension().lastPathComponent
+        let linkerURL = try env.store.saveNewNote(
+            title: "Caller",
+            body: "See [[\(targetStem)]] for details.",
+            tags: ["work"]
+        )
+        let relatedURL = try env.store.saveNewNote(
+            title: "Storage Plan",
+            body: "SQLite FTS5 indexing benchmark notes",
+            tags: ["storage"]
+        )
+
+        let first = env.store.knowledgeRelations(for: targetURL)
+        let second = env.store.knowledgeRelations(for: targetURL)
+        #expect(first == second)
+        #expect(first.incoming.map(\.url) == [linkerURL.standardizedFileURL])
+        #expect(first.suggested.contains { $0.url == relatedURL.standardizedFileURL })
+    }
+
+    @Test func codexProcessExecutionEnforcesTimeoutAndTerminatesHungChild() async throws {
+        let tempDir = FileManager.default.temporaryDirectory
+            .appendingPathComponent("mudsnote-timeout-\(UUID().uuidString)", isDirectory: true)
+        try FileManager.default.createDirectory(at: tempDir, withIntermediateDirectories: true)
+        defer { try? FileManager.default.removeItem(at: tempDir) }
+
+        let process = Process()
+        process.executableURL = URL(fileURLWithPath: "/bin/sleep")
+        process.arguments = ["30"]
+        process.standardOutput = FileHandle.nullDevice
+        process.standardError = FileHandle.nullDevice
+
+        do {
+            _ = try await CodexProcessExecution.runPrepared(
+                process,
+                prompt: "test",
+                workingDirectory: tempDir,
+                terminationGrace: .milliseconds(100),
+                timeout: .milliseconds(150)
+            )
+            Issue.record("Expected timeout error")
+        } catch let error as AIError {
+            #expect(error.localizedDescription.contains("超时"))
+        }
+    }
 }

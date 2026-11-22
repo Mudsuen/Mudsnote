@@ -253,6 +253,7 @@ extension LibraryWindowController {
     @objc
     func showFolderInListMenuItemPressed(_ sender: NSMenuItem) {
         guard let folderURL = sender.representedObject as? URL else { return }
+        selectedScope = .folder(folderURL.standardizedFileURL)
         lastListScope = .folder(folderURL.standardizedFileURL)
         setSidebarPresentation(.list, animated: true)
         reloadNotesForNavigation(selecting: selectedURL, loadFirstIfNeeded: false)
@@ -698,13 +699,13 @@ extension LibraryWindowController {
     }
 
     func selectionMenuTextImage(_ text: String, title: String) -> NSImage {
-        let image = NSImage(size: NSSize(width: 20, height: 16))
-        image.lockFocus()
-        (text as NSString).draw(at: NSPoint(x: 0, y: 0), withAttributes: [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-            .foregroundColor: NSColor.labelColor
-        ])
-        image.unlockFocus()
+        let image = NSImage(size: NSSize(width: 20, height: 16), flipped: false) { _ in
+            (text as NSString).draw(at: NSPoint(x: 0, y: 0), withAttributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: NSColor.labelColor
+            ])
+            return true
+        }
         image.isTemplate = true
         image.accessibilityDescription = title
         return image

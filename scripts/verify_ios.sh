@@ -131,6 +131,10 @@ focused_ui_tests_from_paths() {
 
   while IFS= read -r path; do
     case "$path" in
+      iOS/MudsnoteCompanion/App/AppModel.swift|\
+      iOS/MudsnoteCompanion/App/RootView.swift|\
+      iOS/MudsnoteCompanion/Core/MarkdownFileStore.swift|\
+      iOS/MudsnoteCompanion/Core/SmartFolder.swift|\
       iOS/MudsnoteCompanion/Features/Reader/LibraryHomeView.swift|\
       iOS/MudsnoteCompanion/Features/Reader/NoteListPresentation.swift|\
       iOS/MudsnoteCompanion/Features/Reader/LibraryFolderView.swift|\
@@ -142,6 +146,7 @@ focused_ui_tests_from_paths() {
       iOS/MudsnoteCompanion/Features/Reader/AttachmentLibraryView.swift)
         needs_directory_drawer_test=1
         ;;
+      iOS/MudsnoteCompanion/Core/CaptureDraft.swift|\
       iOS/MudsnoteCompanion/Features/Capture/CaptureConsoleView.swift|\
       iOS/MudsnoteCompanion/Core/MarkdownTagSyntax.swift|\
       iOS/MudsnoteCompanion/Design/MudsnoteTokens.swift)

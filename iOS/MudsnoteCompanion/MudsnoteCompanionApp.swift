@@ -7,7 +7,7 @@ struct MudsnoteCompanionApp: App {
     @StateObject private var appModel: AppModel
     @Environment(\.scenePhase) private var scenePhase
     @AppStorage("mudsnote.ios.appearance") private var appearanceRawValue =
-        MudsnoteAppearance.dark.rawValue
+        MudsnoteAppearance.system.rawValue
 
     init() {
         MudsnoteUITestLaunchConfiguration.prepareIfNeeded()
@@ -32,6 +32,11 @@ struct MudsnoteCompanionApp: App {
         WindowGroup {
             RootView()
                 .environmentObject(appModel)
+                .environment(appModel.libraryState)
+                .environment(appModel.captureState)
+                .environment(appModel.searchState)
+                .environment(appModel.readerState)
+                .environment(appModel.syncState)
                 .task {
                     appModel.consumeSystemEntryRequest()
                 }
@@ -57,7 +62,7 @@ struct MudsnoteCompanionApp: App {
     }
 
     private var appearance: MudsnoteAppearance {
-        MudsnoteAppearance(rawValue: appearanceRawValue) ?? .dark
+        MudsnoteAppearance(rawValue: appearanceRawValue) ?? .system
     }
 }
 

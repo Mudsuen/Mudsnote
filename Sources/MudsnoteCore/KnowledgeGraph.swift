@@ -234,22 +234,83 @@ struct KnowledgeLinkTarget: Codable, Equatable, Sendable {
     let isWikiLink: Bool
 }
 
-extension NoteStore {
-    public func knowledgeGraphSnapshot(
-        scope: KnowledgeGraphScope,
-        roots: [URL]? = nil,
-        includesUnlinkedAndArchivedNotes: Bool = false,
-        cancellationCheck: @Sendable () -> Bool = { false }
-    ) -> KnowledgeGraphSnapshot {
-        guard !cancellationCheck(),
-              let readView = indexedReadView(
-                roots: roots,
-                cancellationCheck: cancellationCheck
-              ) else {
-            return .empty
-        }
-        let entries = includesUnlinkedAndArchivedNotes ? readView.entries : knowledgeEligibleEntries(readView.entries)
+final class KnowledgeDerivedIndex: @unchecked Sendable {
+    let rootsKey: [String]
+    let revision: UInt64
+    let includesArchived: Bool
+    let ignoredTags: Set<String>
+    let entries: [NoteSearchIndexEntry]
+    let entriesByPath: [String: NoteSearchIndexEntry]
+    let entriesByBasename: [String: [NoteSearchIndexEntry]]
+    let entriesBySuffix: [String: [NoteSearchIndexEntry]]
+    let allEdges: [KnowledgeGraphEdge]
+    let adjacency: [String: Set<String>]
+    let incomingByTargetPath: [String: [NoteSearchIndexEntry]]
+    let distinctiveTokensByPath: [String: Set<String>]
+    let tokenDocumentFrequency: [String: Int]
+    let commonTokenThreshold: Int
+    let meaningfulTagsByPath: [String: Set<String>]
+    let pathsByTag: [String: Set<String>]
+    let pathsByToken: [String: Set<String>]
 
+    init(
+        rootsKey: [String],
+        revision: UInt64,
+        includesArchived: Bool,
+        ignoredTags: Set<String>,
+        entries: [NoteSearchIndexEntry],
+        entriesByPath: [String: NoteSearchIndexEntry],
+        entriesByBasename: [String: [NoteSearchIndexEntry]],
+        entriesBySuffix: [String: [NoteSearchIndexEntry]],
+        allEdges: [KnowledgeGraphEdge],
+        adjacency: [String: Set<String>],
+        incomingByTargetPath: [String: [NoteSearchIndexEntry]],
+        distinctiveTokensByPath: [String: Set<String>],
+        tokenDocumentFrequency: [String: Int],
+        commonTokenThreshold: Int,
+        meaningfulTagsByPath: [String: Set<String>],
+        pathsByTag: [String: Set<String>],
+        pathsByToken: [String: Set<String>]
+    ) {
+        self.rootsKey = rootsKey
+        self.revision = revision
+        self.includesArchived = includesArchived
+        self.ignoredTags = ignoredTags
+        self.entries = entries
+        self.entriesByPath = entriesByPath
+        self.entriesByBasename = entriesByBasename
+        self.entriesBySuffix = entriesBySuffix
+        self.allEdges = allEdges
+        self.adjacency = adjacency
+        self.incomingByTargetPath = incomingByTargetPath
+        self.distinctiveTokensByPath = distinctiveTokensByPath
+        self.tokenDocumentFrequency = tokenDocumentFrequency
+        self.commonTokenThreshold = commonTokenThreshold
+        self.meaningfulTagsByPath = meaningfulTagsByPath
+        self.pathsByTag = pathsByTag
+        self.pathsByToken = pathsByToken
+    }
+}
+
+extension NoteStore {
+    private func knowledgeDerivedIndex(
+        for readView: (entries: [NoteSearchIndexEntry], rootsKey: [String], revision: UInt64),
+        includesArchived: Bool,
+        cancellationCheck: @Sendable () -> Bool
+    ) -> KnowledgeDerivedIndex? {
+        let ignored = effectiveIgnoredKnowledgeTags()
+        knowledgeDerivedIndexLock.lock()
+        if let cached = cachedKnowledgeDerivedIndex,
+           cached.rootsKey == readView.rootsKey,
+           cached.revision == readView.revision,
+           cached.includesArchived == includesArchived,
+           cached.ignoredTags == ignored {
+            knowledgeDerivedIndexLock.unlock()
+            return cached
+        }
+        knowledgeDerivedIndexLock.unlock()
+
+        let entries = includesArchived ? readView.entries : knowledgeEligibleEntries(readView.entries)
         let entriesByPath = Dictionary(
             entries.map { ($0.url.standardizedFileURL.path, $0) },
             uniquingKeysWith: { first, _ in first }
@@ -258,10 +319,13 @@ extension NoteStore {
             $0.url.deletingPathExtension().lastPathComponent.lowercased()
         }
         let entriesBySuffix = knowledgeEntriesBySuffix(entries)
+
         var uniqueEdges = Set<KnowledgeGraphEdge>()
+        var adjacency: [String: Set<String>] = [:]
+        var incomingByTargetPath: [String: [NoteSearchIndexEntry]] = [:]
 
         for entry in entries {
-            guard !cancellationCheck() else { return .empty }
+            guard !cancellationCheck() else { return nil }
             let sourceURL = entry.url.standardizedFileURL
             let targets = resolvedKnowledgeLinkEntries(
                 entry.knowledgeLinkTargets,
@@ -274,10 +338,102 @@ extension NoteStore {
             for target in targets {
                 let edge = knowledgeGraphEdge(from: entry, to: target)
                 uniqueEdges.insert(edge)
+                let targetPath = target.url.standardizedFileURL.path
+                incomingByTargetPath[targetPath, default: []].append(entry)
             }
         }
 
         let allEdges = uniqueEdges.sorted(by: knowledgeGraphEdgeSort)
+        for edge in allEdges {
+            let sourcePath = edge.sourceURL.standardizedFileURL.path
+            let targetPath = edge.targetURL.standardizedFileURL.path
+            adjacency[sourcePath, default: []].insert(targetPath)
+            adjacency[targetPath, default: []].insert(sourcePath)
+        }
+
+        var rawTokensByPath: [String: Set<String>] = [:]
+        rawTokensByPath.reserveCapacity(entries.count)
+        var tokenDocumentFrequency: [String: Int] = [:]
+        var meaningfulTagsByPath: [String: Set<String>] = [:]
+        meaningfulTagsByPath.reserveCapacity(entries.count)
+        var pathsByTag: [String: Set<String>] = [:]
+
+        for entry in entries {
+            guard !cancellationCheck() else { return nil }
+            let path = entry.url.standardizedFileURL.path
+            let tokens = knowledgeTokens(in: "\(entry.title)\n\(entry.body)")
+            rawTokensByPath[path] = tokens
+            for token in tokens {
+                tokenDocumentFrequency[token, default: 0] += 1
+            }
+            let tags = meaningfulKnowledgeTags(entry.tags, ignored: ignored)
+            meaningfulTagsByPath[path] = tags
+            for tag in tags {
+                pathsByTag[tag, default: []].insert(path)
+            }
+        }
+
+        let commonTokenThreshold = max(2, entries.count / 2)
+        var distinctiveTokensByPath: [String: Set<String>] = [:]
+        distinctiveTokensByPath.reserveCapacity(entries.count)
+        var pathsByToken: [String: Set<String>] = [:]
+        for (path, rawTokens) in rawTokensByPath {
+            let distinctive = rawTokens.filter {
+                tokenDocumentFrequency[$0, default: 0] <= commonTokenThreshold
+            }
+            distinctiveTokensByPath[path] = distinctive
+            for token in distinctive {
+                pathsByToken[token, default: []].insert(path)
+            }
+        }
+
+        let derived = KnowledgeDerivedIndex(
+            rootsKey: readView.rootsKey,
+            revision: readView.revision,
+            includesArchived: includesArchived,
+            ignoredTags: ignored,
+            entries: entries,
+            entriesByPath: entriesByPath,
+            entriesByBasename: entriesByBasename,
+            entriesBySuffix: entriesBySuffix,
+            allEdges: allEdges,
+            adjacency: adjacency,
+            incomingByTargetPath: incomingByTargetPath,
+            distinctiveTokensByPath: distinctiveTokensByPath,
+            tokenDocumentFrequency: tokenDocumentFrequency,
+            commonTokenThreshold: commonTokenThreshold,
+            meaningfulTagsByPath: meaningfulTagsByPath,
+            pathsByTag: pathsByTag,
+            pathsByToken: pathsByToken
+        )
+
+        knowledgeDerivedIndexLock.lock()
+        cachedKnowledgeDerivedIndex = derived
+        knowledgeDerivedIndexLock.unlock()
+        return derived
+    }
+
+    public func knowledgeGraphSnapshot(
+        scope: KnowledgeGraphScope,
+        roots: [URL]? = nil,
+        includesUnlinkedAndArchivedNotes: Bool = false,
+        cancellationCheck: @Sendable () -> Bool = { false }
+    ) -> KnowledgeGraphSnapshot {
+        guard !cancellationCheck(),
+              let readView = indexedReadView(
+                roots: roots,
+                cancellationCheck: cancellationCheck
+              ),
+              let derived = knowledgeDerivedIndex(
+                for: readView,
+                includesArchived: includesUnlinkedAndArchivedNotes,
+                cancellationCheck: cancellationCheck
+              ) else {
+            return .empty
+        }
+
+        let entriesByPath = derived.entriesByPath
+        let allEdges = derived.allEdges
         let focusedURL: URL?
         let includedPaths: Set<String>
         switch scope {
@@ -297,13 +453,6 @@ extension NoteStore {
                     sourceRevision: readView.revision
                 )
             }
-            var adjacency: [String: Set<String>] = [:]
-            for edge in allEdges {
-                let sourcePath = edge.sourceURL.standardizedFileURL.path
-                let targetPath = edge.targetURL.standardizedFileURL.path
-                adjacency[sourcePath, default: []].insert(targetPath)
-                adjacency[targetPath, default: []].insert(sourcePath)
-            }
             var visited = Set([focusURL.path])
             var frontier = Set([focusURL.path])
             for _ in 0..<max(0, requestedDepth) {
@@ -311,7 +460,7 @@ extension NoteStore {
                 guard !frontier.isEmpty else { break }
                 var next = Set<String>()
                 for path in frontier {
-                    next.formUnion(adjacency[path] ?? [])
+                    next.formUnion(derived.adjacency[path] ?? [])
                 }
                 next.subtract(visited)
                 visited.formUnion(next)
@@ -362,22 +511,19 @@ extension NoteStore {
         cancellationCheck: @Sendable () -> Bool = { false }
     ) -> KnowledgeRelations {
         guard !cancellationCheck() else { return .empty }
-        guard let indexedEntries = indexedEntries(
+        guard let readView = indexedReadView(
             roots: roots,
+            cancellationCheck: cancellationCheck
+        ),
+        let derived = knowledgeDerivedIndex(
+            for: readView,
+            includesArchived: false,
             cancellationCheck: cancellationCheck
         ) else {
             return .empty
         }
-        let entries = knowledgeEligibleEntries(indexedEntries)
         let currentURL = noteURL.standardizedFileURL
-        let entriesByPath = Dictionary(
-            entries.map { ($0.url.standardizedFileURL.path, $0) },
-            uniquingKeysWith: { first, _ in first }
-        )
-        let entriesByBasename = Dictionary(grouping: entries) {
-            $0.url.deletingPathExtension().lastPathComponent.lowercased()
-        }
-        let entriesBySuffix = knowledgeEntriesBySuffix(entries)
+        let entriesByPath = derived.entriesByPath
         let currentEntry = entriesByPath[currentURL.path]
         let body = currentBody
             ?? currentEntry?.body
@@ -385,27 +531,24 @@ extension NoteStore {
             ?? ""
         let currentLayer = currentEntry?.knowledgeLayer
 
+        let outgoingTargets: [KnowledgeLinkTarget] = if currentBody == nil, let currentEntry {
+            currentEntry.knowledgeLinkTargets
+        } else {
+            knowledgeLinkTargets(in: body, cancellationCheck: cancellationCheck)
+        }
         let outgoingEntries = resolvedKnowledgeLinkEntries(
-            knowledgeLinkTargets(in: body, cancellationCheck: cancellationCheck),
+            outgoingTargets,
             sourceURL: currentURL,
             entriesByPath: entriesByPath,
-            entriesByBasename: entriesByBasename,
-            entriesBySuffix: entriesBySuffix,
+            entriesByBasename: derived.entriesByBasename,
+            entriesBySuffix: derived.entriesBySuffix,
             excluding: currentURL
         )
         var incomingEntriesByPath: [String: NoteSearchIndexEntry] = [:]
-        for entry in entries where entry.url.standardizedFileURL.path != currentURL.path {
-            guard !cancellationCheck() else { return .empty }
-            let targets = resolvedKnowledgeLinkEntries(
-                entry.knowledgeLinkTargets,
-                sourceURL: entry.url,
-                entriesByPath: entriesByPath,
-                entriesByBasename: entriesByBasename,
-                entriesBySuffix: entriesBySuffix,
-                excluding: entry.url
-            )
-            if targets.contains(where: { $0.url.standardizedFileURL.path == currentURL.path }) {
-                incomingEntriesByPath[entry.url.standardizedFileURL.path] = entry
+        for entry in derived.incomingByTargetPath[currentURL.path] ?? [] {
+            let path = entry.url.standardizedFileURL.path
+            if path != currentURL.path {
+                incomingEntriesByPath[path] = entry
             }
         }
 
@@ -441,7 +584,7 @@ extension NoteStore {
         let suggested = suggestedKnowledgeRelations(
             for: currentEntry,
             body: body,
-            among: entries,
+            derived: derived,
             excluding: explicitPaths,
             limit: max(suggestionLimit, 0),
             cancellationCheck: cancellationCheck
@@ -686,52 +829,69 @@ extension NoteStore {
     private func suggestedKnowledgeRelations(
         for currentEntry: NoteSearchIndexEntry?,
         body: String,
-        among entries: [NoteSearchIndexEntry],
+        derived: KnowledgeDerivedIndex,
         excluding excludedPaths: Set<String>,
         limit: Int,
         cancellationCheck: @Sendable () -> Bool
     ) -> [KnowledgeRelationItem] {
         guard limit > 0 else { return [] }
         let currentTitle = currentEntry?.title ?? ""
-        let currentTags = meaningfulKnowledgeTags(currentEntry?.tags ?? [])
-        var tokensByPath: [String: Set<String>] = [:]
-        var tokenDocumentFrequency: [String: Int] = [:]
-        for entry in entries {
-            guard !cancellationCheck() else { return [] }
-            let tokens = knowledgeTokens(in: "\(entry.title)\n\(entry.body)")
-            tokensByPath[entry.url.standardizedFileURL.path] = tokens
-            for token in tokens {
-                tokenDocumentFrequency[token, default: 0] += 1
+        let currentTags: Set<String>
+        if let currentEntry, let cached = derived.meaningfulTagsByPath[currentEntry.url.standardizedFileURL.path] {
+            currentTags = cached
+        } else {
+            currentTags = meaningfulKnowledgeTags(currentEntry?.tags ?? [], ignored: derived.ignoredTags)
+        }
+
+        let currentTokens: Set<String>
+        if let currentEntry,
+           body == currentEntry.body,
+           let cachedTokens = derived.distinctiveTokensByPath[currentEntry.url.standardizedFileURL.path] {
+            currentTokens = cachedTokens
+        } else {
+            currentTokens = knowledgeTokens(in: "\(currentTitle)\n\(body)").filter {
+                derived.tokenDocumentFrequency[$0, default: 0] <= derived.commonTokenThreshold
             }
         }
-        let commonTokenThreshold = max(2, entries.count / 2)
-        func distinctiveTokens(_ tokens: Set<String>) -> Set<String> {
-            tokens.filter {
-                tokenDocumentFrequency[$0, default: 0] <= commonTokenThreshold
-            }
-        }
-        let currentTokens = distinctiveTokens(
-            knowledgeTokens(in: "\(currentTitle)\n\(body)")
-        )
         guard !currentTags.isEmpty || currentTokens.count >= 2 else { return [] }
 
+        // Gather only candidate paths sharing at least 1 meaningful tag or >= 2 distinctive tokens.
+        var candidatePaths = Set<String>()
+        for tag in currentTags {
+            if let matches = derived.pathsByTag[tag] {
+                candidatePaths.formUnion(matches)
+            }
+        }
+        var sharedTokenCounts: [String: Int] = [:]
+        for token in currentTokens {
+            if let matches = derived.pathsByToken[token] {
+                for path in matches where !excludedPaths.contains(path) {
+                    let count = sharedTokenCounts[path, default: 0] + 1
+                    sharedTokenCounts[path] = count
+                    if count >= 2 {
+                        candidatePaths.insert(path)
+                    }
+                }
+            }
+        }
+        candidatePaths.subtract(excludedPaths)
+
         var candidates: [KnowledgeRelationItem] = []
-        for entry in entries where !excludedPaths.contains(entry.url.standardizedFileURL.path) {
+        for path in candidatePaths {
             guard !cancellationCheck() else { return [] }
-            let candidateTags = meaningfulKnowledgeTags(entry.tags)
+            guard let entry = derived.entriesByPath[path] else { continue }
+            let candidateTags = derived.meaningfulTagsByPath[path] ?? []
             let sharedTags = currentTags.intersection(candidateTags)
-            let candidateTokens = distinctiveTokens(
-                tokensByPath[entry.url.standardizedFileURL.path] ?? []
-            )
-            let sharedTokens = currentTokens.intersection(candidateTokens)
+            let candidateTokens = derived.distinctiveTokensByPath[path] ?? []
+            let sharedTokenCount = sharedTokenCounts[path] ?? currentTokens.intersection(candidateTokens).count
             let tokenSimilarity: Double
-            let unionTokenCount = currentTokens.count + candidateTokens.count - sharedTokens.count
+            let unionTokenCount = currentTokens.count + candidateTokens.count - sharedTokenCount
             if unionTokenCount == 0 {
                 tokenSimilarity = 0
             } else {
-                tokenSimilarity = Double(sharedTokens.count) / Double(unionTokenCount)
+                tokenSimilarity = Double(sharedTokenCount) / Double(unionTokenCount)
             }
-            guard !sharedTags.isEmpty || sharedTokens.count >= 2 else { continue }
+            guard !sharedTags.isEmpty || sharedTokenCount >= 2 else { continue }
             let tagScore = min(Double(sharedTags.count) * 0.34, 0.68)
             let score = tagScore + min(tokenSimilarity * 0.55, 0.55)
             guard score >= 0.25 else { continue }
@@ -761,13 +921,14 @@ extension NoteStore {
             .map { $0 }
     }
 
-    private func meaningfulKnowledgeTags(_ tags: [String]) -> Set<String> {
-        let ignored = Set([
-            "notion", "flomo", "apple-notes", "模板",
-            "层级/点", "层级/线", "层级/面", "层级/体",
-            "layer/point", "layer/line", "layer/plane", "layer/body"
-        ])
-        return Set(tags.compactMap {
+    private func effectiveIgnoredKnowledgeTags() -> Set<String> {
+        Set(ignoredKnowledgeTags.map {
+            $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
+        }.filter { !$0.isEmpty })
+    }
+
+    private func meaningfulKnowledgeTags(_ tags: [String], ignored: Set<String>) -> Set<String> {
+        Set(tags.compactMap {
             let normalized = $0.trimmingCharacters(in: .whitespacesAndNewlines).lowercased()
             return normalized.isEmpty || ignored.contains(normalized) ? nil : normalized
         })

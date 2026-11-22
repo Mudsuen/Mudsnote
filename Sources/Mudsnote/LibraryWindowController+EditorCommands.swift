@@ -539,6 +539,22 @@ extension LibraryWindowController {
         case .divider:
             editorTextView.insertText("---", replacementRange: editorTextView.selectedRange())
             libraryUserDidEdit()
+        case .gridTable:
+            insertTableForLibrary()
+        case .codeBlock:
+            editorTextView.insertText("```\n\n```", replacementRange: editorTextView.selectedRange())
+            let caret = max(editorTextView.selectedRange().location - 4, 0)
+            editorTextView.setSelectedRange(NSRange(location: caret, length: 0))
+            libraryUserDidEdit()
+        case .blockquote:
+            editorTextView.insertText("> ", replacementRange: editorTextView.selectedRange())
+            libraryUserDidEdit()
+        case .insertLink:
+            linkPressed()
+        case .insertAttachment:
+            attachmentPressed()
+        case .dailyTemplate:
+            replaceSelectionWithRenderedMarkdown(SlashCommand.dailyNoteTemplateMarkdown(), renderingBaseURL: selectedURL)
         case .aiSummarize, .aiFix, .aiTodos:
             break
         }

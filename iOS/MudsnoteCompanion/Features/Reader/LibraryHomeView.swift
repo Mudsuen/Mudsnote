@@ -517,9 +517,11 @@ struct LibraryHomeView: View {
             .onAppear {
                 refreshHomeTimelineProjection(resetPagination: true)
                 presentRequestedSearchIfNeeded()
+                #if DEBUG
                 if ProcessInfo.processInfo.arguments.contains("-ui-testing-open-directory") {
                     isDirectoryPresented = true
                 }
+                #endif
             }
             .onChange(of: appModel.isLibrarySearchRequested) { _, requested in
                 if requested { presentRequestedSearchIfNeeded() }
@@ -1576,7 +1578,11 @@ struct LibraryHomeView: View {
                         .frame(width: 44, height: 44)
                 }
                 .buttonStyle(.plain)
-                .accessibilityLabel(compactDirectoryTags ? "显示标签列表" : "显示小标签")
+                .accessibilityLabel(
+                    compactDirectoryTags
+                        ? String(localized: "Show tag list")
+                        : String(localized: "Show compact tags")
+                )
                 .accessibilityIdentifier("directory-tag-layout-toggle")
 
                 NavigationLink {
@@ -1688,7 +1694,7 @@ struct LibraryHomeView: View {
         HStack(spacing: 8) {
             Menu {
                 Button("All Folders") { searchFolderPath = "" }
-                ForEach(appModel.visibleLibraryFolders) { folder in
+                ForEach(appModel.allFolders) { folder in
                     Button(folder.relativePath) {
                         searchFolderPath = folder.relativePath
                     }

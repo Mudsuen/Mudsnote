@@ -61,7 +61,10 @@ actor PendingWriteQueue {
     private let libraryID: String
     private let replayPersistenceMode: PendingWriteReplayPersistenceMode
     private let persistenceObserver: (@Sendable (URL) -> Void)?
+    private let quarantineDateFormatter: DateFormatter
     private var items: [PendingWrite] = []
+    private var isReplaying = false
+    private var replayWaiters: [CheckedContinuation<Void, Never>] = []
 
     init(
         root: URL,
@@ -73,6 +76,10 @@ actor PendingWriteQueue {
         self.libraryID = LibraryIdentity.identifier(for: root)
         self.replayPersistenceMode = replayPersistenceMode
         self.persistenceObserver = persistenceObserver
+        let formatter = DateFormatter()
+        formatter.locale = Locale(identifier: "en_US_POSIX")
+        formatter.dateFormat = "yyyyMMdd-HHmmss"
+        self.quarantineDateFormatter = formatter
     }
 
     @discardableResult
@@ -199,11 +206,26 @@ actor PendingWriteQueue {
     func replay(
         _ writer: (PendingWrite) async throws -> Void
     ) async throws -> PendingWriteReplayResult {
+        while isReplaying {
+            await withCheckedContinuation { continuation in
+                replayWaiters.append(continuation)
+            }
+        }
+        isReplaying = true
+        defer {
+            isReplaying = false
+            if !replayWaiters.isEmpty {
+                let next = replayWaiters.removeFirst()
+                next.resume()
+            }
+        }
+
         var result = PendingWriteReplayResult()
         var completedIDs: Set<UUID> = []
+        let snapshot = items
 
         do {
-            for item in items {
+            for item in snapshot {
                 do {
                     try await writer(item)
                     result.replayedCount += 1
@@ -309,10 +331,7 @@ actor PendingWriteQueue {
     }
 
     private func uniqueQuarantineURL(now: Date) -> URL {
-        let formatter = DateFormatter()
-        formatter.locale = Locale(identifier: "en_US_POSIX")
-        formatter.dateFormat = "yyyyMMdd-HHmmss"
-        let stem = "queue-damaged-\(formatter.string(from: now))"
+        let stem = "queue-damaged-\(quarantineDateFormatter.string(from: now))"
         var candidate = queueURL.deletingLastPathComponent()
             .appendingPathComponent("\(stem).json")
         var suffix = 2

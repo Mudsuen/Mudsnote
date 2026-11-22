@@ -27,13 +27,32 @@ public struct NoteOverview: Codable, Equatable, Sendable {
         public var to: UUID
         public init(from: UUID, to: UUID) { self.from = from; self.to = to }
     }
+    public struct Defaults: Equatable, Sendable {
+        public var principles: String
+        public var areaTitles: [String]
+
+        public init(principles: String, areaTitles: [String]) {
+            self.principles = principles
+            self.areaTitles = areaTitles
+        }
+
+        public static let standard = Defaults(
+            principles: "聚焦核心 · 持续积累 · 保持清晰",
+            areaTitles: ["工作", "健康", "关系", "成长"]
+        )
+    }
+
     public var seeded: Bool?
     public var title: String?
-    public var principles = "AI Native · 长期主义 · 身体优先"
-    public var areas = [Area(title: "搞钱"), Area(title: "健康"), Area(title: "关系"), Area(title: "内在世界")]
+    public var principles: String
+    public var areas: [Area]
     public var cards: [Card] = []
     public var connections: [Connection] = []
-    public init() {}
+
+    public init(defaults: Defaults = .standard) {
+        self.principles = defaults.principles
+        self.areas = defaults.areaTitles.map { Area(title: $0) }
+    }
 
     @discardableResult public mutating func add(_ url: URL, areaID: UUID? = nil) -> UUID {
         if let index = cards.firstIndex(where: { $0.url.standardizedFileURL == url.standardizedFileURL }) {

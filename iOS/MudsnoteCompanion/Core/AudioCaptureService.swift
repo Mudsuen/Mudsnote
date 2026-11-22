@@ -118,12 +118,13 @@ final class AudioCaptureService: NSObject, ObservableObject {
         try? AVAudioSession.sharedInstance().setActive(false, options: .notifyOthersOnDeactivation)
     }
 
-    nonisolated func transcribe(url: URL, locale: Locale = Locale(identifier: "zh-CN")) async throws -> String {
+    nonisolated func transcribe(url: URL, locale: Locale = .current) async throws -> String {
         let authorizationStatus = await Self.requestSpeechAuthorization()
         guard authorizationStatus == .authorized else {
             throw SpeechTranscriptionError.notAuthorized
         }
-        guard let recognizer = SFSpeechRecognizer(locale: locale), recognizer.isAvailable else {
+        guard let recognizer = SFSpeechRecognizer(locale: locale) ?? SFSpeechRecognizer(),
+              recognizer.isAvailable else {
             throw SpeechTranscriptionError.recognizerUnavailable
         }
 

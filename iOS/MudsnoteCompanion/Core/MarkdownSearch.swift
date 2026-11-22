@@ -1,4 +1,5 @@
 import Foundation
+import MudsnoteSharedCore
 
 struct MarkdownSearchResult: Identifiable, Equatable {
     enum Destination: Equatable {
@@ -71,10 +72,7 @@ struct MarkdownSearchFilter: Equatable {
 
 enum MarkdownSearch {
     static func normalizedTerms(_ query: String) -> [String] {
-        query
-            .split(whereSeparator: \.isWhitespace)
-            .map { normalize(String($0)) }
-            .filter { !$0.isEmpty }
+        NoteSearchTokenizer.terms(from: query)
     }
 
     static func match(

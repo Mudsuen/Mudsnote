@@ -38,7 +38,7 @@ struct HotKeySpec: Equatable {
             }
         }
 
-        guard let keyCode else { return nil }
+        guard let keyCode, hasRequiredShortcutModifier(modifiers) else { return nil }
         return HotKeySpec(
             keyCode: keyCode,
             modifiers: modifiers,

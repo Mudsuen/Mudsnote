@@ -138,7 +138,7 @@ extension LibraryWindowController {
         _ = setSourceListVisibleForLibrary(false)
         overviewView?.isHidden = false
         if overviewView?.selectedID == nil { regularEditorView?.isHidden = true }
-        setSidebarPresentation(.list, animated: false)
+        setSidebarPresentation(.list, animated: false, persists: false)
         selectedScope = .all
         lastListScope = .all
         reloadNotes(loadFirstIfNeeded: false, refreshCounts: false)
@@ -287,30 +287,6 @@ extension LibraryWindowController {
         } catch { presentErrorAlert(message: "无法新建笔记", details: error.localizedDescription) }
     }
 
-    func editOverviewPrinciples() {
-        guard let state = overviewState else { return }
-        if let value = overviewTextPrompt(title: "宗旨", value: state.principles) { _ = changeOverview { $0.principles = value } }
-    }
-
-    func editOverviewArea(_ parent: UUID?) {
-        if let value = overviewTextPrompt(title: parent == nil ? "添加领域" : "添加子领域", value: ""), !value.isEmpty {
-            _ = changeOverview { $0.areas.append(.init(title: value, parentID: parent)) }
-        }
-    }
-
-    func overviewTextPrompt(title: String, value: String) -> String? {
-        let alert = NSAlert()
-        alert.messageText = title
-        let field = NSTextField(string: value)
-        field.frame = NSRect(x: 0, y: 0, width: 360, height: 28)
-        alert.accessoryView = field
-        alert.addButton(withTitle: "保存")
-        alert.addButton(withTitle: "取消")
-        alert.window.initialFirstResponder = field
-        guard alert.runModal() == .alertFirstButtonReturn else { return nil }
-        return field.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
-    }
-
     func pickOverviewNote(area: UUID?, connecting: UUID?, position: NoteOverview.MapPosition? = nil) {
         let candidates = sourceCountSnapshot.sorted { $0.modifiedAt > $1.modifiedAt }
         let alert = NSAlert()
@@ -336,25 +312,6 @@ extension LibraryWindowController {
             if let position, let index = $0.cards.firstIndex(where: { $0.id == id }) { $0.cards[index].mapPosition = position }
             if let connecting { $0.connect(connecting, id) }
         }
-    }
-
-    func overviewAreaMenu(_ id: UUID) {
-        guard let area = overviewState?.areas.first(where: { $0.id == id }), let anchor = overviewView?.areas[id] else { return }
-        let menu = NSMenu()
-        menu.addItem(OverviewMenuItem("添加笔记") { [weak self] in self?.pickOverviewNote(area: id, connecting: nil) })
-        menu.addItem(OverviewMenuItem("添加子领域") { [weak self] in self?.editOverviewArea(id) })
-        menu.addItem(OverviewMenuItem("重命名") { [weak self] in
-            guard let self, let title = self.overviewTextPrompt(title: "领域名称", value: area.title), !title.isEmpty else { return }
-            _ = self.changeOverview { state in if let index = state.areas.firstIndex(where: { $0.id == id }) { state.areas[index].title = title } }
-        })
-        menu.addItem(OverviewMenuItem("移除领域，保留笔记") { [weak self] in
-            _ = self?.changeOverview { state in
-                state.areas.removeAll { $0.id == id }
-                for i in state.areas.indices where state.areas[i].parentID == id { state.areas[i].parentID = nil }
-                for i in state.cards.indices where state.cards[i].areaID == id { state.cards[i].areaID = nil }
-            }
-        })
-        menu.popUp(positioning: nil, at: NSPoint(x: 0, y: anchor.bounds.maxY), in: anchor)
     }
 
     func overviewCardMenu(_ id: UUID) {

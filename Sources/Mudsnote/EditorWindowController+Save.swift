@@ -6,8 +6,10 @@ extension EditorWindowController {
 
     @objc func savePressed() {
         if isFloatingNoteMode {
-            do { try persistDraft(force: true) }
-            catch {
+            do {
+                try persistDraft(force: false, notifiesSave: false)
+                draftPersistenceCoordinator.waitUntilIdle()
+            } catch {
                 presentErrorAlert(message: "无法保存笔记", details: error.localizedDescription)
                 return
             }
@@ -81,6 +83,13 @@ extension EditorWindowController {
     }
 
     @objc func cancelPressed() {
+        if isSuggestionVisible {
+            dismissInlineSuggestions()
+            return
+        }
+        if editorTextView.dismissSelectionFormattingPanelIfVisible() {
+            return
+        }
         guard let window else { return }
         guard windowShouldClose(window) else { return }
         window.close()

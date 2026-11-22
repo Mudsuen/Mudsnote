@@ -51,6 +51,7 @@ extension LibraryOverviewView {
                                          y: scroll.contentView.bounds.minY + offset.y - old.worldOffset.y)
             }
         }
+        let isAnimatingTransition = cardTransition != nil
         if let transition = cardTransition { next = next.interpolatingFrames(from: transition.source, progress: transition.progress) }
         plan = next
         updateCardDisplayChrome()
@@ -58,24 +59,33 @@ extension LibraryOverviewView {
         rootHost.configure(nodeFrame: next.frames[next.root] ?? .zero, presentation: presentation, depth: 0, side: 1,
             colors: colors, active: activeNode == next.root, folded: false, children: tree.children[next.root, default: []].count,
             details: nodeDetails(next.root), allowsChild: next.root != .unassigned)
-        title.stringValue = nodeTitle(next.root); title.isMap = presentation == .mindMap
-        title.alignment = title.isMap ? .center : .left
-        title.font = OverviewTypography.font(title.isMap ? 24 : 34, weight: title.isMap ? .medium : .semibold, map: title.isMap)
-        title.textColor = title.isMap ? colors.mapRootText : colors.title
-        title.textFrame = rootHost.textRect.offsetBy(dx: -rootHost.contentRect.minX, dy: -rootHost.contentRect.minY)
-        title.needsDisplay = true
-        principles.stringValue = nodeDetails(next.root)
-        principles.font = OverviewTypography.font(14)
-        principles.isHidden = principles.stringValue.isEmpty
-        let rootRect = rootHost.contentRect
-        let detailHeight = OverviewTypography.detailHeight(principles.stringValue, width: rootRect.width - (presentation == .outline ? 0 : 32))
-        principles.frame = presentation == .outline
-            ? NSRect(x: rootRect.minX, y: rootRect.maxY + 6, width: rootRect.width, height: detailHeight)
-            : NSRect(x: rootRect.minX + 16, y: rootHost.textRect.maxY, width: rootRect.width - 32, height: detailHeight)
-        if presentation == .outline, !principles.stringValue.isEmpty { rootHost.frame.size.height += detailHeight + 6 }
-        let detailParagraph = NSMutableParagraphStyle(); detailParagraph.minimumLineHeight = 24; detailParagraph.maximumLineHeight = 24; detailParagraph.lineBreakMode = .byWordWrapping
-        principles.attributedStringValue = NSAttributedString(string: principles.stringValue,
-            attributes: [.font: principles.font!, .paragraphStyle: detailParagraph, .foregroundColor: presentation == .outline ? colors.detail : colors.mapRootText.withAlphaComponent(0.7)])
+        if !isAnimatingTransition {
+            title.stringValue = nodeTitle(next.root); title.isMap = presentation == .mindMap
+            title.alignment = title.isMap ? .center : .left
+            title.font = OverviewTypography.font(title.isMap ? 24 : 34, weight: title.isMap ? .medium : .semibold, map: title.isMap)
+            title.textColor = title.isMap ? colors.mapRootText : colors.title
+            title.textFrame = rootHost.textRect.offsetBy(dx: -rootHost.contentRect.minX, dy: -rootHost.contentRect.minY)
+            title.needsDisplay = true
+            principles.stringValue = nodeDetails(next.root)
+            principles.font = OverviewTypography.font(14)
+            principles.isHidden = principles.stringValue.isEmpty
+            let rootRect = rootHost.contentRect
+            let detailHeight = OverviewTypography.detailHeight(principles.stringValue, width: rootRect.width - (presentation == .outline ? 0 : 32))
+            principles.frame = presentation == .outline
+                ? NSRect(x: rootRect.minX, y: rootRect.maxY + 6, width: rootRect.width, height: detailHeight)
+                : NSRect(x: rootRect.minX + 16, y: rootHost.textRect.maxY, width: rootRect.width - 32, height: detailHeight)
+            if presentation == .outline, !principles.stringValue.isEmpty { rootHost.frame.size.height += detailHeight + 6 }
+            let detailParagraph = NSMutableParagraphStyle(); detailParagraph.minimumLineHeight = 24; detailParagraph.maximumLineHeight = 24; detailParagraph.lineBreakMode = .byWordWrapping
+            principles.attributedStringValue = NSAttributedString(string: principles.stringValue,
+                attributes: [.font: principles.font!, .paragraphStyle: detailParagraph, .foregroundColor: presentation == .outline ? colors.detail : colors.mapRootText.withAlphaComponent(0.7)])
+        } else {
+            let rootRect = rootHost.contentRect
+            let detailHeight = principles.frame.height
+            principles.frame = presentation == .outline
+                ? NSRect(x: rootRect.minX, y: rootRect.maxY + 6, width: rootRect.width, height: detailHeight)
+                : NSRect(x: rootRect.minX + 16, y: rootHost.textRect.maxY, width: rootRect.width - 32, height: detailHeight)
+            if presentation == .outline, !principles.isHidden { rootHost.frame.size.height += detailHeight + 6 }
+        }
         for (node, host) in hosts {
             guard node != next.root, let rect = next.frames[node] else { host.isHidden = true; continue }
             host.isHidden = false
@@ -83,7 +93,7 @@ extension LibraryOverviewView {
             host.configure(nodeFrame: rect, presentation: presentation, depth: depth, side: next.sides[node] ?? 1,
                 colors: colors, active: activeNode == node, folded: collapsed.contains(node),
                 children: tree.children[node, default: []].count, details: nodeDetails(node), allowsChild: node != .unassigned && !isCard(node))
-            if let button = host.content as? OverviewActionButton {
+            if !isAnimatingTransition, let button = host.content as? OverviewActionButton {
                 button.alignment = .left; button.font = OverviewTypography.font(presentation == .outline || depth == 1 ? 16 : 14, map: presentation == .mindMap)
                 button.cell?.wraps = true; button.cell?.usesSingleLineMode = false; button.lineBreakMode = .byWordWrapping
                 let paragraph = NSMutableParagraphStyle(); paragraph.minimumLineHeight = presentation == .outline ? 25.6 : depth == 1 ? 26 : 22; paragraph.maximumLineHeight = paragraph.minimumLineHeight; paragraph.lineBreakMode = .byWordWrapping

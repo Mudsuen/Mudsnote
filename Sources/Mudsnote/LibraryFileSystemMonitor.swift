@@ -59,6 +59,13 @@ struct LibraryFileSystemChange: Hashable, Sendable {
 final class LibraryFileSystemMonitor: @unchecked Sendable {
     typealias ChangeHandler = @Sendable (Set<LibraryFileSystemChange>) -> Void
 
+    private final class WeakMonitorBox: @unchecked Sendable {
+        weak var monitor: LibraryFileSystemMonitor?
+        init(_ monitor: LibraryFileSystemMonitor) {
+            self.monitor = monitor
+        }
+    }
+
     private let roots: [String]
     private let rootPathMappings: [(physical: String, logical: String)]
     private let latency: CFTimeInterval
@@ -67,6 +74,7 @@ final class LibraryFileSystemMonitor: @unchecked Sendable {
     private let queue = DispatchQueue(label: "local.codex.mudsnote.library-file-events", qos: .utility)
     private let streamLock = NSLock()
     private var stream: FSEventStreamRef?
+    private var isStopped = false
     private var pendingChanges: [String: LibraryFileSystemChange] = [:]
     private var deliveryWorkItem: DispatchWorkItem?
 
@@ -104,12 +112,20 @@ final class LibraryFileSystemMonitor: @unchecked Sendable {
         streamLock.lock()
         defer { streamLock.unlock() }
         guard stream == nil, !roots.isEmpty else { return stream != nil }
+        isStopped = false
 
+        let box = WeakMonitorBox(self)
         var context = FSEventStreamContext(
             version: 0,
-            info: Unmanaged.passUnretained(self).toOpaque(),
-            retain: nil,
-            release: nil,
+            info: Unmanaged.passUnretained(box).toOpaque(),
+            retain: { raw in
+                guard let raw else { return nil }
+                return UnsafeRawPointer(Unmanaged<WeakMonitorBox>.fromOpaque(raw).retain().toOpaque())
+            },
+            release: { raw in
+                guard let raw else { return }
+                Unmanaged<WeakMonitorBox>.fromOpaque(raw).release()
+            },
             copyDescription: nil
         )
         let flags = FSEventStreamCreateFlags(
@@ -118,15 +134,18 @@ final class LibraryFileSystemMonitor: @unchecked Sendable {
                 | kFSEventStreamCreateFlagWatchRoot
                 | kFSEventStreamCreateFlagNoDefer
         )
-        guard let createdStream = FSEventStreamCreate(
-            nil,
-            Self.eventCallback,
-            &context,
-            roots as CFArray,
-            FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
-            latency,
-            flags
-        ) else {
+        let createdStream: FSEventStreamRef? = withExtendedLifetime(box) {
+            FSEventStreamCreate(
+                nil,
+                Self.eventCallback,
+                &context,
+                roots as CFArray,
+                FSEventStreamEventId(kFSEventStreamEventIdSinceNow),
+                latency,
+                flags
+            )
+        }
+        guard let createdStream else {
             return false
         }
 
@@ -142,6 +161,7 @@ final class LibraryFileSystemMonitor: @unchecked Sendable {
 
     func stop() {
         streamLock.lock()
+        isStopped = true
         let activeStream = stream
         stream = nil
         streamLock.unlock()
@@ -161,10 +181,11 @@ final class LibraryFileSystemMonitor: @unchecked Sendable {
 
     private static let eventCallback: FSEventStreamCallback = {
         _, clientInfo, eventCount, eventPaths, eventFlags, _ in
-        guard let clientInfo else { return }
-        let monitor = Unmanaged<LibraryFileSystemMonitor>
-            .fromOpaque(clientInfo)
-            .takeUnretainedValue()
+        guard let clientInfo,
+              let monitor = Unmanaged<WeakMonitorBox>
+                .fromOpaque(clientInfo)
+                .takeUnretainedValue()
+                .monitor else { return }
         let paths = unsafeBitCast(eventPaths, to: NSArray.self) as? [String] ?? []
         guard !paths.isEmpty else { return }
 
@@ -189,6 +210,10 @@ final class LibraryFileSystemMonitor: @unchecked Sendable {
 
     private func enqueue(_ changes: [LibraryFileSystemChange]) {
         guard !changes.isEmpty else { return }
+        streamLock.lock()
+        let stopped = isStopped
+        streamLock.unlock()
+        guard !stopped else { return }
         for change in changes {
             if let existing = pendingChanges[change.path] {
                 pendingChanges[change.path] = LibraryFileSystemChange(

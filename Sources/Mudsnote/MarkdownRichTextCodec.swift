@@ -7,6 +7,7 @@ import MudsnoteCore
 enum MarkdownRichTextCodec {
     static let literalMarkdownKey = NSAttributedString.Key("MudsnoteLiteralMarkdown")
     private static let originalMarkdownKey = NSAttributedString.Key("MudsnoteOriginalMarkdown")
+    private static let listIndentPrefixKey = NSAttributedString.Key("MudsnoteListIndentPrefix")
     private static let tablePlaceholder = "\u{200B}"
     @MainActor
     private static let automaticLinkDetector = try? NSDataDetector(
@@ -38,7 +39,8 @@ enum MarkdownRichTextCodec {
             let marker = trimmed.first
             let markerCount = marker.map { first in trimmed.prefix { $0 == first }.count } ?? 0
             let isFence = (marker == "`" || marker == "~") && markerCount >= 3
-            let isLiteral = fence != nil || isFence || line.hasPrefix("  ") || line.hasPrefix("\t")
+            let isIndentedList = (line.hasPrefix("  ") || line.hasPrefix("\t")) && isIndentedListLine(line)
+            let isLiteral = fence != nil || isFence || ((line.hasPrefix("  ") || line.hasPrefix("\t")) && !isIndentedList)
             if isLiteral {
                 var attributes = theme.baseAttributes(for: .paragraph)
                 attributes[literalMarkdownKey] = true
@@ -157,7 +159,19 @@ enum MarkdownRichTextCodec {
         if paragraphString.length == 0 {
             paragraphString.append(NSAttributedString(string: "", attributes: baseAttributes))
         } else {
-            paragraphString.addAttribute(.paragraphStyle, value: theme.paragraphStyle(for: kind), range: NSRange(location: 0, length: paragraphString.length))
+            let indentPrefix = leadingListIndentPrefix(in: line, kind: kind)
+            let baseParagraphStyle = theme.paragraphStyle(for: kind)
+            if !indentPrefix.isEmpty,
+               let mutableStyle = baseParagraphStyle.mutableCopy() as? NSMutableParagraphStyle {
+                let indentSpaces = indentPrefix.reduce(0) { $0 + ($1 == "\t" ? 4 : 1) }
+                let extraIndent = CGFloat(indentSpaces) * 8
+                mutableStyle.firstLineHeadIndent += extraIndent
+                mutableStyle.headIndent += extraIndent
+                paragraphString.addAttribute(.paragraphStyle, value: mutableStyle, range: NSRange(location: 0, length: paragraphString.length))
+                paragraphString.addAttribute(listIndentPrefixKey, value: indentPrefix, range: NSRange(location: 0, length: paragraphString.length))
+            } else {
+                paragraphString.addAttribute(.paragraphStyle, value: baseParagraphStyle, range: NSRange(location: 0, length: paragraphString.length))
+            }
             paragraphString.addAttribute(.qmParagraphKind, value: kind.encodedValue, range: NSRange(location: 0, length: paragraphString.length))
         }
 
@@ -455,6 +469,8 @@ enum MarkdownRichTextCodec {
                 context: context
             )
                 .replacingOccurrences(of: tablePlaceholder, with: "")
+                .replacingOccurrences(of: "  \n", with: "<br>")
+                .replacingOccurrences(of: "\n", with: "<br>")
                 .replacingOccurrences(of: "|", with: "\\|")
                 .trimmingCharacters(in: .whitespacesAndNewlines)
             rows[row, default: [:]][column] = markdown
@@ -528,7 +544,7 @@ enum MarkdownRichTextCodec {
             || trimmed.hasPrefix("[]")
             || trimmed.hasPrefix("[ ]")
             || trimmed.hasPrefix("【】")
-            || trimmed.hasPrefix("1.")
+            || trimmed.hasPrefix("1. ")
             || trimmed.contains(" #")
             || trimmed.hasPrefix("#")
             || trimmed.contains("**")
@@ -593,13 +609,16 @@ enum MarkdownRichTextCodec {
             context: context
         )
 
+        let indentPrefix = (range.length > 0 && kind.isListKind)
+            ? (attributedString.attribute(listIndentPrefixKey, at: range.location, effectiveRange: nil) as? String ?? "")
+            : ""
         let canonical: String
         switch kind {
         case .paragraph: canonical = contentMarkdown
         case .heading(let level): canonical = contentMarkdown.isEmpty ? "" : String(repeating: "#", count: max(level, 1)) + " " + contentMarkdown
-        case .bullet: canonical = "- " + contentMarkdown
-        case .ordered(let index): canonical = "\(max(index, 1)). " + contentMarkdown
-        case .checklist(let checked): canonical = (checked ? "- [x] " : "- [ ] ") + contentMarkdown
+        case .bullet: canonical = indentPrefix + "- " + contentMarkdown
+        case .ordered(let index): canonical = indentPrefix + "\(max(index, 1)). " + contentMarkdown
+        case .checklist(let checked): canonical = indentPrefix + (checked ? "- [x] " : "- [ ] ") + contentMarkdown
         }
         if range.length > 0,
            let original = attributedString.attribute(originalMarkdownKey, at: range.location, effectiveRange: nil) as? [String],
@@ -733,6 +752,70 @@ enum MarkdownRichTextCodec {
         }
     }
 
+    private static func isIndentedListLine(_ line: String) -> Bool {
+        switch paragraphKind(for: line) {
+        case .bullet, .ordered, .checklist:
+            return true
+        case .paragraph, .heading:
+            return false
+        }
+    }
+
+    @MainActor
+    static func sanitizedTypingAttributes(
+        from attributes: [NSAttributedString.Key: Any],
+        paragraphKind: MarkdownParagraphKind,
+        theme: MarkdownEditorTheme
+    ) -> [NSAttributedString.Key: Any] {
+        let hadStickyMetadata = attributes[.attachment] != nil
+            || attributes[.qmAttachmentFilePath] != nil
+            || attributes[.qmAttachmentMarkdown] != nil
+            || attributes[.qmLinkURL] != nil
+            || attributes[.qmAutomaticLink] != nil
+            || attributes[.qmCode] != nil
+            || attributes[.qmTag] != nil
+            || attributes[.qmSearchHighlight] != nil
+            || attributes[literalMarkdownKey] != nil
+            || attributes[originalMarkdownKey] != nil
+            || attributes[.qmTablePlaceholder] != nil
+
+        var cleaned = attributes
+        let stickyKeys: [NSAttributedString.Key] = [
+            .attachment,
+            .link,
+            .qmAttachmentFilePath,
+            .qmAttachmentMarkdown,
+            .qmLinkURL,
+            .qmAutomaticLink,
+            .qmCode,
+            .qmTag,
+            .qmSearchHighlight,
+            .qmTablePlaceholder,
+            literalMarkdownKey,
+            originalMarkdownKey,
+            listIndentPrefixKey,
+        ]
+        for key in stickyKeys {
+            cleaned.removeValue(forKey: key)
+        }
+        if hadStickyMetadata {
+            let base = theme.baseAttributes(for: paragraphKind)
+            cleaned[.font] = base[.font]
+            cleaned[.foregroundColor] = base[.foregroundColor]
+            cleaned[.paragraphStyle] = base[.paragraphStyle]
+            cleaned.removeValue(forKey: .underlineStyle)
+            cleaned.removeValue(forKey: .backgroundColor)
+        }
+        return cleaned
+    }
+
+    private static func leadingListIndentPrefix(in line: String, kind: MarkdownParagraphKind) -> String {
+        guard kind.isListKind else { return "" }
+        let prefix = String(line.prefix { $0 == " " || $0 == "\t" })
+        guard prefix.hasPrefix("  ") || prefix.hasPrefix("\t") else { return "" }
+        return prefix
+    }
+
     private static func paragraphKind(for line: String) -> MarkdownParagraphKind {
         let nsLine = line as NSString
 
@@ -754,7 +837,7 @@ enum MarkdownRichTextCodec {
             return .bullet
         }
 
-        if let match = firstMatch(#"^\s*(\d+)\.\s*(.*)$"#, in: line) {
+        if let match = firstMatch(#"^\s*(\d+)\.\s+(.*)$"#, in: line) {
             let index = Int(nsLine.substring(with: match.range(at: 1))) ?? 1
             return .ordered(index: index)
         }
@@ -788,7 +871,7 @@ enum MarkdownRichTextCodec {
         case .bullet:
             return capture(#"^\s*[-*+]\s+(.*)$"#, in: line, group: 1) ?? line
         case .ordered:
-            return capture(#"^\s*\d+\.\s*(.*)$"#, in: line, group: 1) ?? line
+            return capture(#"^\s*\d+\.\s+(.*)$"#, in: line, group: 1) ?? line
         case .checklist:
             if let content = capture(#"^\s*(?:\[\]|\[\s\]|【】)\s*(.*)$"#, in: line, group: 1) {
                 return content
@@ -804,7 +887,8 @@ enum MarkdownRichTextCodec {
         _ source: String,
         paragraphKind: MarkdownParagraphKind,
         theme: MarkdownEditorTheme,
-        baseURL: URL? = nil
+        baseURL: URL? = nil,
+        depth: Int = 0
     ) -> NSMutableAttributedString {
         let output = NSMutableAttributedString()
         let baseAttributes = theme.baseAttributes(for: paragraphKind)
@@ -817,8 +901,77 @@ enum MarkdownRichTextCodec {
             plainStart = end
         }
 
+        func appendNested(
+            _ content: String,
+            applying transform: (NSMutableAttributedString) -> Void
+        ) {
+            let nested: NSMutableAttributedString
+            if depth < 4, !content.isEmpty {
+                nested = parseInlineMarkdown(
+                    content,
+                    paragraphKind: paragraphKind,
+                    theme: theme,
+                    baseURL: baseURL,
+                    depth: depth + 1
+                )
+            } else {
+                nested = NSMutableAttributedString(string: content, attributes: baseAttributes)
+            }
+            if nested.length > 0 {
+                transform(nested)
+            }
+            output.append(nested)
+        }
+
+        func applyFontTrait(_ trait: NSFontTraitMask, obliqueness: CGFloat? = nil, to target: NSMutableAttributedString) {
+            let fullRange = NSRange(location: 0, length: target.length)
+            target.enumerateAttribute(.font, in: fullRange) { value, subRange, _ in
+                if (target.attribute(.qmCode, at: subRange.location, effectiveRange: nil) as? Bool) == true {
+                    return
+                }
+                let current = (value as? NSFont) ?? theme.font(for: paragraphKind)
+                let currentTraits = NSFontManager.shared.traits(of: current)
+                let wantsBold = trait.contains(.boldFontMask) || currentTraits.contains(.boldFontMask)
+                let wantsItalic = trait.contains(.italicFontMask) || currentTraits.contains(.italicFontMask)
+                let converted: NSFont
+                if wantsBold && wantsItalic {
+                    converted = NSFontManager.shared.convert(theme.boldFont, toHaveTrait: .italicFontMask)
+                } else if wantsBold {
+                    converted = current == theme.bodyFont
+                        ? theme.boldFont
+                        : NSFontManager.shared.convert(current, toHaveTrait: .boldFontMask)
+                } else if wantsItalic {
+                    converted = current == theme.bodyFont
+                        ? theme.italicFont
+                        : NSFontManager.shared.convert(current, toHaveTrait: .italicFontMask)
+                } else {
+                    converted = current
+                }
+                target.addAttribute(.font, value: converted, range: subRange)
+                if let obliqueness {
+                    target.addAttribute(.obliqueness, value: obliqueness, range: subRange)
+                }
+            }
+        }
+
         while index < source.endIndex {
             let currentChar = source[index]
+
+            // Backslash escape for inline markdown formatting delimiters (leaving `\\` and `\|` intact for paths/tables).
+            if currentChar == "\\" {
+                let nextIndex = source.index(after: index)
+                if nextIndex < source.endIndex {
+                    let escaped = source[nextIndex]
+                    if "`*_[]~".contains(escaped) {
+                        flushPlain(upTo: index)
+                        output.append(NSAttributedString(string: String(escaped), attributes: baseAttributes))
+                        index = source.index(after: nextIndex)
+                        plainStart = index
+                        continue
+                    }
+                }
+            }
+
             if currentChar == "!",
                source[index...].hasPrefix("!["),
                let closeBracket = source[source.index(index, offsetBy: 2)...].range(of: "]("),
@@ -843,12 +996,28 @@ enum MarkdownRichTextCodec {
                 }
             }
 
+            // Bold + Italic combined (`***text***`).
+            if currentChar == "*",
+               source[index...].hasPrefix("***"),
+               let end = source[source.index(index, offsetBy: 3)...].range(of: "***") {
+                flushPlain(upTo: index)
+                let content = String(source[source.index(index, offsetBy: 3)..<end.lowerBound])
+                appendNested(content) { nested in
+                    applyFontTrait([.boldFontMask, .italicFontMask], obliqueness: markdownItalicObliqueness, to: nested)
+                }
+                index = end.upperBound
+                plainStart = index
+                continue
+            }
+
             if currentChar == "*",
                source[index...].hasPrefix("**"),
-               let end = source[index...].dropFirst(2).range(of: "**") {
+               let end = source[source.index(index, offsetBy: 2)...].range(of: "**") {
                 flushPlain(upTo: index)
                 let content = String(source[source.index(index, offsetBy: 2)..<end.lowerBound])
-                output.append(attributed(content, base: baseAttributes, extra: [.font: theme.boldFont]))
+                appendNested(content) { nested in
+                    applyFontTrait(.boldFontMask, to: nested)
+                }
                 index = end.upperBound
                 plainStart = index
                 continue
@@ -858,10 +1027,9 @@ enum MarkdownRichTextCodec {
                let end = source[source.index(after: index)...].range(of: "*") {
                 flushPlain(upTo: index)
                 let content = String(source[source.index(after: index)..<end.lowerBound])
-                output.append(attributed(content, base: baseAttributes, extra: [
-                    .font: theme.italicFont,
-                    .obliqueness: markdownItalicObliqueness
-                ]))
+                appendNested(content) { nested in
+                    applyFontTrait(.italicFontMask, obliqueness: markdownItalicObliqueness, to: nested)
+                }
                 index = end.upperBound
                 plainStart = index
                 continue
@@ -869,49 +1037,62 @@ enum MarkdownRichTextCodec {
 
             if currentChar == "~",
                source[index...].hasPrefix("~~"),
-               let end = source[index...].dropFirst(2).range(of: "~~") {
+               let end = source[source.index(index, offsetBy: 2)...].range(of: "~~") {
                 flushPlain(upTo: index)
                 let content = String(source[source.index(index, offsetBy: 2)..<end.lowerBound])
-                output.append(attributed(content, base: baseAttributes, extra: [.strikethroughStyle: NSUnderlineStyle.single.rawValue]))
-                index = end.upperBound
-                plainStart = index
-                continue
-            }
-
-            if currentChar == "<",
-               source[index...].hasPrefix("<u>"),
-               let end = source[index...].range(of: "</u>") {
-                flushPlain(upTo: index)
-                let contentStart = source.index(index, offsetBy: 3)
-                let content = String(source[contentStart..<end.lowerBound])
-                output.append(attributed(content, base: baseAttributes, extra: [.underlineStyle: NSUnderlineStyle.single.rawValue]))
-                index = end.upperBound
-                plainStart = index
-                continue
-            }
-
-            if currentChar == "<",
-               source[index...].hasPrefix("<mark>"),
-               let end = source[index...].range(of: "</mark>") {
-                flushPlain(upTo: index)
-                let contentStart = source.index(index, offsetBy: 6)
-                let content = String(source[contentStart..<end.lowerBound])
-                let highlighted = parseInlineMarkdown(
-                    content,
-                    paragraphKind: paragraphKind,
-                    theme: theme,
-                    baseURL: baseURL
-                )
-                if highlighted.length > 0 {
-                    highlighted.addAttributes([
-                        .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.38),
-                        .qmHighlight: true
-                    ], range: NSRange(location: 0, length: highlighted.length))
+                appendNested(content) { nested in
+                    nested.addAttribute(
+                        .strikethroughStyle,
+                        value: NSUnderlineStyle.single.rawValue,
+                        range: NSRange(location: 0, length: nested.length)
+                    )
                 }
-                output.append(highlighted)
                 index = end.upperBound
                 plainStart = index
                 continue
+            }
+
+            if currentChar == "<" {
+                let tail = source[index...]
+                if tail.hasPrefix("<br>") || tail.hasPrefix("<br/>") || tail.hasPrefix("<br />") {
+                    let tagLength = tail.hasPrefix("<br />") ? 6 : (tail.hasPrefix("<br/>") ? 5 : 4)
+                    flushPlain(upTo: index)
+                    output.append(NSAttributedString(string: "\u{2028}", attributes: baseAttributes))
+                    index = source.index(index, offsetBy: tagLength)
+                    plainStart = index
+                    continue
+                }
+                if tail.hasPrefix("<u>"),
+                   let end = tail.range(of: "</u>") {
+                    flushPlain(upTo: index)
+                    let contentStart = source.index(index, offsetBy: 3)
+                    let content = String(source[contentStart..<end.lowerBound])
+                    appendNested(content) { nested in
+                        nested.addAttribute(
+                            .underlineStyle,
+                            value: NSUnderlineStyle.single.rawValue,
+                            range: NSRange(location: 0, length: nested.length)
+                        )
+                    }
+                    index = end.upperBound
+                    plainStart = index
+                    continue
+                }
+                if tail.hasPrefix("<mark>"),
+                   let end = tail.range(of: "</mark>") {
+                    flushPlain(upTo: index)
+                    let contentStart = source.index(index, offsetBy: 6)
+                    let content = String(source[contentStart..<end.lowerBound])
+                    appendNested(content) { nested in
+                        nested.addAttributes([
+                            .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.38),
+                            .qmHighlight: true
+                        ], range: NSRange(location: 0, length: nested.length))
+                    }
+                    index = end.upperBound
+                    plainStart = index
+                    continue
+                }
             }
 
             if currentChar == "`",
@@ -966,7 +1147,9 @@ enum MarkdownRichTextCodec {
         if output.length == 0 {
             output.append(NSAttributedString(string: "", attributes: baseAttributes))
         }
-        applyAutomaticLinks(in: output, range: NSRange(location: 0, length: output.length), theme: theme)
+        if depth == 0 {
+            applyAutomaticLinks(in: output, range: NSRange(location: 0, length: output.length), theme: theme)
+        }
         return output
     }
 

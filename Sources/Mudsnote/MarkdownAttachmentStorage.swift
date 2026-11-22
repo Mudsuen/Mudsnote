@@ -24,7 +24,10 @@ enum MarkdownAttachmentStorage {
         }
 
         if pasteboard.availableType(from: [.html, .rtf, .rtfd]) != nil {
-            return nil
+            let hasImageData = pasteboard.availableType(from: [.png, .tiff]) != nil
+            if !hasImageData || !isBrowserCopiedImagePasteboard(pasteboard) {
+                return nil
+            }
         }
 
         if let pngData = pasteboard.data(forType: .png), !pngData.isEmpty {
@@ -37,6 +40,31 @@ enum MarkdownAttachmentStorage {
             return nil
         }
         return .imagePNG(pngData)
+    }
+
+    /// Distinguishes browser "Copy Image" (which puts TIFF/PNG + an `<img>` HTML wrapper and
+    /// empty or URL-only plain text on the pasteboard) from rich-text webpage selections.
+    private static func isBrowserCopiedImagePasteboard(_ pasteboard: NSPasteboard) -> Bool {
+        if pasteboard.availableType(from: [.rtf, .rtfd]) != nil {
+            return false
+        }
+        guard let htmlData = pasteboard.data(forType: .html),
+              let html = String(data: htmlData, encoding: .utf8) ?? String(data: htmlData, encoding: .utf16),
+              html.range(of: "<img", options: .caseInsensitive) != nil else {
+            return false
+        }
+        let plain = pasteboard.string(forType: .string)?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        if plain.isEmpty {
+            return true
+        }
+        if let url = URL(string: plain), let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" {
+            return true
+        }
+        let strippedHTML = html
+            .replacingOccurrences(of: #"<style[\s\S]*?</style>"#, with: "", options: [.regularExpression, .caseInsensitive])
+            .replacingOccurrences(of: #"<[^>]+>"#, with: "", options: .regularExpression)
+            .trimmingCharacters(in: .whitespacesAndNewlines)
+        return strippedHTML.isEmpty
     }
 
     static func storeFile(_ sourceURL: URL, in noteDirectory: URL, now: Date = Date()) throws -> URL {

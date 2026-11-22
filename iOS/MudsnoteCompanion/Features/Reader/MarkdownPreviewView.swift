@@ -1,6 +1,7 @@
 import SwiftUI
 import AVFoundation
 import AVKit
+import MudsnoteSharedCore
 import PencilKit
 import PhotosUI
 import UIKit
@@ -244,6 +245,8 @@ struct MarkdownPreviewView: View {
     @State private var linkDraft: MarkdownLinkDraft?
     @State private var tagDraft: MarkdownInlineTagDraft?
     @State private var backlinks: [RecentMarkdownFile] = []
+    @State private var outgoingLinks: [RecentMarkdownFile] = []
+    @State private var relatedNotes: [RecentMarkdownFile] = []
     @State private var backlinksFailed = false
     @State private var backlinksLoading = false
     @State private var backlinkRetry = 0
@@ -398,6 +401,9 @@ struct MarkdownPreviewView: View {
                                             handleMarkdownURL(url)
                                         })
                                         .accessibilityElement(children: .contain)
+                                        .accessibilityAction(named: Text("Edit Note")) {
+                                            beginEditingFromReader(at: 0)
+                                        }
                                         .accessibilityIdentifier("rendered-markdown")
                                     backlinkSection
                                 }
@@ -450,13 +456,32 @@ struct MarkdownPreviewView: View {
         )
         .task(id: "\(currentSourceRelativePath)|\(appModel.libraryRevision)|\(isEditing)|\(backlinkRetry)") {
             backlinks = []
+            outgoingLinks = []
+            relatedNotes = []
             backlinksFailed = false
             guard !isEditing, case .document = source else { return }
             backlinksLoading = true
             do {
-                let result = try await appModel.fileStore.backlinks(to: currentSourceRelativePath)
+                let relativePath = currentSourceRelativePath
+                let currentMarkdown = draftMarkdown
+                let currentTags = noteTags
+                let incoming = try await appModel.fileStore.backlinks(to: relativePath)
+                let outgoing = try await appModel.fileStore.outgoingLinks(
+                    from: relativePath,
+                    markdown: currentMarkdown
+                )
+                let excluded = Set(incoming.map(\.relativePath))
+                    .union(outgoing.map(\.relativePath))
+                let related = try await appModel.fileStore.relatedNotes(
+                    for: relativePath,
+                    tags: currentTags,
+                    excluding: excluded,
+                    limit: 5
+                )
                 try Task.checkCancellation()
-                backlinks = result
+                backlinks = incoming
+                outgoingLinks = outgoing
+                relatedNotes = related
                 backlinksLoading = false
             } catch is CancellationError {
                 return
@@ -702,33 +727,83 @@ struct MarkdownPreviewView: View {
     }
 
     private var metadataLabel: some View {
-        ZStack(alignment: .trailing) {
+        ZStack {
             Text(metadata)
                 .font(.caption)
                 .foregroundStyle(MudsnoteColors.muted)
                 .frame(maxWidth: .infinity, alignment: .center)
                 .accessibilityIdentifier("note-modified-date")
 
-            if noteAudioRecorder.isRecording {
-                Text("Recording")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.red)
-            } else if isTranscribingDocumentAudio {
-                Text("Transcribing...")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
-            } else if pendingAudioRecording != nil {
-                Text("Audio Not Attached")
-                    .font(.caption.weight(.semibold))
-                    .foregroundStyle(.orange)
-            } else if isEditing {
-                Text(saveStatusText)
-                    .font(.caption)
-                    .foregroundStyle(saveState == .failed ? Color.red : MudsnoteColors.muted)
-                    .accessibilityIdentifier("markdown-save-status")
+            HStack(spacing: 8) {
+                if !isEditing, !linkedSourceHistory.isEmpty {
+                    Button {
+                        guard let previous = linkedSourceHistory.popLast() else { return }
+                        showLinkedSource(previous)
+                    } label: {
+                        HStack(spacing: 3) {
+                            Image(systemName: "chevron.left")
+                            Text("Back")
+                        }
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(MudsnoteColors.linkAccent)
+                        .padding(.vertical, 4)
+                        .contentShape(Rectangle())
+                    }
+                    .buttonStyle(.plain)
+                    .accessibilityLabel("Previous note")
+                    .accessibilityIdentifier("reader-back-button")
+                }
+
+                Spacer(minLength: 0)
+
+                if noteAudioRecorder.isRecording {
+                    Text("Recording")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.red)
+                } else if isTranscribingDocumentAudio {
+                    Text("Transcribing...")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                } else if pendingAudioRecording != nil {
+                    Text("Audio Not Attached")
+                        .font(.caption.weight(.semibold))
+                        .foregroundStyle(.orange)
+                } else if isEditing {
+                    Text(saveStatusText)
+                        .font(.caption)
+                        .foregroundStyle(saveState == .failed ? Color.red : MudsnoteColors.muted)
+                        .accessibilityIdentifier("markdown-save-status")
+                } else {
+                    HStack(spacing: 12) {
+                        Button {
+                            beginEditingFromReader(at: 0)
+                        } label: {
+                            Image(systemName: "pencil")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(MudsnoteColors.muted)
+                                .frame(minWidth: 28, minHeight: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .buttonStyle(.plain)
+                        .accessibilityLabel("Edit Note")
+                        .accessibilityIdentifier("reader-edit-button")
+
+                        Menu {
+                            readerContextMenuContent
+                        } label: {
+                            Image(systemName: "ellipsis.circle")
+                                .font(.caption.weight(.semibold))
+                                .foregroundStyle(MudsnoteColors.muted)
+                                .frame(minWidth: 28, minHeight: 24)
+                                .contentShape(Rectangle())
+                        }
+                        .accessibilityLabel("More Note Actions")
+                        .accessibilityIdentifier("reader-more-menu")
+                    }
+                }
             }
         }
-        .frame(minHeight: 18)
+        .frame(minHeight: 24)
         .contextMenu {
             if !isEditing {
                 readerContextMenuContent
@@ -921,7 +996,7 @@ struct MarkdownPreviewView: View {
                         }
                     }
                 }
-                .frame(height: 34)
+                .frame(minHeight: 34)
                 .accessibilityElement(children: .contain)
                 .accessibilityIdentifier("note-tag-bar")
             }
@@ -935,33 +1010,73 @@ struct MarkdownPreviewView: View {
         } else if backlinksFailed {
             Button("Retry backlinks", systemImage: "arrow.clockwise") { backlinkRetry += 1 }
                 .accessibilityIdentifier("retry-note-backlinks")
-        } else if !backlinks.isEmpty {
-            VStack(alignment: .leading, spacing: 10) {
-                Divider()
-                Text("Backlinks")
-                    .font(.subheadline.weight(.semibold))
-                ForEach(backlinks) { note in
-                    Button {
-                        Task { await openLinkedNote(note) }
-                    } label: {
-                        HStack(spacing: 10) {
-                            Image(systemName: "arrow.turn.up.left")
-                            VStack(alignment: .leading, spacing: 2) {
-                                Text(note.title).lineLimit(2)
-                                Text(note.relativePath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
-                            }
-                            Spacer()
-                            Image(systemName: "chevron.right").font(.caption)
-                        }
-                        .padding(.vertical, 6)
-                        .contentShape(Rectangle())
-                    }
-                    .buttonStyle(.plain)
-                    .accessibilityIdentifier("note-backlink-\(note.relativePath)")
+        } else if !backlinks.isEmpty || !outgoingLinks.isEmpty || !relatedNotes.isEmpty {
+            VStack(alignment: .leading, spacing: 14) {
+                if !backlinks.isEmpty {
+                    connectionGroup(
+                        title: "Backlinks",
+                        symbol: "arrow.turn.up.left",
+                        notes: backlinks,
+                        rowIdentifierPrefix: "note-backlink-"
+                    )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("note-backlinks")
+                }
+
+                if !outgoingLinks.isEmpty {
+                    connectionGroup(
+                        title: "Links",
+                        symbol: "arrow.up.right",
+                        notes: outgoingLinks,
+                        rowIdentifierPrefix: "note-outgoing-"
+                    )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("note-outgoing-links")
+                }
+
+                if !relatedNotes.isEmpty {
+                    connectionGroup(
+                        title: "Related",
+                        symbol: "sparkles",
+                        notes: relatedNotes,
+                        rowIdentifierPrefix: "note-related-"
+                    )
+                    .accessibilityElement(children: .contain)
+                    .accessibilityIdentifier("note-related-notes")
                 }
             }
-            .accessibilityElement(children: .contain)
-            .accessibilityIdentifier("note-backlinks")
+        }
+    }
+
+    private func connectionGroup(
+        title: LocalizedStringKey,
+        symbol: String,
+        notes: [RecentMarkdownFile],
+        rowIdentifierPrefix: String
+    ) -> some View {
+        VStack(alignment: .leading, spacing: 10) {
+            Divider()
+            Text(title)
+                .font(.subheadline.weight(.semibold))
+            ForEach(notes) { note in
+                Button {
+                    Task { await openLinkedNote(note) }
+                } label: {
+                    HStack(spacing: 10) {
+                        Image(systemName: symbol)
+                        VStack(alignment: .leading, spacing: 2) {
+                            Text(note.title).lineLimit(2)
+                            Text(note.relativePath).font(.caption).foregroundStyle(.secondary).lineLimit(1)
+                        }
+                        Spacer()
+                        Image(systemName: "chevron.right").font(.caption)
+                    }
+                    .padding(.vertical, 6)
+                    .contentShape(Rectangle())
+                }
+                .buttonStyle(.plain)
+                .accessibilityIdentifier("\(rowIdentifierPrefix)\(note.relativePath)")
+            }
         }
     }
 
@@ -1139,7 +1254,7 @@ struct MarkdownPreviewView: View {
                 }
             }
             .padding(.horizontal, 10)
-            .frame(height: 38)
+            .frame(minHeight: 38)
             .background(MudsnoteColors.card, in: RoundedRectangle(cornerRadius: 10))
 
             Menu {
@@ -1415,7 +1530,7 @@ struct MarkdownPreviewView: View {
                 markdownToolbarContent
                     .padding(.horizontal, 8)
             }
-                .frame(height: 50)
+            .frame(height: 50)
                 .padding(.horizontal, 8)
                 .padding(.vertical, 6)
                 .accessibilityElement(children: .contain)
@@ -1441,27 +1556,39 @@ struct MarkdownPreviewView: View {
                     attachmentMenuContent
                 } label: {
                     Image(systemName: attachmentIsPreparing ? "hourglass" : "paperclip")
-                        .frame(width: 42, height: 44)
+                        .frame(width: 40, height: 44)
                 }
                 .disabled(isSaving || appModel.isPreparingAttachment)
                 .accessibilityLabel("Add Attachment")
                 .accessibilityIdentifier("markdown-attachment-menu")
             }
 
-            editorTriggerButton("#", accessibilityLabel: "Tag", text: "#")
-            editorTriggerButton("@", accessibilityLabel: "Link to note", text: "@")
-            formatButton("checklist", .checklist)
-            formatButton("arrow.uturn.backward", .undo)
-            formatButton("arrow.uturn.forward", .redo)
+            ScrollView(.horizontal, showsIndicators: false) {
+                HStack(spacing: 2) {
+                    editorTriggerButton("#", accessibilityLabel: "Tag", text: "#")
+                    editorTriggerButton("@", accessibilityLabel: "Link to note", text: "@")
+                    formatButton("checklist", .checklist, label: "Checklist")
+                    formatButton("arrow.uturn.backward", .undo, label: "Undo")
+                    formatButton("arrow.uturn.forward", .redo, label: "Redo")
+                    formatButton("bold", .bold, label: "Bold")
+                    formatButton("italic", .italic, label: "Italic")
+                    formatButton("textformat.size.larger", .heading, label: "Heading")
+                    formatButton("list.bullet", .bullet, label: "Bulleted List")
+                    formatButton("text.quote", .quote, label: "Quote")
+                    formatButton("chevron.left.forwardslash.chevron.right", .code, label: "Code")
+                    formatButton("link", .link, label: "Link")
+                }
+            }
+            .frame(maxWidth: .infinity)
+            .frame(height: 44)
 
-            Spacer(minLength: 4)
             if case .document = source {
                 Button {
                     Task { await toggleDocumentAudioRecording() }
                 } label: {
                     Image(systemName: audioButtonSystemImage)
                         .foregroundStyle(noteAudioRecorder.isRecording ? Color.red : MudsnoteColors.text)
-                        .frame(width: 42, height: 44)
+                        .frame(width: 40, height: 44)
                 }
                 .disabled(
                     isSaving
@@ -1480,7 +1607,7 @@ struct MarkdownPreviewView: View {
                 } else {
                     Image(systemName: "checkmark")
                         .fontWeight(.semibold)
-                        .frame(width: 42, height: 44)
+                        .frame(width: 40, height: 44)
                 }
             }
             .disabled(
@@ -1507,21 +1634,26 @@ struct MarkdownPreviewView: View {
         } label: {
             Text(title)
                 .font(.system(size: 20, weight: .semibold, design: .rounded))
-                .frame(width: 42, height: 44)
+                .frame(width: 38, height: 44)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
         .accessibilityIdentifier(text == "#" ? "markdown-insert-tag" : "markdown-insert-mention")
     }
 
-    private func formatButton(_ systemImage: String, _ kind: MarkdownEditingCommand.Kind) -> some View {
+    private func formatButton(
+        _ systemImage: String,
+        _ kind: MarkdownEditingCommand.Kind,
+        label: LocalizedStringKey
+    ) -> some View {
         Button {
             editingCommand = MarkdownEditingCommand(kind: kind)
         } label: {
             Image(systemName: systemImage)
-                .frame(width: 42, height: 44)
+                .frame(width: 38, height: 44)
         }
         .buttonStyle(.plain)
+        .accessibilityLabel(label)
         .accessibilityIdentifier("markdown-format-\(kind.identifier)")
     }
 
@@ -1591,7 +1723,7 @@ struct MarkdownPreviewView: View {
     }
 
     private var markdownBody: some View {
-        VStack(alignment: .leading, spacing: 12) {
+        LazyVStack(alignment: .leading, spacing: 12) {
             ForEach(visibleRenderBlockItems) { item in
                 Group {
                     switch item.block {
@@ -1899,20 +2031,26 @@ struct MarkdownPreviewView: View {
     private func largeAttachment(_ attachment: MarkdownAttachmentLine) -> some View {
         switch attachment.kind {
         case .image:
-            if let image = localImage(for: attachment.path) {
-                Image(uiImage: image)
-                    .resizable()
-                    .scaledToFit()
-                    .clipShape(RoundedRectangle(cornerRadius: 12))
-                    .overlay {
-                        RoundedRectangle(cornerRadius: 12)
-                            .stroke(MudsnoteColors.line, lineWidth: 1)
-                    }
-                    .contentShape(Rectangle())
-                    .onTapGesture {
-                        openAttachmentPreview(attachment.path)
-                    }
-                    .accessibilityIdentifier("preview-attachment-\(attachment.path)")
+            if let url = localFileURL(for: attachment.path),
+               FileManager.default.fileExists(atPath: url.path) {
+                ReaderAsyncImageView(url: url, maxPixelSize: 1440, contentMode: .fit) {
+                    RoundedRectangle(cornerRadius: 12)
+                        .fill(MudsnoteColors.card)
+                        .frame(minHeight: 140)
+                        .overlay {
+                            ProgressView()
+                        }
+                }
+                .clipShape(RoundedRectangle(cornerRadius: 12))
+                .overlay {
+                    RoundedRectangle(cornerRadius: 12)
+                        .stroke(MudsnoteColors.line, lineWidth: 1)
+                }
+                .contentShape(Rectangle())
+                .onTapGesture {
+                    openAttachmentPreview(attachment.path)
+                }
+                .accessibilityIdentifier("preview-attachment-\(attachment.path)")
             } else {
                 attachmentLabel(attachment)
             }
@@ -1947,10 +2085,13 @@ struct MarkdownPreviewView: View {
             HStack(spacing: 12) {
                 Group {
                     if attachment.kind == .image,
-                       let image = localImage(for: attachment.path) {
-                        Image(uiImage: image)
-                            .resizable()
-                            .scaledToFill()
+                       let url = localFileURL(for: attachment.path),
+                       FileManager.default.fileExists(atPath: url.path) {
+                        ReaderAsyncImageView(url: url, maxPixelSize: 220, contentMode: .fill) {
+                            Image(systemName: attachment.systemImage)
+                                .font(.system(size: 24, weight: .medium))
+                                .foregroundStyle(MudsnoteColors.primary)
+                        }
                     } else {
                         Image(systemName: attachment.systemImage)
                             .font(.system(size: 24, weight: .medium))
@@ -2061,14 +2202,17 @@ struct MarkdownPreviewView: View {
         }
     }
 
-    private func localImage(for relativePath: String) -> UIImage? {
-        guard let url = localFileURL(for: relativePath) else { return nil }
-        return UIImage(contentsOfFile: url.path)
-    }
-
     private func localFileURL(for relativePath: String) -> URL? {
         guard case .ready(let root) = appModel.folderStatus else { return nil }
         _ = accessRevision
+        let noteURL = root.appendingPathComponent(currentSourceRelativePath)
+        if let resolved = MarkdownAttachmentContract.resolveAttachmentURL(
+            rawDestination: relativePath,
+            noteURL: noteURL,
+            libraryRoot: root
+        ) {
+            return resolved
+        }
         return AuthorizedLibraryPath.resolve(relativePath, within: root)
     }
 

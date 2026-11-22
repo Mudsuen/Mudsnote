@@ -83,13 +83,13 @@ extension EditorWindowController {
     }
 
     private func selectionMenuTextImage(_ text: String) -> NSImage {
-        let image = NSImage(size: NSSize(width: 20, height: 16))
-        image.lockFocus()
-        (text as NSString).draw(at: .zero, withAttributes: [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-            .foregroundColor: NSColor.labelColor
-        ])
-        image.unlockFocus()
+        let image = NSImage(size: NSSize(width: 20, height: 16), flipped: false) { _ in
+            (text as NSString).draw(at: .zero, withAttributes: [
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: NSColor.labelColor
+            ])
+            return true
+        }
         image.isTemplate = true
         return image
     }

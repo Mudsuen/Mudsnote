@@ -357,10 +357,42 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
             cell.identifier = identifier
         }
 
-        cell.titleLabel.stringValue = result.title
-        cell.snippetLabel.stringValue = result.snippet
+        let query = NoteSearchQuery(searchField.stringValue)
+        cell.titleLabel.attributedStringValue = highlightedSearchText(
+            result.title,
+            font: cell.titleLabel.font ?? .systemFont(ofSize: 13, weight: .semibold),
+            baseColor: panelPrimaryTextColor(),
+            query: query
+        )
+        cell.snippetLabel.attributedStringValue = highlightedSearchText(
+            result.snippet,
+            font: cell.snippetLabel.font ?? .systemFont(ofSize: 11, weight: .regular),
+            baseColor: panelSecondaryTextColor(),
+            query: query
+        )
         cell.pathLabel.stringValue = displayPath(result.url)
         return cell
+    }
+
+    private func highlightedSearchText(
+        _ text: String,
+        font: NSFont,
+        baseColor: NSColor,
+        query: NoteSearchQuery
+    ) -> NSAttributedString {
+        let attributed = NSMutableAttributedString(
+            string: text,
+            attributes: [.font: font, .foregroundColor: baseColor]
+        )
+        guard !query.terms.isEmpty, !text.isEmpty else { return attributed }
+        let highlightColor = NSColor.controlAccentColor.withAlphaComponent(0.24)
+        for range in query.matchRanges(in: text) {
+            attributed.addAttributes([
+                .backgroundColor: highlightColor,
+                .foregroundColor: panelPrimaryTextColor()
+            ], range: range)
+        }
+        return attributed
     }
 
     @objc

@@ -270,13 +270,16 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
 
         defaultDirectoryPathLabel.lineBreakMode = .byTruncatingMiddle
         defaultDirectoryPathLabel.maximumNumberOfLines = 1
-        defaultDirectoryPathLabel.widthAnchor.constraint(equalToConstant: 310).isActive = true
+        defaultDirectoryPathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        defaultDirectoryPathLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 260).isActive = true
         changeDefaultDirectoryButton.target = self
         changeDefaultDirectoryButton.action = #selector(changeDefaultFolderPressed)
         libraryDirectoryPopUp.target = self
         libraryDirectoryPopUp.action = #selector(libraryDirectoryChanged(_:))
         libraryDirectoryPopUp.controlSize = .regular
-        libraryDirectoryPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 270).isActive = true
+        libraryDirectoryPopUp.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        libraryDirectoryPopUp.widthAnchor.constraint(greaterThanOrEqualToConstant: 160).isActive = true
+        libraryDirectoryPopUp.widthAnchor.constraint(lessThanOrEqualToConstant: 210).isActive = true
 
         addDirectoryButton.target = self
         addDirectoryButton.action = #selector(addFolderPressed)
@@ -300,7 +303,8 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         aiEnabledButton.state = aiEnabled ? .on : .off
         aiCodexPathLabel.lineBreakMode = .byTruncatingMiddle
         aiCodexPathLabel.maximumNumberOfLines = 1
-        aiCodexPathLabel.widthAnchor.constraint(equalToConstant: 300).isActive = true
+        aiCodexPathLabel.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        aiCodexPathLabel.widthAnchor.constraint(lessThanOrEqualToConstant: 240).isActive = true
         aiChooseCodexButton.target = self
         aiChooseCodexButton.action = #selector(chooseCodexPressed)
         aiTestConnectionButton.target = self

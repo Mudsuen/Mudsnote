@@ -40,7 +40,11 @@ has_ios=0
 while IFS= read -r path; do
   [[ -z "$path" ]] && continue
   case "$path" in
-    iOS/*|scripts/device_smoke.sh|scripts/ios_signing_refresh.sh|scripts/validate_ios_app_store_metadata.py|scripts/verify_ios.sh)
+    Packages/MudsnoteSharedCore/*)
+      has_macos=1
+      has_ios=1
+      ;;
+    iOS/*|scripts/device_smoke.sh|scripts/ios_signing_refresh.sh|scripts/ios_apps_signing_refresh.sh|scripts/test_ios_signing_refresh.sh|scripts/validate_ios_app_store_metadata.py|scripts/verify_ios.sh)
       has_ios=1
       ;;
     docs/*|agent-memory/*|.github/*|*.md|.gitignore|scripts/verify|scripts/agent_context.sh|scripts/detect_platform_scope.sh|scripts/test_verify_ios_destination.sh)

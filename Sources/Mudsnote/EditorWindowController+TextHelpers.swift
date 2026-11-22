@@ -112,7 +112,11 @@ extension EditorWindowController {
 
         let probeLocation = max(min(location - 1, storage.length - 1), contentRange.location)
         let attrs = storage.attributes(at: probeLocation, effectiveRange: nil)
-        editorTextView.typingAttributes = attrs
+        editorTextView.typingAttributes = MarkdownRichTextCodec.sanitizedTypingAttributes(
+            from: attrs,
+            paragraphKind: paragraphKind,
+            theme: theme
+        )
     }
 
     func visibleLineRangeForSelection() -> NSRange {
@@ -142,15 +146,28 @@ extension EditorWindowController {
     }
 
     func replaceText(in range: NSRange, with replacement: String, attributes: [NSAttributedString.Key: Any]? = nil) {
+        let attributed = NSAttributedString(
+            string: replacement,
+            attributes: attributes ?? editorTextView.typingAttributes
+        )
+        replaceText(in: range, withAttributed: attributed)
+    }
+
+    func replaceText(in range: NSRange, withAttributed replacement: NSAttributedString) {
         guard let storage = editorTextView.textStorage, range.location >= 0, range.length >= 0,
               range.location <= storage.length, range.length <= storage.length - range.location else { return }
         suppressTextDidChange = true
-        storage.replaceCharacters(
-            in: range,
-            with: NSAttributedString(string: replacement, attributes: attributes ?? editorTextView.typingAttributes)
-        )
+        let accepted = editorTextView.shouldChangeText(in: range, replacementString: replacement.string)
+        if accepted {
+            storage.beginEditing()
+            storage.replaceCharacters(in: range, with: replacement)
+            storage.endEditing()
+            editorTextView.didChangeText()
+        } else {
+            storage.replaceCharacters(in: range, with: replacement)
+        }
         suppressTextDidChange = false
-        editorTextView.setSelectedRange(NSRange(location: range.location + replacement.utf16.count, length: 0))
+        editorTextView.setSelectedRange(NSRange(location: range.location + replacement.length, length: 0))
         scrollSelectionToVisible()
         updateTypingAttributesFromInsertionPoint()
     }
@@ -160,13 +177,19 @@ extension EditorWindowController {
     }
 
     func scrollSelectionToVisible() {
-        guard let layoutManager = editorTextView.layoutManager,
-              let textContainer = editorTextView.textContainer else {
-            editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
-            return
+        let selection = editorTextView.selectedRange()
+        if let layoutManager = editorTextView.layoutManager {
+            let maxLength = editorTextView.string.utf16.count
+            let location = min(max(selection.location, 0), maxLength)
+            let length = min(max(selection.length, 0), maxLength - location)
+            let targetRange = NSRange(location: location, length: length)
+            if targetRange.length > 0 {
+                layoutManager.ensureLayout(forCharacterRange: targetRange)
+            } else if maxLength > 0 {
+                layoutManager.ensureLayout(forCharacterRange: NSRange(location: min(location, maxLength - 1), length: 1))
+            }
         }
-        layoutManager.ensureLayout(for: textContainer)
-        editorTextView.scrollRangeToVisible(editorTextView.selectedRange())
+        editorTextView.scrollRangeToVisible(selection)
     }
 
     func handleShortcutEvent(_ event: NSEvent) -> Bool {
@@ -204,6 +227,15 @@ extension EditorWindowController {
         }
 
         if handleEditorShortcut(keyCode: event.keyCode, modifiers: modifiers) { return true }
+
+        // Let standard macOS application/window menu shortcuts (Cmd+Q/W/H/M/N/S) reach the menu bar.
+        if modifiers.contains(.command), !modifiers.contains(.control) {
+            let char = event.charactersIgnoringModifiers?.lowercased() ?? ""
+            let systemMenuKeys: Set<String> = ["q", "w", "h", "m", "n"]
+            if systemMenuKeys.contains(char) {
+                return false
+            }
+        }
 
         if modifiers.intersection([.command, .option]).isEmpty == false {
             window?.makeFirstResponder(editorTextView)

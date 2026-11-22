@@ -21,67 +21,49 @@ Do not copy the same fact into several owners. Link to the owner instead.
 
 ## System Shape
 
-Mudsnote has two platform applications that share the same local-first Markdown
-product contract but do not share a compiled UI or persistence module.
+Mudsnote has two platform apps backed by a shared Foundation/SQLite3 contract package (`Packages/MudsnoteSharedCore`) for YAML tags, attachment links, conflict naming, CJK search tokenization, FTS5 indexing, and portable vault metadata.
 
 ### macOS
 
 `Package.swift` builds:
 
-- `MudsnoteCore`: Foundation-only models, settings, migration, Markdown file I/O,
-  drafts, search, and optional local AI commands.
-- `Mudsnote`: the AppKit executable, app routing, quick capture, library window,
-  rich editor, supporting windows, packaging, and Devflow-delegated updates.
+- `MudsnoteCore`: Foundation-only models, settings, migration, Markdown I/O, drafts, search, and optional local AI commands.
+- `Mudsnote`: AppKit executable, app routing, quick capture, library window, rich editor, supporting windows, packaging, and Devflow updates.
 
 Dependency direction:
 
 ```text
-AppKit views/controllers -> MudsnoteCore -> filesystem/UserDefaults
+AppKit views/controllers -> MudsnoteCore -> MudsnoteSharedCore -> filesystem/UserDefaults
 ```
 
-`MudsnoteCore` must not import AppKit or depend on window state. Controllers may
-coordinate UI and asynchronous work, but filesystem enumeration and document
-semantics belong in stores, projections, or focused services.
+`MudsnoteCore` must not import AppKit or depend on window state. Filesystem enumeration and document semantics belong in stores, projections, or focused services.
 
-macOS startup acquires `SingleInstanceCoordinator` before stores or shortcuts.
-Secondary launches queue acknowledged requests; legacy bundles receive standard
-reopen/document events. Visual QA requires isolated notes, defaults and support,
-with separate locking and no global shortcuts. Floating-window reuse follows
-current file identity rather than original dictionary keys.
+macOS startup acquires `SingleInstanceCoordinator` before stores or shortcuts. Secondary launches queue acknowledged requests; legacy bundles receive reopen/document events. Visual QA requires isolated notes, defaults, and support with no global shortcuts. Floating-window reuse follows current file identity.
 
-`NoteOverview` persists area/card/link metadata separately from note text.
-`LibraryOverviewView` embeds the shared library editor in the selected card;
-normal save and conflict handling remain authoritative.
+`NoteOverview` persists area/card/link metadata separately from note text; `LibraryOverviewView` embeds the shared library editor in the selected card.
 
 ### iOS
 
-`iOS/MudsnoteCompanion.xcodeproj` builds the SwiftUI app and widget. Its main
-boundaries are:
+`iOS/MudsnoteCompanion.xcodeproj` builds the SwiftUI app and widget:
 
-- `App/`: composition, routing, and observable application state.
-- `Core/`: security-scoped folder access, Markdown persistence, lifecycle
-  mutations, drafts, attachments, search support, and background-safe actors.
-- `Features/`: capture, library/search, reader/editor, and shared native bridges.
+- `App/`: composition, routing, `AppModel`, and `@Observable` domain states.
+- `Core/`: security-scoped folder access, Markdown persistence, lifecycle mutations, drafts, attachments, and background-safe actors.
+- `Features/`: capture, library/search, reader/editor, and native bridges.
 - `SystemIntegrations/`: App Intents and OS entrypoints.
 - `Design/`: visual tokens and reusable styles.
 
 Dependency direction:
 
 ```text
-SwiftUI features -> AppModel/Core actors -> security-scoped filesystem
+SwiftUI features -> AppModel/Core actors -> MudsnoteSharedCore -> security-scoped filesystem
 System entrypoints -----------------------> validated Core writes
 ```
 
-Views must not create a second persistence model. New lifecycle behavior should
-enter through `AppModel` and the existing actors so UI, widget, intents, pending
-writes, and tests observe the same result.
+Views must not create a second persistence model; lifecycle behavior enters through `AppModel` and Core actors.
 
 ### Cross-platform Markdown contract
 
-Both apps preserve portable `.md` files and relative attachment references.
-They may have platform-specific implementations, but changes to stored Markdown,
-front matter, attachment layout, tags, or filename semantics are explicitly
-`both` changes and require compatibility coverage on both platforms.
+Both apps preserve portable `.md` files and relative attachment references via `Packages/MudsnoteSharedCore`. Changes to stored Markdown, front matter, attachment layout, tags, or filename semantics are `both` changes requiring coverage on both platforms.
 
 ### macOS reference projection
 

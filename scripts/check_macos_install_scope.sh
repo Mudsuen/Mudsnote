@@ -24,7 +24,7 @@ CHANGED_FILES="$({
     git -C "${ROOT_DIR}" diff --name-only
     git -C "${ROOT_DIR}" diff --cached --name-only
 } | sort -u)"
-MAC_RELEVANT_FILES="$(printf '%s\n' "${CHANGED_FILES}" | grep -Ev '^(iOS/|docs/|agent-memory/|\.github/|\.gitignore$|[^/]+\.md$)' || true)"
+MAC_RELEVANT_FILES="$(printf '%s\n' "${CHANGED_FILES}" | grep -Ev '^(iOS/|docs/|agent-memory/|\.github/|\.gitignore$|[^/]+\.md$|scripts/ios_apps_signing_refresh\.sh$|scripts/test_ios_signing_refresh\.sh$)' || true)"
 
 if [[ -n "${CHANGED_FILES}" && -z "${MAC_RELEVANT_FILES}" ]]; then
     echo "ERROR: refusing to overwrite ${APP_DIR} from an iOS-only worktree." >&2

@@ -44,16 +44,40 @@ struct QuickCaptureDocumentState {
             .joined(separator: " ")
         guard !normalized.isEmpty else { return "" }
 
+        // Keep URL titles intact (host + concise path) rather than truncating at the first dot.
+        if let url = URL(string: normalized),
+           let scheme = url.scheme?.lowercased(),
+           (scheme == "http" || scheme == "https"),
+           let host = url.host, !host.isEmpty {
+            let path = url.path == "/" ? "" : url.path
+            let concise = (host + path).trimmingCharacters(in: CharacterSet(charactersIn: "/"))
+            return String(concise.prefix(maximumDerivedTitleLength))
+        }
+
         let terminators = Set<Character>([".", "?", "!", "。", "？", "！"])
         let closingPunctuation = Set<Character>(["\"", "'", "”", "’", "」", "』", "》", "】", ")", "）"])
         let characters = Array(normalized)
         var sentenceEnd = characters.endIndex
-        if let terminatorIndex = characters.firstIndex(where: terminators.contains) {
-            sentenceEnd = characters.index(after: terminatorIndex)
-            while sentenceEnd < characters.endIndex,
-                  terminators.contains(characters[sentenceEnd]) || closingPunctuation.contains(characters[sentenceEnd]) {
-                sentenceEnd = characters.index(after: sentenceEnd)
+        for idx in characters.indices {
+            let ch = characters[idx]
+            guard terminators.contains(ch) else { continue }
+            // Do not treat mid-token ASCII dots (e.g., v1.2.3, Node.js, 3.14) as sentence boundaries.
+            if ch == "." {
+                let nextIndex = characters.index(after: idx)
+                if nextIndex < characters.endIndex {
+                    let next = characters[nextIndex]
+                    if !next.isWhitespace && !terminators.contains(next) && !closingPunctuation.contains(next) {
+                        continue
+                    }
+                }
             }
+            var end = characters.index(after: idx)
+            while end < characters.endIndex,
+                  terminators.contains(characters[end]) || closingPunctuation.contains(characters[end]) {
+                end = characters.index(after: end)
+            }
+            sentenceEnd = end
+            break
         }
 
         return String(characters[..<sentenceEnd])

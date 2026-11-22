@@ -115,4 +115,115 @@ extension MarkdownRichEditorTests {
         let size = try #require(MarkdownImageDecoding.pixelSize(at: imageURL))
         #expect(size == NSSize(width: 20, height: 40))
     }
+
+    @Test
+    func codecRoundTripsNestedInlineStylesIndentedListsAndDecimalNumbers() {
+        // 1.5 should stay a plain paragraph, not become an ordered list item.
+        let decimal = MarkdownRichTextCodec.render(markdown: "1.5 版本说明", theme: theme)
+        #expect(MarkdownRichTextCodec.serialize(decimal, theme: theme) == "1.5 版本说明")
+
+        // Nested 2-space indented list renders as indented list (not monospace code) and round-trips.
+        let nestedList = MarkdownRichTextCodec.render(markdown: "- Parent\n  - Child", theme: theme)
+        #expect(MarkdownRichTextCodec.serialize(nestedList, theme: theme) == "- Parent\n  - Child")
+        let childIndex = (nestedList.string as NSString).range(of: "Child").location
+        let childFont = nestedList.attribute(.font, at: childIndex, effectiveRange: nil) as? NSFont
+        #expect(childFont != theme.codeFont)
+
+        // Combined bold+italic round-trips cleanly.
+        let combined = MarkdownRichTextCodec.render(markdown: "***BoldItalic*** and **~~BoldStrike~~**", theme: theme)
+        #expect(combined.string == "BoldItalic and BoldStrike")
+        let serialized = MarkdownRichTextCodec.serialize(combined, theme: theme)
+        #expect(serialized.contains("***BoldItalic***"))
+        #expect(serialized.contains("~~"))
+    }
+
+    @Test
+    func quickCaptureDerivedTitlePreservesVersionsNodeJSAndURLs() {
+        #expect(QuickCaptureDocumentState.derivedTitle(from: "v1.2.3 发布说明") == "v1.2.3 发布说明")
+        #expect(QuickCaptureDocumentState.derivedTitle(from: "Node.js 性能调优") == "Node.js 性能调优")
+        #expect(QuickCaptureDocumentState.derivedTitle(from: "https://example.com/docs/guide") == "example.com/docs/guide")
+    }
+
+    @Test
+    func draftPersistenceCoordinatorPreservesDeleteAfterSaveAndInvokesAllCompletions() async {
+        final class Recorder: @unchecked Sendable {
+            let lock = NSLock()
+            var events: [String] = []
+            func record(_ event: String) {
+                lock.lock()
+                events.append(event)
+                lock.unlock()
+            }
+        }
+        let recorder = Recorder()
+        let coordinator = DraftPersistenceCoordinator(
+            save: { snapshot in
+                Thread.sleep(forTimeInterval: 0.02)
+                recorder.record("save:\(snapshot.id):\(snapshot.body)")
+            },
+            delete: { id in
+                recorder.record("delete:\(id)")
+            }
+        )
+
+        var completionCount = 0
+        let now = Date()
+        coordinator.enqueue(.save(DraftSnapshot(
+            id: "d1",
+            sourcePath: nil,
+            selectedDirectoryPath: "/tmp",
+            title: "",
+            body: "v1",
+            tags: [],
+            updatedAt: now
+        ))) { _ in completionCount += 1 }
+        coordinator.enqueue(.save(DraftSnapshot(
+            id: "d1",
+            sourcePath: nil,
+            selectedDirectoryPath: "/tmp",
+            title: "",
+            body: "v2",
+            tags: [],
+            updatedAt: now
+        ))) { _ in completionCount += 1 }
+        coordinator.enqueue(.delete("d1")) { _ in completionCount += 1 }
+        coordinator.waitUntilIdle()
+        try? await Task.sleep(for: .milliseconds(50))
+
+        #expect(completionCount == 3)
+        #expect(recorder.events.last == "delete:d1")
+    }
+
+    @Test
+    func quickEntryEditorShortcutDoesNotSwallowSystemCommandQOrW() throws {
+        let harness = try makeEditorControllerHarness(draftID: "quick-capture", showsSaveButton: true)
+        defer { harness.tearDown() }
+
+        let cmdQ = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: 0,
+            windowNumber: harness.controller.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "q",
+            charactersIgnoringModifiers: "q",
+            isARepeat: false,
+            keyCode: 12
+        ))
+        let cmdW = try #require(NSEvent.keyEvent(
+            with: .keyDown,
+            location: .zero,
+            modifierFlags: [.command],
+            timestamp: 0,
+            windowNumber: harness.controller.window?.windowNumber ?? 0,
+            context: nil,
+            characters: "w",
+            charactersIgnoringModifiers: "w",
+            isARepeat: false,
+            keyCode: 13
+        ))
+        #expect(harness.controller.handleShortcutEvent(cmdQ) == false)
+        #expect(harness.controller.handleShortcutEvent(cmdW) == false)
+    }
 }

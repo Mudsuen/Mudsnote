@@ -17,7 +17,7 @@ struct RecentMarkdownFile: Identifiable, Equatable {
     var isContentLoaded = true
 }
 
-struct MarkdownGalleryChecklistItem: Equatable {
+struct MarkdownGalleryChecklistItem: Codable, Equatable {
     var text: String
     var isChecked: Bool
 }
@@ -75,7 +75,8 @@ struct MarkdownListMetadata: Equatable {
         }
         let joinedPreview = previewParts.joined(separator: "\n")
         let preview = String(joinedPreview.prefix(180))
-        let galleryImagePath = MarkdownAttachmentSearch.relativePaths(in: markdown).first {
+        let attachmentPaths = MarkdownAttachmentSearch.relativePaths(in: markdown)
+        let galleryImagePath = attachmentPaths.first {
             LibraryAttachment.Kind(fileExtension: ($0 as NSString).pathExtension) == .image
         }
         let galleryChecklistItems = lines.compactMap(Self.galleryChecklistItem(from:)).prefix(4)
@@ -84,7 +85,7 @@ struct MarkdownListMetadata: Equatable {
             preview: preview,
             galleryImagePath: galleryImagePath,
             galleryChecklistItems: Array(galleryChecklistItems),
-            hasAttachments: markdown.contains("![") || markdown.contains("](Attachments/"),
+            hasAttachments: !attachmentPaths.isEmpty || markdown.contains("!["),
             hasChecklist: lines.contains { line in
                 line.range(
                     of: #"^\s*[-*+]\s+\[[ xX]\]\s+"#,
@@ -98,7 +99,7 @@ struct MarkdownListMetadata: Equatable {
                 ) != nil
             },
             tags: MarkdownTagSyntax.tags(in: markdown),
-            attachmentPaths: MarkdownAttachmentSearch.relativePaths(in: markdown)
+            attachmentPaths: attachmentPaths
         )
     }
 

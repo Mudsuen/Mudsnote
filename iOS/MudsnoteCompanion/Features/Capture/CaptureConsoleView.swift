@@ -57,6 +57,10 @@ struct CaptureConsoleView: View {
 
     var body: some View {
         VStack(spacing: 12) {
+            if !appModel.allFolders.isEmpty {
+                captureFolderSelectorRow
+            }
+
             editor
 
             audioStatus
@@ -204,6 +208,71 @@ struct CaptureConsoleView: View {
         }
         .onDisappear {
             appModel.endCaptureSession()
+        }
+    }
+
+    private var captureFolderSelectorRow: some View {
+        HStack(spacing: 8) {
+            Menu {
+                Button {
+                    appModel.selectCaptureFolder(nil)
+                } label: {
+                    Label(
+                        CaptureTarget.folder(nil).label,
+                        systemImage: appModel.draft.target.relativeFolderPath == nil ? "checkmark" : "tray"
+                    )
+                }
+                if !appModel.recentCaptureFolders.isEmpty {
+                    Divider()
+                    ForEach(appModel.recentCaptureFolders) { folder in
+                        Button {
+                            appModel.selectCaptureFolder(folder.relativePath)
+                        } label: {
+                            Label(
+                                folder.name,
+                                systemImage: appModel.draft.target.relativeFolderPath == folder.relativePath
+                                    ? "checkmark"
+                                    : "folder"
+                            )
+                        }
+                    }
+                }
+                Divider()
+                ForEach(appModel.allFolders) { folder in
+                    Button {
+                        appModel.selectCaptureFolder(folder.relativePath)
+                    } label: {
+                        Label(
+                            folder.relativePath,
+                            systemImage: appModel.draft.target.relativeFolderPath == folder.relativePath
+                                ? "checkmark"
+                                : "folder"
+                        )
+                    }
+                }
+            } label: {
+                HStack(spacing: 6) {
+                    Image(systemName: "folder")
+                        .font(.caption.weight(.semibold))
+                    Text(appModel.draft.target.label)
+                        .font(.caption.weight(.semibold))
+                        .lineLimit(1)
+                    Image(systemName: "chevron.up.chevron.down")
+                        .font(.caption2.weight(.semibold))
+                }
+                .foregroundStyle(MudsnoteColors.muted)
+                .padding(.horizontal, 10)
+                .padding(.vertical, 6)
+                .background(MudsnoteColors.card, in: Capsule())
+                .overlay {
+                    Capsule().stroke(MudsnoteColors.line, lineWidth: 1)
+                }
+            }
+            .accessibilityLabel("Target folder")
+            .accessibilityValue(appModel.draft.target.label)
+            .accessibilityIdentifier("capture-target-folder-pill")
+
+            Spacer(minLength: 0)
         }
     }
 

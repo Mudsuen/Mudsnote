@@ -149,7 +149,7 @@ enum MarkdownEditorPresentation {
         applyDelimited(#"<mark>([^\n]+?)</mark>"#, markerLength: 6, suffixMarkerLength: 7, trait: nil, in: source, storage: storage, extra: [.backgroundColor: UIColor.systemYellow.withAlphaComponent(0.48)])
         applyDelimited(#"~~([^\n]+?)~~"#, markerLength: 2, trait: nil, in: source, storage: storage, extra: [.strikethroughStyle: NSUnderlineStyle.single.rawValue])
         applyDelimited(#"(?<!\*)\*([^*\n]+?)\*(?!\*)"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
-        applyDelimited(#"_([^_\n]+?)_"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
+        applyDelimited(#"(?<![\p{L}\p{N}_/])_([^_\n]+?)_(?![\p{L}\p{N}_])"#, markerLength: 1, trait: .traitItalic, in: source, storage: storage)
         applyCode(in: source, storage: storage)
         applyLinks(in: source, storage: storage)
         storage.endEditing()
@@ -225,7 +225,7 @@ enum MarkdownEditorPresentation {
         matches(#"\[([^\]\n]+)\]\(([^)\n]+)\)"#, in: source).forEach { match in
             let label = match.range(at: 1)
             storage.addAttributes([
-                .foregroundColor: UIColor(MudsnoteColors.primary),
+                .foregroundColor: MudsnoteColors.linkAccentUIColor,
                 .underlineStyle: NSUnderlineStyle.single.rawValue,
             ], range: label)
             conceal(NSRange(location: match.range.location, length: 1), in: storage)
@@ -241,8 +241,18 @@ enum MarkdownEditorPresentation {
         ], range: range)
     }
 
+    private static var expressionCache: [String: NSRegularExpression] = [:]
+
     private static func matches(_ pattern: String, in source: NSString) -> [NSTextCheckingResult] {
-        guard let expression = try? NSRegularExpression(pattern: pattern) else { return [] }
+        let expression: NSRegularExpression
+        if let cached = expressionCache[pattern] {
+            expression = cached
+        } else if let compiled = try? NSRegularExpression(pattern: pattern) {
+            expressionCache[pattern] = compiled
+            expression = compiled
+        } else {
+            return []
+        }
         return expression.matches(in: source as String, range: NSRange(location: 0, length: source.length))
     }
 

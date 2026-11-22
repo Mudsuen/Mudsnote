@@ -579,15 +579,16 @@ extension LibraryWindowController {
             let canvasSize = NSSize(width: 24, height: 22)
             let scale = 18 / max(symbol.size.width, symbol.size.height)
             let glyphSize = NSSize(width: symbol.size.width * scale, height: symbol.size.height * scale)
-            let image = NSImage(size: canvasSize)
-            image.lockFocus()
-            symbol.draw(in: NSRect(
+            let drawRect = NSRect(
                 x: (canvasSize.width - glyphSize.width) / 2,
                 y: (canvasSize.height - glyphSize.height) / 2,
                 width: glyphSize.width,
                 height: glyphSize.height
-            ))
-            image.unlockFocus()
+            )
+            let image = NSImage(size: canvasSize, flipped: false) { _ in
+                symbol.draw(in: drawRect)
+                return true
+            }
             image.isTemplate = true
             image.accessibilityDescription = label
             return image
@@ -698,14 +699,14 @@ extension LibraryWindowController {
     }
 
     func makeFormatToolbarImage() -> NSImage {
-        let image = NSImage(size: NSSize(width: 21, height: 16))
-        image.lockFocus()
-        let attributes: [NSAttributedString.Key: Any] = [
-            .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
-            .foregroundColor: NSColor.labelColor
-        ]
-        ("Aa" as NSString).draw(at: NSPoint(x: 1, y: 0), withAttributes: attributes)
-        image.unlockFocus()
+        let image = NSImage(size: NSSize(width: 21, height: 16), flipped: false) { _ in
+            let attributes: [NSAttributedString.Key: Any] = [
+                .font: NSFont.systemFont(ofSize: 12, weight: .semibold),
+                .foregroundColor: NSColor.labelColor
+            ]
+            ("Aa" as NSString).draw(at: NSPoint(x: 1, y: 0), withAttributes: attributes)
+            return true
+        }
         image.isTemplate = true
         image.accessibilityDescription = "格式"
         return image

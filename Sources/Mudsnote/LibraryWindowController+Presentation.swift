@@ -69,11 +69,12 @@ extension LibraryWindowController {
 
     func noteListDateText(for date: Date, now: Date = Date()) -> String {
         let calendar = Calendar.current
-        if calendar.isDateInToday(date) {
+        if calendar.isDate(date, inSameDayAs: now) {
             return noteListTimeFormatter.string(from: date)
         }
 
-        if calendar.isDateInYesterday(date) {
+        if let yesterday = calendar.date(byAdding: .day, value: -1, to: now),
+           calendar.isDate(date, inSameDayAs: yesterday) {
             return LibraryCopy.yesterday
         }
 

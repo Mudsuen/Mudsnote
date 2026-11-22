@@ -154,7 +154,7 @@ extension LibraryWindowController {
         updateNoteListHeader(query: query)
         updateNoteListEmptyState(query: query)
 
-        let task = Task.detached(priority: .userInitiated) { [noteStore, existingSearchSession, preferredDirectories, scope, query, searchesAllNotes, includesSubfolderNotes, recentlyEditedPaths, generation, preferredURL] in
+        let task = Task.detached(priority: .userInitiated) { [weak self, noteStore, existingSearchSession, preferredDirectories, scope, query, searchesAllNotes, includesSubfolderNotes, recentlyEditedPaths, generation, preferredURL] in
             guard !Task.isCancelled else { return }
             let searchSession: NoteSearchSession
             if let existingSearchSession {
