@@ -81,9 +81,11 @@ extension LibraryWindowController {
         tree.translatesAutoresizingMaskIntoConstraints = false
         list.translatesAutoresizingMaskIntoConstraints = false
         sidebarLibraryTitle.font = .systemFont(ofSize: 18, weight: .semibold)
+        sidebarLibraryTitle.alignment = .left
         sidebarLibraryTitle.lineBreakMode = .byTruncatingTail
         sidebarLibraryTitle.setContentHuggingPriority(.defaultLow, for: .horizontal)
         sidebarLibraryTitle.setContentCompressionResistancePriority(.defaultLow, for: .horizontal)
+        searchField.setContentHuggingPriority(.defaultLow, for: .horizontal)
         let searchButton = OverviewActionButton("", symbol: "magnifyingglass", action: {})
         sidebarSearchButton = searchButton
         searchButton.invoke = { [weak self] in self?.focusSearchForLibrary() }
@@ -103,11 +105,13 @@ extension LibraryWindowController {
         heading.detachesHiddenViews = true
         heading.alignment = .centerY
         heading.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 0, right: 12)
+        heading.setHuggingPriority(.defaultLow, for: .horizontal)
         heading.heightAnchor.constraint(equalToConstant: 40).isActive = true
         let searchStatus = NSStackView(views: [noteListCountLabel, NSView(), searchScopeControl])
         searchStatus.orientation = .horizontal; searchStatus.alignment = .centerY
         searchStatus.spacing = 4
         searchStatus.edgeInsets = NSEdgeInsets(top: 0, left: 16, bottom: 4, right: 12)
+        searchStatus.setHuggingPriority(.defaultLow, for: .horizontal)
         searchStatus.isHidden = true
         sidebarSearchStatusView = searchStatus
         noteListCountLabel.textColor = panelSecondaryTextColor()
@@ -132,6 +136,8 @@ extension LibraryWindowController {
             sidebarChrome.leadingAnchor.constraint(equalTo: container.leadingAnchor),
             sidebarChrome.trailingAnchor.constraint(equalTo: container.trailingAnchor),
             sidebarChrome.topAnchor.constraint(equalTo: container.safeAreaLayoutGuide.topAnchor, constant: 4),
+            heading.widthAnchor.constraint(equalTo: sidebarChrome.widthAnchor),
+            searchStatus.widthAnchor.constraint(equalTo: sidebarChrome.widthAnchor),
             modeContainer.topAnchor.constraint(equalTo: sidebarChrome.bottomAnchor),
             modeContainer.bottomAnchor.constraint(equalTo: container.bottomAnchor),
             tree.leadingAnchor.constraint(equalTo: modeContainer.leadingAnchor),

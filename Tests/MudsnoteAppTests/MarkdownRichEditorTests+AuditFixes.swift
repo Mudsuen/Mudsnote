@@ -226,4 +226,36 @@ extension MarkdownRichEditorTests {
         #expect(harness.controller.handleShortcutEvent(cmdQ) == false)
         #expect(harness.controller.handleShortcutEvent(cmdW) == false)
     }
+
+    @MainActor
+    @Test
+    func sidebarHeaderTitleStaysLeftAlignedAndFillsSidebarWidth() throws {
+        let harness = try makeEditorControllerHarness(draftID: "sidebar-header-layout", showsSaveButton: false)
+        defer { harness.tearDown() }
+
+        let controller = LibraryWindowController(
+            noteStore: harness.store,
+            onOpenInSeparateWindow: { _ in },
+            onSave: { _ in },
+            onClose: {}
+        )
+        defer { controller.close() }
+
+        controller.showWindow(nil)
+        controller.showLibraryNavigationPage(.list, scope: .recent)
+        controller.window?.contentView?.layoutSubtreeIfNeeded()
+
+        let sourceContainer = try #require(controller.sourceListView)
+        let heading = try #require(controller.sidebarLibraryTitle.superview)
+        let titleInContainer = controller.sidebarLibraryTitle.convert(
+            controller.sidebarLibraryTitle.bounds,
+            to: sourceContainer
+        )
+        let searchButton = try #require(controller.sidebarSearchButton)
+        let searchInContainer = searchButton.convert(searchButton.bounds, to: sourceContainer)
+
+        #expect(abs(heading.frame.width - sourceContainer.bounds.width) < 1)
+        #expect(titleInContainer.minX <= 20)
+        #expect(searchInContainer.minX > titleInContainer.minX + 60)
+    }
 }
