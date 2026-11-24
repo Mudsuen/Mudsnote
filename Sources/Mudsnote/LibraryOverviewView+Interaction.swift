@@ -22,7 +22,42 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
     }
 
     func topicPressed(_ node: OverviewNodeID) {
-        focus(node)
+        if node == .unassigned {
+            focus(.unassigned)
+            return
+        }
+        if presentation == .outline {
+            beginTopicEdit(node)
+            return
+        }
+        if activeNode == node {
+            beginTopicEdit(node)
+        } else {
+            _ = select(node)
+        }
+    }
+
+    func topicDoubleClicked(_ node: OverviewNodeID) {
+        if node == .unassigned {
+            focus(.unassigned)
+            return
+        }
+        if presentation == .outline {
+            focus(node)
+        } else {
+            beginTopicEdit(node)
+        }
+    }
+
+    func requestDeleteNode(_ node: OverviewNodeID) {
+        switch node {
+        case .card(let id):
+            _ = owner?.deleteOverviewCard(id)
+        case .area:
+            owner?.confirmDeleteOverviewTopic(node)
+        case .root, .unassigned:
+            break
+        }
     }
 
     @discardableResult func prepareStructureChange() -> Bool {
@@ -51,7 +86,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
         let tree = contentIndex.tree
         let path = focusedRoot == .root ? [OverviewNodeID.root] : tree.ancestors(of: focusedRoot).reversed() + [focusedRoot]
         let available = max(100, breadcrumbScroll.bounds.width)
-        let key = OverviewBreadcrumbKey(path: path, titles: path.map(nodeTitle), width: available, dark: colors.dark)
+        let key = OverviewBreadcrumbKey(path: path, titles: path.map(nodeTitle), widthBucket: Int((available / 40).rounded()), dark: colors.dark)
         guard breadcrumbKey != key else { return }
         breadcrumbKey = key
         breadcrumb.subviews.forEach { $0.removeFromSuperview() }
@@ -308,6 +343,10 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
         let text = event.charactersIgnoringModifiers?.lowercased() ?? ""
         if event.modifierFlags.contains(.command) {
             if text == "z" { event.modifierFlags.contains(.shift) ? structuralUndo.redo() : structuralUndo.undo(); return true }
+            if event.keyCode == 51 || event.keyCode == 117 {
+                requestDeleteNode(activeNode ?? focusedRoot)
+                return true
+            }
             if presentation == .mindMap && ["+", "=", "-", "0"].contains(text) {
                 if text == "0" { centerRoot() } else { changeZoom(by: text == "-" ? -0.1 : 0.1) }; return true
             }
@@ -374,7 +413,7 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
         NSCursor.closedHand.push()
         defer {
             host.alphaValue = 1
-            canvas.dropRect = nil; canvas.needsDisplay = true
+            canvas.dropRect = nil
             NSCursor.pop()
         }
         _ = handleDrop(node, point: canvas.convert(event.locationInWindow, from: nil), perform: false)
@@ -395,7 +434,6 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
         if presentation == .mindMap, hit == nil {
             let origin = CGPoint(x: point.x - dragOffset.x, y: point.y - dragOffset.y)
             canvas.dropRect = CGRect(origin: origin, size: plan.frames[node]?.size ?? CGSize(width: 120, height: 44))
-            canvas.needsDisplay = true
             return perform ? moveToCanvas(node, at: origin) : node != focusedRoot && node != .unassigned
         }
         var parent = focusedRoot
@@ -408,8 +446,8 @@ extension LibraryOverviewView: NSTextViewDelegate, NSMenuItemValidation {
                 indicator = NSRect(x: rect.minX, y: after ? rect.maxY : rect.minY, width: rect.width, height: 1)
             } else { parent = hit; indicator = rect }
         }
-        guard canMove(node, to: parent, relativeTo: target) else { canvas.dropRect = nil; canvas.needsDisplay = true; return false }
-        canvas.dropRect = indicator; canvas.needsDisplay = true
+        guard canMove(node, to: parent, relativeTo: target) else { canvas.dropRect = nil; return false }
+        canvas.dropRect = indicator
         return perform ? move(node, to: parent, relativeTo: target, after: after) : true
     }
 }

@@ -65,9 +65,9 @@ Views must not create a second persistence model; lifecycle behavior enters thro
 
 Both apps preserve portable `.md` files and relative attachment references via `Packages/MudsnoteSharedCore`. Changes to stored Markdown, front matter, attachment layout, tags, or filename semantics are `both` changes requiring coverage on both platforms.
 
-### macOS reference projection
+### macOS bidirectional link projection
 
-`KnowledgeGraph.swift` derives outgoing references and incoming backlinks from the same indexed Markdown links. Link direction is independent of knowledge-layer ranking; the graph retains its hierarchy projection. Suggestions exclude confirmed references and become Markdown only after an explicit accept action. The AppKit relation panel displays these directions separately and flows after the document unless manually pinned.
+`NoteStore+Links.swift` derives outgoing references and incoming backlinks from indexed Markdown and wiki links via a lightweight cached `NoteLinkIndex`. The AppKit `NoteLinksView` panel displays outgoing (`引用`) and incoming (`被引用`) links and flows after the document unless manually pinned; it stays hidden when a note has no links or while suppressed in inline Overview editing.
 
 ## Task Routes
 

@@ -694,7 +694,6 @@ extension LibraryWindowController {
             scheduleDeferredSourceFolderLoad()
             scheduleSourceSnapshotValidation(loadFirstIfNeeded: selectedURL == nil)
         }
-        knowledgeGraphWindowController?.reload()
         refreshFolderNoteVisibilityForLibrary()
         refreshThemeColorForLibrary()
     }

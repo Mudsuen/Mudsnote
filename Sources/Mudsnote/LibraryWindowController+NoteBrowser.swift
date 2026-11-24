@@ -53,24 +53,28 @@ extension LibraryWindowController {
         }
 
         let query = searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedQuery = query.isEmpty ? nil : cachedNoteListSearchQuery(for: query)
+        let displayTitle = noteListDisplayTitle(for: note)
+        let snippetText = noteListSnippetText(for: note)
+        let folderText = noteListFolderText(for: note)
         cell.titleLabel.attributedStringValue = highlightedSearchString(
-            noteListDisplayTitle(for: note),
+            displayTitle,
             font: cell.titleLabel.font ?? .systemFont(ofSize: LibraryNotesLayout.noteTitleFontSize, weight: .medium),
             baseColor: panelPrimaryTextColor(),
-            query: query
+            parsedQuery: parsedQuery
         )
         cell.snippetLabel.attributedStringValue = highlightedSearchString(
-            noteListSnippetText(for: note),
+            snippetText,
             font: cell.snippetLabel.font ?? .systemFont(ofSize: LibraryNotesLayout.noteSnippetFontSize),
             baseColor: panelSecondaryTextColor(),
-            query: query
+            parsedQuery: parsedQuery
         )
         let thumbnail = thumbnailImage(for: note)
         cell.thumbnailImageView.image = thumbnail
         cell.thumbnailImageView.isHidden = thumbnail == nil
         cell.attachmentImageView.isHidden = !note.hasAttachments || thumbnail != nil
-        cell.metaLabel.stringValue = noteListFolderText(for: note)
-        cell.toolTip = noteListDisplayTitle(for: note) + "\n" + noteListSnippetText(for: note) + "\n" + noteListFolderText(for: note)
+        cell.metaLabel.stringValue = folderText
+        cell.toolTip = displayTitle + "\n" + snippetText + "\n" + folderText
         cell.setAccessibilityHelp(cell.toolTip)
         return cell
     }
@@ -251,11 +255,33 @@ extension LibraryWindowController {
         flushPendingThumbnailReloads()
     }
 
+    private static var lastParsedNoteListSearchQuery: (raw: String, query: NoteSearchQuery)?
+
+    private func cachedNoteListSearchQuery(for trimmedQuery: String) -> NoteSearchQuery {
+        if let cached = Self.lastParsedNoteListSearchQuery, cached.raw == trimmedQuery {
+            return cached.query
+        }
+        let parsed = NoteSearchQuery(trimmedQuery)
+        Self.lastParsedNoteListSearchQuery = (trimmedQuery, parsed)
+        return parsed
+    }
+
     func highlightedSearchString(
         _ text: String,
         font: NSFont,
         baseColor: NSColor,
         query: String
+    ) -> NSAttributedString {
+        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
+        let parsedQuery = trimmedQuery.isEmpty ? nil : cachedNoteListSearchQuery(for: trimmedQuery)
+        return highlightedSearchString(text, font: font, baseColor: baseColor, parsedQuery: parsedQuery)
+    }
+
+    func highlightedSearchString(
+        _ text: String,
+        font: NSFont,
+        baseColor: NSColor,
+        parsedQuery: NoteSearchQuery?
     ) -> NSAttributedString {
         let paragraphStyle = NSMutableParagraphStyle()
         paragraphStyle.lineBreakMode = .byTruncatingTail
@@ -264,10 +290,9 @@ extension LibraryWindowController {
             .foregroundColor: baseColor,
             .paragraphStyle: paragraphStyle
         ])
-        let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
-        guard !trimmedQuery.isEmpty, !text.isEmpty else { return attributed }
+        guard let parsedQuery, !text.isEmpty else { return attributed }
 
-        for match in NoteSearchQuery(trimmedQuery).matchRanges(in: text) {
+        for match in parsedQuery.matchRanges(in: text) {
             attributed.addAttributes([
                 .backgroundColor: NSColor.systemYellow.withAlphaComponent(0.34),
                 .foregroundColor: panelPrimaryTextColor()

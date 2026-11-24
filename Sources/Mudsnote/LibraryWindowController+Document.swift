@@ -140,10 +140,19 @@ extension LibraryWindowController {
         let firstParagraph = (storage.string as NSString).paragraphRange(
             for: NSRange(location: 0, length: 0)
         )
+        let bodyStart = NSMaxRange(firstParagraph)
+        // Fast path: when editing well past the title line and paragraph 1 has no
+        // automatic title marker, avoid scanning the entire body on every keystroke.
+        if bodyStart < storage.length,
+           editorTextView.selectedRange().location > bodyStart,
+           storage.attribute(.qmAutomaticTitleBaseline, at: bodyStart, effectiveRange: nil) == nil,
+           storage.attribute(.qmAutomaticTitleBaseline, at: 0, effectiveRange: nil) != nil {
+            return
+        }
         // Only demote formatting that was applied because this text was the
         // document title. Explicit headings elsewhere have no such marker.
-        let bodyRange = NSRange(location: NSMaxRange(firstParagraph),
-                                length: storage.length - NSMaxRange(firstParagraph))
+        let bodyRange = NSRange(location: bodyStart,
+                                length: storage.length - bodyStart)
         var demotions: [(NSRange, [NSAttributedString.Key: Any])] = []
         storage.enumerateAttribute(.qmAutomaticTitleBaseline, in: bodyRange) { value, range, _ in
             if let baseline = value as? [NSAttributedString.Key: Any] {

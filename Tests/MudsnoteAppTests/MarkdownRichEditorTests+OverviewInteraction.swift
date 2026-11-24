@@ -65,7 +65,11 @@ extension MarkdownRichEditorTests {
         #expect(overview.state.areas.first { $0.id == ids[4] }?.parentID == nil)
         overview.structuralUndo.undo()
         overview.collapsed.insert(.area(ids[2]))
+        // Clicking the topic title in outline mode starts inline editing; clicking the topic icon focuses into it.
         overview.areas[ids[2]]?.performClick(nil)
+        #expect(overview.topicEdit?.node == .area(ids[2]))
+        #expect(overview.commitTopicEditing())
+        overview.hosts[.area(ids[2])]?.bullet.performClick(nil)
         #expect(overview.plan?.root == .area(ids[2]))
         #expect(overview.collapsed.contains(.area(ids[2])))
         #expect(overview.hosts[.area(ids[0])]?.isHidden == true)

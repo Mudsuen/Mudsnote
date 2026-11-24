@@ -373,4 +373,6 @@ struct LibraryFormattingUndoSnapshot {
     let documentIdentity: UUID
     let content: NSAttributedString
     let selection: NSRange
+    let range: NSRange?
+    let documentLength: Int
 }

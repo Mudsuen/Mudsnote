@@ -172,9 +172,9 @@ import MudsnoteCore
             return
         }
         if isCompact && editor == nil {
-            let inset: CGFloat = isOutline ? 31 : mapDepth == 1 ? 16 : 32
+            let inset: CGFloat = isOutline ? OverviewTopicHost.outlineTextInset : mapDepth == 1 ? 16 : 32
             let top: CGFloat = isOutline ? 3 : mapDepth == 1 ? 12 : 11
-            heading.frame = NSRect(x: inset, y: top, width: max(0, bounds.width - (isOutline ? 31 : inset * 2)), height: max(1, bounds.height - top * 2))
+            heading.frame = NSRect(x: inset, y: top, width: max(0, bounds.width - (isOutline ? inset : inset * 2)), height: max(1, bounds.height - top * 2))
             heading.cell?.usesSingleLineMode = false
             heading.maximumNumberOfLines = 0
             heading.lineBreakMode = .byWordWrapping
@@ -194,19 +194,20 @@ import MudsnoteCore
             return
         }
         if isOutline {
-            let titleHeight = OverviewTypography.textHeight(heading.stringValue, width: max(1, bounds.width - 31), size: 16, lineHeight: 25.6)
+            let textInset = OverviewTopicHost.outlineTextInset
+            let titleHeight = OverviewTypography.textHeight(heading.stringValue, width: max(1, bounds.width - textInset), size: 16, lineHeight: 25.6)
             heading.isHidden = false; heading.maximumNumberOfLines = 0
             heading.font = OverviewTypography.font(16); heading.textColor = colors.text
             let titleStyle = NSMutableParagraphStyle(); titleStyle.minimumLineHeight = 25.6; titleStyle.maximumLineHeight = 25.6
             heading.attributedStringValue = NSAttributedString(string: heading.stringValue,
                 attributes: [.font: heading.font!, .foregroundColor: colors.text, .paragraphStyle: titleStyle])
-            heading.frame = NSRect(x: 31, y: 3, width: bounds.width - 31, height: titleHeight)
+            heading.frame = NSRect(x: textInset, y: 3, width: bounds.width - textInset, height: titleHeight)
             preview.isHidden = false; preview.font = OverviewTypography.font(14); preview.textColor = colors.detail
             preview.maximumNumberOfLines = 5
             let bodyStyle = NSMutableParagraphStyle(); bodyStyle.minimumLineHeight = 22; bodyStyle.maximumLineHeight = 22
             preview.attributedStringValue = NSAttributedString(string: preview.stringValue.trimmingCharacters(in: .whitespacesAndNewlines),
                 attributes: [.font: preview.font!, .foregroundColor: colors.detail, .paragraphStyle: bodyStyle])
-            preview.frame = NSRect(x: 31, y: titleHeight + 9, width: bounds.width - 31, height: max(0, bounds.height - titleHeight - 14))
+            preview.frame = NSRect(x: textInset, y: titleHeight + 9, width: bounds.width - textInset, height: max(0, bounds.height - titleHeight - 14))
             association.isHidden = true; bullet.isHidden = true; underline.isHidden = true
             return
         }
@@ -293,7 +294,31 @@ import MudsnoteCore
     var blankClick: (() -> Void)?
     var blankMenu: ((NSPoint, NSEvent) -> Void)?
     var panTo: ((NSPoint) -> Void)?
-    var dropRect: NSRect?
+    private lazy var dropIndicatorLayer: CAShapeLayer = {
+        let shape = CAShapeLayer()
+        shape.fillColor = nil
+        shape.lineWidth = 2
+        shape.zPosition = 1000
+        return shape
+    }()
+    var dropRect: NSRect? {
+        didSet {
+            guard oldValue != dropRect else { return }
+            wantsLayer = true
+            if dropIndicatorLayer.superlayer == nil { layer?.addSublayer(dropIndicatorLayer) }
+            CATransaction.begin()
+            CATransaction.setDisableActions(true)
+            if let dropRect {
+                dropIndicatorLayer.isHidden = false
+                dropIndicatorLayer.strokeColor = NSColor.keyboardFocusIndicatorColor.cgColor
+                dropIndicatorLayer.path = CGPath(roundedRect: dropRect, cornerWidth: 4, cornerHeight: 4, transform: nil)
+            } else {
+                dropIndicatorLayer.isHidden = true
+                dropIndicatorLayer.path = nil
+            }
+            CATransaction.commit()
+        }
+    }
     override func mouseDown(with event: NSEvent) {
         guard let scroll = enclosingScrollView, let window else { return }
         var last = event.locationInWindow
@@ -314,8 +339,19 @@ import MudsnoteCore
     override func rightMouseDown(with event: NSEvent) { blankMenu?(convert(event.locationInWindow, from: nil), event) }
     override func draw(_ dirtyRect: NSRect) {
         super.draw(dirtyRect)
+        let expandedDirty = dirtyRect.insetBy(dx: -4, dy: -4)
         for (points, accent) in lines {
             guard let first = points.first else { continue }
+            var minX = first.x, maxX = first.x, minY = first.y, maxY = first.y
+            for p in points.dropFirst() {
+                if p.x < minX { minX = p.x }
+                if p.x > maxX { maxX = p.x }
+                if p.y < minY { minY = p.y }
+                if p.y > maxY { maxY = p.y }
+            }
+            let boundsRect = NSRect(x: minX, y: minY, width: max(1, maxX - minX), height: max(1, maxY - minY))
+            guard expandedDirty.intersects(boundsRect) else { continue }
+
             strokeColor.withAlphaComponent(strokeColor.alphaComponent * (accent ? 1 : 0.9)).setStroke()
             let path = NSBezierPath()
             path.move(to: first)
@@ -335,11 +371,6 @@ import MudsnoteCore
             if !accent { path.setLineDash([4, 3], count: 2, phase: 0); path.lineWidth = 1 }
             path.lineJoinStyle = .round
             path.stroke()
-        }
-        if let dropRect {
-            NSColor.keyboardFocusIndicatorColor.setStroke()
-            let path = NSBezierPath(roundedRect: dropRect, xRadius: 4, yRadius: 4)
-            path.lineWidth = 2; path.stroke()
         }
     }
 }
@@ -380,7 +411,6 @@ import MudsnoteCore
     let newNote = OverviewActionButton("", symbol: "square.and.pencil", action: {})
     let add = OverviewActionButton("", symbol: "link", action: {})
     let addArea = OverviewActionButton("", symbol: "plus", action: {})
-    let graphButton = OverviewActionButton("", symbol: "point.3.filled.connected.trianglepath.dotted", action: {})
     let appearanceButton = OverviewActionButton("", symbol: "ellipsis", action: {})
     let presentationButton = OverviewActionButton("", symbol: "list.bullet", action: {})
     let cardDisplayButton = OverviewActionButton("", symbol: "rectangle.expand.vertical", action: {})
@@ -473,7 +503,7 @@ import MudsnoteCore
         addSubview(scroll)
         breadcrumbScroll.drawsBackground = false; breadcrumbScroll.hasHorizontalScroller = false
         breadcrumbScroll.documentView = breadcrumb
-        [breadcrumbScroll, presentationButton, cardDisplayButton, graphButton, newNote, add, addArea, appearanceButton].forEach(addSubview)
+        [breadcrumbScroll, presentationButton, cardDisplayButton, newNote, add, addArea, appearanceButton].forEach(addSubview)
         viewportControls.bind(to: self)
         addSubview(viewportControls)
         rootHost = OverviewTopicHost(node: .root, content: title)
@@ -498,11 +528,9 @@ import MudsnoteCore
         }
         cardDisplayButton.identifier = NSUserInterfaceItemIdentifier("OverviewCardDisplay")
         cardDisplayButton.invoke = { [weak self] in self?.toggleAllCardPreviews() }
-        graphButton.identifier = NSUserInterfaceItemIdentifier("OverviewKnowledgeGraph")
-        graphButton.invoke = { [weak owner] in owner?.showOverviewKnowledgeGraph() }
         appearanceButton.invoke = { [weak self] in self?.showSettingsMenu() }
         for (button, label) in [(newNote, "新建笔记到总览"), (add, "关联笔记"), (addArea, "添加主题"),
-                                (graphButton, "知识图谱"), (appearanceButton, "总览设置与操作")] {
+                                (appearanceButton, "总览设置与操作")] {
             button.toolTip = label; button.setAccessibilityLabel(label)
         }
         newNote.identifier = NSUserInterfaceItemIdentifier("OverviewNewNote")
@@ -536,6 +564,7 @@ import MudsnoteCore
             if areas[area.id] == nil {
                 let button = OverviewActionButton(area.title) { [weak self] in self?.topicPressed(node) }
                 button.drawsHoverBackground = false
+                button.doubleClick = { [weak self] _ in self?.topicDoubleClicked(node) }
                 button.beginDrag = { [weak self] event, origin in self?.startDrag(node, event: event, origin: origin) }
                 button.contextAction = { [weak self] in self?.showTopicMenu(node) }
                 button.keyHandler = { [weak self] event in self?.handleKey(event) ?? false }
@@ -544,7 +573,7 @@ import MudsnoteCore
             }
             let label = OverviewContentIndex.displayTitle(area.title, fallback: "未命名主题")
             areas[area.id]?.title = label
-            areas[area.id]?.toolTip = "进入 " + label
+            areas[area.id]?.toolTip = nil
         }
         if hosts[.unassigned] == nil { attachHost(.unassigned, content: unassigned) }
         for card in state.cards {
@@ -580,6 +609,7 @@ import MudsnoteCore
         host.bullet.beginDrag = { [weak self] event, origin in self?.startDrag(node, event: event, origin: origin) }
         host.detail.pressed = { [weak self] in self?.beginTopicEdit(node, details: true) }
         host.more.invoke = { [weak self] in self?.showTopicMenu(node) }
+        host.deleteButton.invoke = { [weak self] in self?.requestDeleteNode(node) }
         host.contextAction = { [weak self] in self?.showTopicMenu(node) }
         host.addChild.invoke = { [weak self] in self?.createTopic(parent: node) }
         hosts[node] = host; canvas.addSubview(host)

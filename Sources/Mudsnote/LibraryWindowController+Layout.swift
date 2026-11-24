@@ -127,9 +127,6 @@ extension LibraryWindowController {
                     context.timingFunction = CAMediaTimingFunction(name: .easeInEaseOut)
                     context.allowsImplicitAnimation = true
                     sourceSplitViewItem.animator().isCollapsed = !isVisible
-                    if let titleView = noteListToolbarTitleLeadingConstraint?.firstItem as? NSView {
-                        titleView.superview?.animator().layoutSubtreeIfNeeded()
-                    }
                 } completionHandler: { [weak self] in
                     Task { @MainActor [weak self] in
                         self?.restoreStoredPaneWidthsAfterSourceVisibilityChange()
@@ -148,50 +145,10 @@ extension LibraryWindowController {
     }
 
     func applySourceVisibilityChrome(_ isVisible: Bool) {
-        noteListToolbarTitleLeadingConstraint?.constant = isVisible
-            ? LibraryNotesLayout.toolbarExpandedTitleLeadingOffset
-            : LibraryNotesLayout.toolbarCollapsedTitleLeadingOffset
-        for item in window?.toolbar?.items ?? [] {
-            switch item.itemIdentifier {
-            case Self.sourceTrackingSeparatorToolbarItemIdentifier:
-                item.isHidden = !isVisible
-            case Self.toggleSidebarToolbarItemIdentifier:
-                let label = isVisible ? "隐藏资料库" : "显示资料库"
-                // Keep the same buttons, images and geometry across sidebar transitions.
-                item.label = label
-                item.paletteLabel = label
-                item.toolTip = label
-                if let button = item.view?.subviews.first as? NSButton {
-                    button.toolTip = label
-                    button.setAccessibilityLabel(label)
-                }
-            default:
-                break
-            }
+        for item in window?.toolbar?.items ?? []
+        where item.itemIdentifier == Self.sourceTrackingSeparatorToolbarItemIdentifier {
+            item.isHidden = !isVisible
         }
-    }
-
-    func applySidebarPresentationChrome() {
-        for button in sidebarPresentationButtons {
-            configureSidebarPresentationButton(button)
-        }
-    }
-
-    func configureSidebarPresentationButton(_ button: NSButton) {
-        let showsTree = isShowingSidebarTree
-        let label = showsTree ? "切换到列表" : "切换到文件树"
-        button.image = toolbarSymbolImage(
-            symbolName: showsTree ? "list.bullet.rectangle" : "folder",
-            label: label,
-            pointSize: 14
-        )
-        button.imagePosition = .imageOnly
-        button.isBordered = false
-        button.contentTintColor = .secondaryLabelColor
-        button.target = self
-        button.action = #selector(toggleSidebarPresentationPressed)
-        button.toolTip = label
-        button.setAccessibilityLabel(label)
     }
 
     func restoreStoredPaneWidthsAfterSourceVisibilityChange() {
@@ -244,14 +201,12 @@ extension LibraryWindowController {
         updateNoteListEmptyState(query: searchField.stringValue.trimmingCharacters(in: .whitespacesAndNewlines))
 
         completeNoteListViewModeTransition(showingGallery: showsGallery)
-        applyNoteListViewModeToolbarChrome()
     }
 
     func completeNoteListViewModeTransition(showingGallery: Bool) {
         if !showingGallery {
             applyStoredLibrarySplitLayoutForLibrary()
         }
-        applyNoteListViewModeToolbarChrome()
         if showingGallery {
             window?.makeFirstResponder(galleryCollectionView)
         } else if selectedURL == nil {
@@ -259,21 +214,6 @@ extension LibraryWindowController {
         } else {
             window?.makeFirstResponder(editorTextView)
         }
-    }
-
-    func applyNoteListViewModeToolbarChrome() {
-        let showsGallery = noteListViewMode == .gallery
-        for item in window?.toolbar?.items ?? [] {
-            switch item.itemIdentifier {
-            case Self.noteListTitleToolbarItemIdentifier,
-                 Self.noteTrackingSeparatorToolbarItemIdentifier,
-                 Self.editorToolsToolbarItemIdentifier:
-                item.isHidden = showsGallery
-            default:
-                break
-            }
-        }
-        window?.toolbar?.validateVisibleItems()
     }
 
     static func externalScreen() -> NSScreen? {

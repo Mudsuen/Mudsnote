@@ -23,6 +23,33 @@ enum NoteLinkRelocationError: LocalizedError {
     }
 }
 
+private struct RelocationPathIndex {
+    let knownPaths: Set<String>
+    let pathsBySuffix: [String: [String]]
+    let pathsByBasename: [String: [String]]
+
+    init(paths: Set<String>) {
+        self.knownPaths = paths
+        var bySuffix: [String: [String]] = [:]
+        var byBasename: [String: [String]] = [:]
+        byBasename.reserveCapacity(paths.count)
+        for path in paths {
+            let url = URL(fileURLWithPath: path)
+            let basename = url.deletingPathExtension().lastPathComponent.lowercased()
+            byBasename[basename, default: []].append(path)
+            let components = url.pathComponents.drop(while: { $0 == "/" })
+            if !components.isEmpty {
+                for index in components.indices {
+                    let suffix = components[index...].joined(separator: "/")
+                    bySuffix[suffix, default: []].append(path)
+                }
+            }
+        }
+        self.pathsBySuffix = bySuffix
+        self.pathsByBasename = byBasename
+    }
+}
+
 extension NoteStore {
     /// Prepare references against the old paths, then commit the filesystem move last.
     /// The caller's source text may contain unsaved edits; only other notes are rewritten here.
@@ -42,8 +69,8 @@ extension NoteStore {
             return
         }
 
-        let urls = try noteURLsForLinkRelocation(source: source, isDirectory: isDirectory)
-        let paths = Set(urls.map(\.path))
+        let relocationTargets = try relocationScanTargets(source: source, destination: destination, isDirectory: isDirectory)
+        let pathIndex = RelocationPathIndex(paths: relocationTargets.knownPaths)
         func movedURL(_ url: URL) -> URL {
             if url == source { return destination }
             if isDirectory, url.path.hasPrefix(source.path + "/") {
@@ -55,20 +82,18 @@ extension NoteStore {
         var writes: [RelocatedNoteLinkWrite] = []
         var relocatedSource = sourceContents
         let copiedAttachmentPaths = Set(copiedAttachmentURLs.map { $0.standardizedFileURL.path })
-        for url in urls {
-            if !isDirectory, url == source {
-                if let contents = sourceContents {
-                    relocatedSource = rewritingRelocatedNoteLinks(
-                        contents, source: url, destination: destination,
-                        knownPaths: paths, copiedAttachmentPaths: copiedAttachmentPaths, movedURL: movedURL
-                    )
-                }
-                continue
-            }
+        if !isDirectory, let contents = sourceContents {
+            relocatedSource = rewritingRelocatedNoteLinks(
+                contents, source: source, destination: destination,
+                pathIndex: pathIndex, copiedAttachmentPaths: copiedAttachmentPaths, movedURL: movedURL
+            )
+        }
+        for url in relocationTargets.urlsToInspect {
+            if !isDirectory, url == source { continue }
             guard let original = try? String(contentsOf: url, encoding: .utf8) else { continue }
             let replacement = rewritingRelocatedNoteLinks(
                 original, source: url, destination: movedURL(url),
-                knownPaths: paths, movedURL: movedURL
+                pathIndex: pathIndex, movedURL: movedURL
             )
             if original != replacement {
                 writes.append(RelocatedNoteLinkWrite(url: url, original: original, replacement: replacement))
@@ -115,7 +140,30 @@ extension NoteStore {
         if let recoveryURL { try? fileManager.removeItem(at: recoveryURL) }
     }
 
-    private func noteURLsForLinkRelocation(source: URL, isDirectory: Bool) throws -> [URL] {
+    private func relocationScanTargets(
+        source: URL,
+        destination: URL,
+        isDirectory: Bool
+    ) throws -> (urlsToInspect: [URL], knownPaths: Set<String>) {
+        // Fast path for same-folder note renames (e.g. title edits during autosave):
+        // when the search index is warm and covers the relocation roots, inspect only
+        // notes indexed as referencing `source` (plus any dirty paths) instead of reading
+        // every Markdown file in the vault from disk.
+        if !isDirectory, source.deletingLastPathComponent() == destination.deletingLastPathComponent() {
+            let roots = relocationRoots(source: source, isDirectory: false)
+            if let candidates = indexedReferencingNoteURLs(for: source, in: roots) {
+                searchIndexLock.lock()
+                var knownPaths = Set(searchIndexSnapshot?.entries.map { $0.url.standardizedFileURL.path } ?? [])
+                searchIndexLock.unlock()
+                knownPaths.insert(source.path)
+                return (candidates.sorted { $0.path < $1.path }, knownPaths)
+            }
+        }
+        let urls = try noteURLsForLinkRelocation(source: source, isDirectory: isDirectory)
+        return (urls, Set(urls.map(\.path)))
+    }
+
+    private func relocationRoots(source: URL, isDirectory: Bool) -> [URL] {
         // External standalone files do not grant access to unrelated library roots.
         // In particular an isolated store with no configured root must not enumerate user notes.
         let configured = preferredDirectories.map(\.standardizedFileURL).filter { root in
@@ -126,7 +174,11 @@ extension NoteStore {
         let belongsToLibrary = configured.contains { source == $0 || source.path.hasPrefix($0.path + "/") }
         var roots = belongsToLibrary ? configured : [isDirectory ? source : source.deletingLastPathComponent()]
         if isDirectory { roots.append(source) }
-        roots = deduplicatedDirectories(roots).sorted { $0.path.count < $1.path.count }
+        return deduplicatedDirectories(roots).sorted { $0.path.count < $1.path.count }
+    }
+
+    private func noteURLsForLinkRelocation(source: URL, isDirectory: Bool) throws -> [URL] {
+        let roots = relocationRoots(source: source, isDirectory: isDirectory)
         var visitedRoots: [URL] = []
         var urls = Set<URL>()
         if !isDirectory { urls.insert(source) }
@@ -157,7 +209,7 @@ extension NoteStore {
         _ contents: String,
         source: URL,
         destination: URL,
-        knownPaths: Set<String>,
+        pathIndex: RelocationPathIndex,
         copiedAttachmentPaths: Set<String> = [],
         movedURL: (URL) -> URL
     ) -> String {
@@ -174,7 +226,7 @@ extension NoteStore {
             case .markdown:
                 target = MarkdownLocalLinkResolver.fileURL(for: rawPath, relativeTo: source)
             case .wiki:
-                target = relocatedWikiTarget(decoded, source: source, knownPaths: knownPaths)
+                target = relocatedWikiTarget(decoded, source: source, pathIndex: pathIndex)
             }
             guard let target else { continue }
             // Only destinations actually copied by the attachment pass are already relative
@@ -206,25 +258,29 @@ extension NoteStore {
         return result as String
     }
 
-    private func relocatedWikiTarget(_ path: String, source: URL, knownPaths: Set<String>) -> URL? {
+    private func relocatedWikiTarget(_ path: String, source: URL, pathIndex: RelocationPathIndex) -> URL? {
         guard URL(string: path)?.scheme == nil, !path.hasPrefix("~/") else { return nil }
+        let normalizedPath = path.trimmingCharacters(in: CharacterSet(charactersIn: "/"))
         let suffixes = ["md", "markdown"].contains(URL(fileURLWithPath: path).pathExtension.lowercased())
             ? [path] : [path + ".md", path + ".markdown"]
         for suffix in suffixes {
             let direct = suffix.hasPrefix("/") ? URL(fileURLWithPath: suffix)
                 : source.deletingLastPathComponent().appendingPathComponent(suffix)
-            if knownPaths.contains(direct.standardizedFileURL.path) { return direct.standardizedFileURL }
+            if pathIndex.knownPaths.contains(direct.standardizedFileURL.path) { return direct.standardizedFileURL }
         }
-        let matches = knownPaths.filter { candidate in
-            suffixes.contains { candidate.hasSuffix("/" + $0) }
+        let lookupSuffixes = ["md", "markdown"].contains(URL(fileURLWithPath: normalizedPath).pathExtension.lowercased())
+            ? [normalizedPath] : [normalizedPath + ".md", normalizedPath + ".markdown"]
+        var suffixMatches = Set<String>()
+        for suffix in lookupSuffixes {
+            if let matches = pathIndex.pathsBySuffix[suffix] {
+                suffixMatches.formUnion(matches)
+            }
         }
-        if matches.count == 1, let match = matches.first { return URL(fileURLWithPath: match) }
+        if suffixMatches.count == 1, let match = suffixMatches.first { return URL(fileURLWithPath: match) }
         let pathURL = URL(fileURLWithPath: path)
         let basename = (["md", "markdown"].contains(pathURL.pathExtension.lowercased())
             ? pathURL.deletingPathExtension().lastPathComponent : pathURL.lastPathComponent).lowercased()
-        let basenameMatches = knownPaths.filter {
-            URL(fileURLWithPath: $0).deletingPathExtension().lastPathComponent.lowercased() == basename
-        }
+        let basenameMatches = pathIndex.pathsByBasename[basename] ?? []
         guard basenameMatches.count == 1, let match = basenameMatches.first else { return nil }
         return URL(fileURLWithPath: match)
     }

@@ -56,7 +56,7 @@ extension LibraryWindowController {
         }
         if refreshCounts {
             sourceCountSnapshot = allNotes
-            rebuildSourceRows(includeTags: sourceTagsLoaded)
+            rebuildSourceRows(includeTags: sourceTagsLoaded, refreshCounts: false)
             refreshSourceCounts(
                 using: allNotes,
                 countIndex: sourceCountIndex,
@@ -398,8 +398,9 @@ extension LibraryWindowController {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         let parsedQuery = NoteSearchQuery(trimmedQuery)
         let includesArchived = noteStore.includesArchivedNotesInSearch
+        let candidateRoots = includesArchived ? [] : noteStore.knownSearchRoots().map(\.standardizedFileURL)
         return Array(candidates.lazy.filter { note in
-            (includesArchived || !self.noteStore.isArchivedNote(at: note.url))
+            (includesArchived || !self.noteStore.isArchivedNote(at: note.url, candidateRoots: candidateRoots))
                 && parsedQuery.matches(title: note.title, body: note.snippet, tags: note.tags)
         }.prefix(limit))
     }

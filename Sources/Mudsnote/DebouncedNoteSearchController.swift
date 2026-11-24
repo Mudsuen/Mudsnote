@@ -15,6 +15,7 @@ final class DebouncedNoteSearchController {
     private let limit: Int
     private var searchTask: Task<Void, Never>?
     private var generation = 0
+    private var cachedSession: (rootsKey: [String], revision: UInt64, session: NoteSearchSession)?
 
     init(noteStore: NoteStore, limit: Int) {
         self.noteStore = noteStore
@@ -40,7 +41,18 @@ final class DebouncedNoteSearchController {
 
         let noteStore = noteStore
         let limit = limit
-        let requestedRoots = roots ?? noteStore.knownSearchRoots()
+        let requestedRoots = roots ?? noteStore.preferredDirectories
+        let rootsKey = requestedRoots.map { $0.standardizedFileURL.path }
+        let currentRevision = noteStore.currentSearchIndexRevision
+        let reusableSession: NoteSearchSession?
+        if let cached = cachedSession,
+           cached.rootsKey == rootsKey,
+           cached.revision == currentRevision {
+            reusableSession = cached.session
+        } else {
+            reusableSession = nil
+        }
+
         searchTask = Task.detached(priority: .userInitiated) { [weak self] in
             if delay > .zero {
                 do {
@@ -51,8 +63,19 @@ final class DebouncedNoteSearchController {
             }
             guard !Task.isCancelled else { return }
 
-            guard let session = noteStore.makeSearchSession(
-                roots: requestedRoots, cancellationCheck: { Task.isCancelled }) else { return }
+            let session: NoteSearchSession
+            let sessionRevision: UInt64
+            if let reusableSession {
+                session = reusableSession
+                sessionRevision = currentRevision
+            } else {
+                guard let built = noteStore.makeSearchSession(
+                    roots: requestedRoots,
+                    cancellationCheck: { Task.isCancelled }
+                ) else { return }
+                session = built
+                sessionRevision = noteStore.currentSearchIndexRevision
+            }
             guard !Task.isCancelled else { return }
             let results = session.searchNotes(
                 query: query,
@@ -73,6 +96,7 @@ final class DebouncedNoteSearchController {
                       self.generation == requestGeneration else {
                     return
                 }
+                self.cachedSession = (rootsKey, sessionRevision, session)
                 self.searchTask = nil
                 completion(payload)
             }
@@ -83,6 +107,7 @@ final class DebouncedNoteSearchController {
         generation += 1
         searchTask?.cancel()
         searchTask = nil
+        cachedSession = nil
     }
 
     func waitForCurrentSearchForTesting() async {

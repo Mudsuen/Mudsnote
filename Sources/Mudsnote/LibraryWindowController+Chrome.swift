@@ -193,7 +193,6 @@ extension LibraryWindowController {
             }
             refreshSourceSelection()
         }
-        applySidebarPresentationChrome()
         updateSidebarScopeButton()
         if changed, animated, window?.isVisible == true,
            !NSWorkspace.shared.accessibilityDisplayShouldReduceMotion {
@@ -548,22 +547,7 @@ extension LibraryWindowController {
         ])
 
         noteLinksView.onOpen = { [weak self] url in
-            self?.openKnowledgeRelation(at: url)
-        }
-        noteLinksView.onAcceptSuggestion = { [weak self] item in
-            self?.acceptKnowledgeSuggestion(item)
-        }
-        noteLinksView.onGoBack = { [weak self] in
-            self?.goBackInKnowledgeRelations()
-        }
-        noteLinksView.onGoForward = { [weak self] in
-            self?.goForwardInKnowledgeRelations()
-        }
-        noteLinksView.onGenerateHigherLayer = { [weak self] layer in
-            self?.generateHigherLayerDraft(targetLayer: layer)
-        }
-        noteLinksView.onShowGraph = { [weak self] in
-            self?.showKnowledgeGraphForLibrary()
+            self?.openLinkedNote(at: url)
         }
 
         let stack = NSStackView(views: [bodyContainer])

@@ -263,10 +263,11 @@ extension NoteStore {
 
     private func knownTags(limit: Int, roots: [URL]?) -> [String] {
         var summaries: [String: (name: String, count: Int)] = [:]
-        let includesArchived = includesArchivedNotesInKnowledge
+        let includesArchived = includesArchivedNotesInSearch
+        let candidateRoots = includesArchived ? [] : knownSearchRoots().map(\.standardizedFileURL)
 
         for entry in indexedEntries(roots: roots) {
-            guard includesArchived || !isArchivedNote(at: entry.url) else { continue }
+            guard includesArchived || !isArchivedNote(at: entry.url, candidateRoots: candidateRoots) else { continue }
             var countedInNote = Set<String>()
             for tag in entry.tags {
                 let key = tag.folding(
@@ -317,7 +318,13 @@ extension NoteStore {
             : nil
         searchIndexLock.unlock()
 
-        guard let snapshot = memorySnapshot ?? readSearchIndexSnapshotFromDisk(rootsKey: rootsKey) else {
+        guard let snapshot = memorySnapshot ?? {
+            guard let loaded = readSearchIndexSnapshotFromDisk(rootsKey: rootsKey) else { return nil }
+            searchIndexLock.lock()
+            lastDiskLoadedSearchIndexSnapshot = loaded
+            searchIndexLock.unlock()
+            return loaded
+        }() else {
             return nil
         }
         return snapshot.entries
@@ -336,8 +343,10 @@ extension NoteStore {
     public func searchNotes(query: String, limit: Int = 30, roots: [URL]? = nil) -> [NoteSearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         if trimmedQuery.isEmpty {
+            let includesArchived = includesArchivedNotesInSearch
+            let candidateRoots = includesArchived ? [] : knownSearchRoots().map(\.standardizedFileURL)
             return recentSearchResults(limit: limit)
-                .filter { includesArchivedNotesInSearch || !isArchivedNote(at: $0.url) }
+                .filter { includesArchived || !isArchivedNote(at: $0.url, candidateRoots: candidateRoots) }
         }
 
         return rankedSearchResults(
@@ -349,7 +358,8 @@ extension NoteStore {
 
     private func searchEligibleEntries(_ entries: [NoteSearchIndexEntry]) -> [NoteSearchIndexEntry] {
         guard !includesArchivedNotesInSearch else { return entries }
-        return entries.filter { !isArchivedNote(at: $0.url) }
+        let candidateRoots = knownSearchRoots().map(\.standardizedFileURL)
+        return entries.filter { !isArchivedNote(at: $0.url, candidateRoots: candidateRoots) }
     }
 
     public func searchNotes(
@@ -381,6 +391,12 @@ extension NoteStore {
         }
     }
 
+    public var currentSearchIndexRevision: UInt64 {
+        searchIndexLock.lock()
+        defer { searchIndexLock.unlock() }
+        return searchIndexRevision
+    }
+
     public func markSearchIndexDirty(at urls: some Sequence<URL>) {
         searchIndexLock.lock()
         dirtySearchIndexPaths.formUnion(urls.map { $0.standardizedFileURL.path })
@@ -398,8 +414,10 @@ extension NoteStore {
     public func searchRecentNotes(query: String, limit: Int = 30) -> [NoteSearchResult] {
         let trimmedQuery = query.trimmingCharacters(in: .whitespacesAndNewlines)
         guard !trimmedQuery.isEmpty else {
+            let includesArchived = includesArchivedNotesInSearch
+            let candidateRoots = includesArchived ? [] : knownSearchRoots().map(\.standardizedFileURL)
             return recentSearchResults(limit: limit)
-                .filter { includesArchivedNotesInSearch || !isArchivedNote(at: $0.url) }
+                .filter { includesArchived || !isArchivedNote(at: $0.url, candidateRoots: candidateRoots) }
         }
 
         let recentPaths = Set(listRecentFiles(limit: .max).map { $0.url.standardizedFileURL.path })
@@ -657,14 +675,17 @@ extension NoteStore {
 
         if !validatesMemorySnapshot {
             searchIndexLock.lock()
-            let cleanSnapshot = !searchIndexRequiresFullRefresh
-                && dirtySearchIndexPaths.isEmpty
-                && searchIndexSnapshot?.rootsKey == rootsKey
+            let snapshot = !searchIndexRequiresFullRefresh && dirtySearchIndexPaths.isEmpty
                 ? searchIndexSnapshot
                 : nil
             searchIndexLock.unlock()
-            if let cleanSnapshot {
-                return cleanSnapshot.entries
+            if let snapshot {
+                if snapshot.rootsKey == rootsKey {
+                    return snapshot.entries
+                }
+                if rootsCover(parentRoots: snapshot.rootsKey, childRoots: rootsKey) {
+                    return filterEntries(snapshot.entries, within: rootsKey)
+                }
             }
         }
 
@@ -674,6 +695,11 @@ extension NoteStore {
         }
         defer { searchIndexBuildLock.unlock() }
 
+        let canonicalPreferredRootsKey = canonicalSearchRoots(preferredDirectories).map { $0.standardizedFileURL.path }
+        let isSubsetOfPreferred = roots != nil
+            && rootsKey != canonicalPreferredRootsKey
+            && rootsCover(parentRoots: canonicalPreferredRootsKey, childRoots: rootsKey)
+
         for attempt in 0..<4 {
             guard !cancellationCheck() else { return nil }
 
@@ -681,21 +707,61 @@ extension NoteStore {
             let stateRevision = searchIndexRevision
             let dirtyPaths = dirtySearchIndexPaths
             let requiresFullRefresh = searchIndexRequiresFullRefresh
-            let memorySnapshot = searchIndexSnapshot?.rootsKey == rootsKey ? searchIndexSnapshot : nil
+            let currentSnapshot = searchIndexSnapshot
+            let memorySnapshot = currentSnapshot?.rootsKey == rootsKey ? currentSnapshot : nil
+            let coveringSnapshot: NoteSearchIndexSnapshot? = (memorySnapshot == nil
+                && currentSnapshot.map { rootsCover(parentRoots: $0.rootsKey, childRoots: rootsKey) } == true)
+                ? currentSnapshot
+                : nil
+            let cachedDiskSnapshot = lastDiskLoadedSearchIndexSnapshot?.rootsKey == rootsKey
+                ? lastDiskLoadedSearchIndexSnapshot
+                : nil
             let buildWillRead = attempt == 0 ? searchIndexBuildWillReadForTesting : nil
             searchIndexLock.unlock()
 
             if !validatesMemorySnapshot,
                !requiresFullRefresh,
-               dirtyPaths.isEmpty,
-               let memorySnapshot {
-                return memorySnapshot.entries
+               dirtyPaths.isEmpty {
+                if let memorySnapshot {
+                    return memorySnapshot.entries
+                }
+                if let coveringSnapshot {
+                    return filterEntries(coveringSnapshot.entries, within: rootsKey)
+                }
+            }
+
+            // Reuse and refresh the parent root snapshot when querying a strict subset root
+            // so single-folder searches never wipe or duplicate the shared SQLite cache.
+            if !validatesMemorySnapshot,
+               let coveringSnapshot,
+               !requiresFullRefresh,
+               !dirtyPaths.isEmpty {
+                guard let incremental = incrementallyRefreshing(
+                    coveringSnapshot,
+                    dirtyPaths: dirtyPaths,
+                    rootsKey: coveringSnapshot.rootsKey,
+                    cancellationCheck: cancellationCheck
+                ) else {
+                    return nil
+                }
+                guard !cancellationCheck() else { return nil }
+                if publishSearchIndexSnapshot(
+                    incremental.snapshot,
+                    consuming: dirtyPaths,
+                    fullRefresh: false,
+                    stateRevision: stateRevision,
+                    incrementalChanges: (incremental.upserts, incremental.deletes)
+                ) {
+                    return filterEntries(incremental.snapshot.entries, within: rootsKey)
+                }
+                continue
             }
 
             buildWillRead?()
             guard !cancellationCheck() else { return nil }
 
-            let reusableSnapshot = memorySnapshot ?? readSearchIndexSnapshotFromDisk(rootsKey: rootsKey)
+            let reusableSnapshot = memorySnapshot ?? cachedDiskSnapshot ?? readSearchIndexSnapshotFromDisk(rootsKey: rootsKey)
+            let shouldPersistToSharedCache = !isSubsetOfPreferred
             if !requiresFullRefresh,
                !dirtyPaths.isEmpty,
                let reusableSnapshot {
@@ -708,6 +774,9 @@ extension NoteStore {
                     return nil
                 }
                 guard !cancellationCheck() else { return nil }
+                if !shouldPersistToSharedCache {
+                    return incremental.snapshot.entries
+                }
                 if publishSearchIndexSnapshot(
                     incremental.snapshot,
                     consuming: dirtyPaths,
@@ -749,6 +818,9 @@ extension NoteStore {
                let reusableSnapshot,
                reusableSnapshot.entries.allSatisfy(\.isContentIndexed),
                reusableSnapshot.fileSignatures == signatures {
+                if !shouldPersistToSharedCache {
+                    return reusableSnapshot.entries
+                }
                 if publishSearchIndexSnapshot(
                     reusableSnapshot,
                     consuming: [],
@@ -788,6 +860,9 @@ extension NoteStore {
                 guard !cancellationCheck() else { return nil }
             }
             guard !cancellationCheck() else { return nil }
+            if !shouldPersistToSharedCache {
+                return entries
+            }
             let snapshot = NoteSearchIndexSnapshot(
                 rootsKey: rootsKey,
                 fileSignatures: signatures,
@@ -805,7 +880,25 @@ extension NoteStore {
         return nil
     }
 
-    private func canonicalSearchRoots(_ roots: [URL]) -> [URL] {
+    private func rootsCover(parentRoots: [String], childRoots: [String]) -> Bool {
+        guard !parentRoots.isEmpty, !childRoots.isEmpty else { return false }
+        return childRoots.allSatisfy { child in
+            parentRoots.contains { parent in
+                child == parent || child.hasPrefix(parent + "/")
+            }
+        }
+    }
+
+    private func filterEntries(_ entries: [NoteSearchIndexEntry], within rootsKey: [String]) -> [NoteSearchIndexEntry] {
+        entries.filter { entry in
+            let path = entry.url.standardizedFileURL.path
+            return rootsKey.contains { root in
+                path == root || path.hasPrefix(root + "/")
+            }
+        }
+    }
+
+    func canonicalSearchRoots(_ roots: [URL]) -> [URL] {
         let standardized = deduplicatedDirectories(roots)
         return standardized.filter { candidate in
             let candidatePath = candidate.standardizedFileURL.path
@@ -902,6 +995,7 @@ extension NoteStore {
         let stateIsCurrent = searchIndexRevision == stateRevision
         if stateIsCurrent {
             searchIndexSnapshot = snapshot
+            lastDiskLoadedSearchIndexSnapshot = nil
             dirtySearchIndexPaths.subtract(dirtyPaths)
             if fullRefresh {
                 searchIndexRequiresFullRefresh = false
@@ -910,18 +1004,20 @@ extension NoteStore {
         searchIndexLock.unlock()
 
         if stateIsCurrent {
-            knowledgeDerivedIndexLock.lock()
-            cachedKnowledgeDerivedIndex = nil
-            knowledgeDerivedIndexLock.unlock()
+            noteLinkIndexLock.lock()
+            cachedNoteLinkIndex = nil
+            noteLinkIndexLock.unlock()
         }
 
         if stateIsCurrent, writesDiskCache {
             if let incrementalChanges,
                estimatedDiskCacheSize(for: snapshot) <= Self.maximumSearchIndexDiskCacheSize {
+                let encoder = JSONEncoder()
                 let upsertRecords = incrementalChanges.upserts.map { entry in
                     sqliteRecord(
                         for: entry,
-                        signature: snapshot.fileSignatures[entry.url.standardizedFileURL.path]
+                        signature: snapshot.fileSignatures[entry.url.standardizedFileURL.path],
+                        encoder: encoder
                     )
                 }
                 let updated = searchIndexSQLite.applyIncrementalChanges(
@@ -941,8 +1037,7 @@ extension NoteStore {
     }
 
     private struct SQLiteSearchEntryExtra: Codable {
-        let knowledgeLayer: KnowledgeLayer?
-        let knowledgeLinkTargets: [KnowledgeLinkTarget]
+        let linkTargets: [NoteLinkTarget]
         let hasAttachments: Bool
         let thumbnailPath: String?
         let isContentIndexed: Bool
@@ -950,16 +1045,16 @@ extension NoteStore {
 
     private func sqliteRecord(
         for entry: NoteSearchIndexEntry,
-        signature: NoteSearchFileSignature?
+        signature: NoteSearchFileSignature?,
+        encoder: JSONEncoder
     ) -> SQLiteNoteIndexRecord {
         let extra = SQLiteSearchEntryExtra(
-            knowledgeLayer: entry.knowledgeLayer,
-            knowledgeLinkTargets: entry.knowledgeLinkTargets,
+            linkTargets: entry.linkTargets,
             hasAttachments: entry.hasAttachments,
             thumbnailPath: entry.thumbnailURL?.standardizedFileURL.path,
             isContentIndexed: entry.isContentIndexed
         )
-        let extraData = try? JSONEncoder().encode(extra)
+        let extraData = try? encoder.encode(extra)
         return SQLiteNoteIndexRecord(
             path: entry.url.standardizedFileURL.path,
             modifiedAt: (signature?.modifiedAt ?? entry.modifiedAt).timeIntervalSinceReferenceDate,
@@ -1015,8 +1110,7 @@ extension NoteStore {
                 createdAt: createdAt,
                 tags: record.tags,
                 tagsLower: record.tags.map(NoteSearchQuery.normalized),
-                knowledgeLayer: extra?.knowledgeLayer,
-                knowledgeLinkTargets: extra?.knowledgeLinkTargets ?? [],
+                linkTargets: extra?.linkTargets ?? [],
                 hasAttachments: extra?.hasAttachments ?? false,
                 thumbnailURL: extra?.thumbnailPath.map { URL(fileURLWithPath: $0).standardizedFileURL },
                 isContentIndexed: extra?.isContentIndexed ?? true
@@ -1037,10 +1131,12 @@ extension NoteStore {
             return
         }
 
+        let encoder = JSONEncoder()
         let records = snapshot.entries.map { entry in
             sqliteRecord(
                 for: entry,
-                signature: snapshot.fileSignatures[entry.url.standardizedFileURL.path]
+                signature: snapshot.fileSignatures[entry.url.standardizedFileURL.path],
+                encoder: encoder
             )
         }
         let wrote = searchIndexSQLite.replaceAll(
@@ -1069,7 +1165,7 @@ extension NoteStore {
             size += UInt64(entry.bodyLower.utf8.count)
             size += UInt64(entry.snippet.utf8.count)
             size += UInt64(entry.tags.reduce(0) { $0 + $1.utf8.count })
-            size += UInt64(entry.knowledgeLinkTargets.reduce(0) {
+            size += UInt64(entry.linkTargets.reduce(0) {
                 $0 + $1.value.utf8.count + 8
             })
             size += 256
@@ -1132,8 +1228,7 @@ extension NoteStore {
             createdAt: createdAt,
             tags: note.tags,
             tagsLower: note.tags.map(NoteSearchQuery.normalized),
-            knowledgeLayer: KnowledgeLayer.parse(sourceContents: text, tags: note.tags),
-            knowledgeLinkTargets: knowledgeLinkTargets(
+            linkTargets: noteLinkTargets(
                 in: note.body,
                 cancellationCheck: cancellationCheck
             ),
@@ -1158,8 +1253,7 @@ extension NoteStore {
             createdAt: signature.createdAt,
             tags: [],
             tagsLower: [],
-            knowledgeLayer: nil,
-            knowledgeLinkTargets: [],
+            linkTargets: [],
             hasAttachments: false,
             thumbnailURL: nil,
             isContentIndexed: false

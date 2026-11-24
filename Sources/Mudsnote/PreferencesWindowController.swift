@@ -16,7 +16,6 @@ struct PreferencesSettings {
     let libraryIncludesSubfolderNotes: Bool
     let searchDefaultScope: NoteStore.SearchDefaultScope
     let includesArchivedNotesInSearch: Bool
-    let includesArchivedNotesInKnowledge: Bool
     let editorContextMenuOptions: Set<EditorContextMenuOption>
     let selectionToolbarOptions: Set<SelectionToolbarOption>
     let aiEnabled: Bool
@@ -70,12 +69,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
     private let revealDirectoryButton = NSButton(title: "在 Finder 中显示", target: nil, action: nil)
     private let folderNoteVisibilityPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
     private let searchDefaultScopePopUp = NSPopUpButton(frame: .zero, pullsDown: false)
-    private let searchArchivedNotesButton = NSButton(checkboxWithTitle: "搜索包含归档笔记", target: nil, action: nil)
-    private let includesArchivedNotesButton = NSButton(
-        checkboxWithTitle: "知识关联和标签建议包含归档笔记",
-        target: nil,
-        action: nil
-    )
+    private let searchArchivedNotesButton = NSButton(checkboxWithTitle: "搜索和标签建议包含归档笔记", target: nil, action: nil)
     private let floatingNoteStaysOnTopButton = NSButton(checkboxWithTitle: "悬浮笔记保持置顶", target: nil, action: nil)
     private let spellCheckingButton = NSButton(checkboxWithTitle: "输入时检查拼写", target: nil, action: nil)
     private(set) var themeColorPopUp = NSPopUpButton(frame: .zero, pullsDown: false)
@@ -130,7 +124,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         libraryIncludesSubfolderNotes: Bool = true,
         searchDefaultScope: NoteStore.SearchDefaultScope = .allDirectories,
         includesArchivedNotesInSearch: Bool = false,
-        includesArchivedNotesInKnowledge: Bool = false,
         editorContextMenuOptions: Set<EditorContextMenuOption> = Set(EditorContextMenuOption.allCases),
         selectionToolbarOptions: Set<SelectionToolbarOption> = Set(SelectionToolbarOption.allCases),
         aiEnabled: Bool,
@@ -193,7 +186,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
         searchDefaultScopePopUp.addItems(withTitles: ["所有资料库文件夹", "默认笔记文件夹"])
         searchDefaultScopePopUp.selectItem(at: searchDefaultScope == .allDirectories ? 0 : 1)
         searchArchivedNotesButton.state = includesArchivedNotesInSearch ? .on : .off
-        includesArchivedNotesButton.state = includesArchivedNotesInKnowledge ? .on : .off
         aiMemoryDailySyncButton.state = aiMemoryDailySyncEnabled ? .on : .off
         refreshDirectoryControls()
     }
@@ -403,8 +395,7 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 label: "搜索内容:",
                 control: searchArchivedNotesButton,
                 help: "包含 Archive、Archives 和归档文件夹中的笔记。"
-            ),
-            preferenceRow(label: "知识关联:", control: includesArchivedNotesButton)
+            )
         ])
     }
 
@@ -805,7 +796,6 @@ final class PreferencesWindowController: NSWindowController, NSWindowDelegate, N
                 ? .defaultDirectory
                 : .allDirectories,
             includesArchivedNotesInSearch: searchArchivedNotesButton.state == .on,
-            includesArchivedNotesInKnowledge: includesArchivedNotesButton.state == .on,
             editorContextMenuOptions: Set(contextMenuOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             selectionToolbarOptions: Set(selectionToolbarOptionButtons.compactMap { $0.value.state == .on ? $0.key : nil }),
             aiEnabled: aiEnabledButton.state == .on,

@@ -8,6 +8,30 @@ enum OverviewMapStyle: Int { case ink, focus }
 enum OverviewMapStructure: Int { case balanced, right }
 
 @MainActor enum OverviewTypography {
+    private struct HeightCacheKey: Hashable {
+        let text: String
+        let widthBucket: Int
+        let sizeTenths: Int
+        let lineHeightTenths: Int
+        let weightRaw: CGFloat
+        let map: Bool
+    }
+
+    private static var heightCache: [HeightCacheKey: CGFloat] = [:]
+    private static var symbolCache: [String: NSImage] = [:]
+    private static let sharedStorage = NSTextStorage()
+    private static let sharedTextContainer: NSTextContainer = {
+        let container = NSTextContainer(size: NSSize(width: CGFloat(100), height: CGFloat.greatestFiniteMagnitude))
+        container.lineFragmentPadding = 0
+        return container
+    }()
+    private static let sharedLayoutManager: NSLayoutManager = {
+        let manager = NSLayoutManager()
+        sharedStorage.addLayoutManager(manager)
+        manager.addTextContainer(sharedTextContainer)
+        return manager
+    }()
+
     private static let registeredFonts: Void = {
         var directory = Bundle.main.resourceURL?.appendingPathComponent("Fonts/SourceSansPro", isDirectory: true)
         #if DEBUG
@@ -23,37 +47,72 @@ enum OverviewMapStructure: Int { case balanced, right }
             CTFontManagerRegisterFontsForURL(url as CFURL, .process, nil)
         }
     }()
+
+    static func symbol(_ name: String, pointSize: CGFloat, weight: NSFont.Weight = .regular) -> NSImage? {
+        let key = "\(name)|\(pointSize)|\(weight.rawValue)"
+        if let cached = symbolCache[key] { return cached }
+        guard let image = NSImage(systemSymbolName: name, accessibilityDescription: nil)?
+            .withSymbolConfiguration(.init(pointSize: pointSize, weight: weight)) else {
+            return nil
+        }
+        symbolCache[key] = image
+        return image
+    }
+
     static func font(_ size: CGFloat, weight: NSFont.Weight = .regular, map: Bool = false) -> NSFont {
         if map, let font = NSFont(name: weight == .medium ? "HelveticaNeue-Medium" : "HelveticaNeue", size: size) { return font }
         _ = registeredFonts
         return NSFont(name: weight == .semibold ? "SourceSansPro-Semibold" : "SourceSansPro-Regular", size: size)
             ?? .systemFont(ofSize: size, weight: weight)
     }
+
     static func width(_ text: String, size: CGFloat, weight: NSFont.Weight = .regular, map: Bool = false) -> CGFloat {
         ceil((text as NSString).size(withAttributes: [.font: font(size, weight: weight, map: map)]).width)
     }
+
     static func detailHeight(_ text: String, width: CGFloat) -> CGFloat {
         guard !text.isEmpty else { return 0 }
         return textHeight(text, width: width, size: 14, lineHeight: 24)
     }
+
     static func textHeight(_ text: String, width: CGFloat, size: CGFloat, lineHeight: CGFloat,
                            weight: NSFont.Weight = .regular, map: Bool = false) -> CGFloat {
-        let paragraph = NSMutableParagraphStyle()
-        paragraph.minimumLineHeight = lineHeight; paragraph.maximumLineHeight = lineHeight
-        paragraph.lineBreakMode = .byWordWrapping
+        let clampedWidth = max(1, width)
+        let key = HeightCacheKey(
+            text: text,
+            widthBucket: Int(clampedWidth.rounded()),
+            sizeTenths: Int((size * 10).rounded()),
+            lineHeightTenths: Int((lineHeight * 10).rounded()),
+            weightRaw: weight.rawValue,
+            map: map
+        )
+        if let cached = heightCache[key] { return cached }
+
         let selectedFont = font(size, weight: weight, map: map)
+        let result: CGFloat
         if !text.contains("\n"), !text.contains("\r"),
-           (text as NSString).size(withAttributes: [.font: selectedFont]).width <= max(1, width) { return lineHeight }
-        let storage = NSTextStorage(string: text, attributes: [.font: selectedFont, .paragraphStyle: paragraph])
-        let manager = NSLayoutManager()
-        let container = NSTextContainer(size: NSSize(width: max(1, width), height: .greatestFiniteMagnitude))
-        container.lineFragmentPadding = 0
-        storage.addLayoutManager(manager); manager.addTextContainer(container)
-        manager.ensureLayout(for: container)
-        var lines = 0
-        manager.enumerateLineFragments(forGlyphRange: manager.glyphRange(for: container)) { _, _, _, _, _ in lines += 1 }
-        if manager.extraLineFragmentTextContainer === container { lines += 1 }
-        return CGFloat(max(1, lines)) * lineHeight
+           (text as NSString).size(withAttributes: [.font: selectedFont]).width <= clampedWidth {
+            result = lineHeight
+        } else {
+            let paragraph = NSMutableParagraphStyle()
+            paragraph.minimumLineHeight = lineHeight
+            paragraph.maximumLineHeight = lineHeight
+            paragraph.lineBreakMode = .byWordWrapping
+            sharedTextContainer.containerSize = NSSize(width: clampedWidth, height: .greatestFiniteMagnitude)
+            sharedStorage.setAttributedString(NSAttributedString(
+                string: text,
+                attributes: [.font: selectedFont, .paragraphStyle: paragraph]
+            ))
+            sharedLayoutManager.ensureLayout(for: sharedTextContainer)
+            var lines = 0
+            let glyphRange = sharedLayoutManager.glyphRange(for: sharedTextContainer)
+            sharedLayoutManager.enumerateLineFragments(forGlyphRange: glyphRange) { _, _, _, _, _ in lines += 1 }
+            if sharedLayoutManager.extraLineFragmentTextContainer === sharedTextContainer { lines += 1 }
+            result = CGFloat(max(1, lines)) * lineHeight
+        }
+        if heightCache.count >= 1024 { heightCache.removeAll(keepingCapacity: true) }
+        heightCache[key] = result
+        return result
     }
 }
 

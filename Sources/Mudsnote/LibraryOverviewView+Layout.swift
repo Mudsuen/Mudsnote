@@ -21,16 +21,15 @@ extension LibraryOverviewView {
         updatingViewport = true
         defer { updatingViewport = wasUpdatingViewport }
         let width = max(1, bounds.width)
-        breadcrumbScroll.frame = NSRect(x: 36, y: 16, width: max(1, width - 315), height: 18)
+        breadcrumbScroll.frame = NSRect(x: 36, y: 16, width: max(1, width - 277), height: 18)
         updateBreadcrumbs()
         cardDisplayButton.frame = NSRect(x: width - 242, y: 10, width: 28, height: 28)
         presentationButton.frame = NSRect(x: width - 204, y: 10, width: 28, height: 28)
-        graphButton.frame = NSRect(x: width - 280, y: 10, width: 28, height: 28)
         addArea.frame = NSRect(x: width - 166, y: 10, width: 28, height: 28)
         add.frame = NSRect(x: width - 128, y: 10, width: 28, height: 28)
         newNote.frame = NSRect(x: width - 90, y: 10, width: 28, height: 28)
         appearanceButton.frame = NSRect(x: width - 52, y: 10, width: 28, height: 28)
-        for button in [presentationButton, cardDisplayButton, graphButton, addArea, add, newNote, appearanceButton] { button.contentTintColor = colors.detail }
+        for button in [presentationButton, cardDisplayButton, addArea, add, newNote, appearanceButton] { button.contentTintColor = colors.detail }
         scroll.frame = NSRect(x: 0, y: 48, width: width, height: max(1, bounds.height - 48))
         scroll.wantsLayer = true; scroll.layer?.backgroundColor = (presentation == .outline ? colors.outlineBackground : colors.mapBackground).cgColor
         let viewport = scroll.contentView.frame.size
@@ -90,9 +89,13 @@ extension LibraryOverviewView {
             guard node != next.root, let rect = next.frames[node] else { host.isHidden = true; continue }
             host.isHidden = false
             let depth = next.depths[node] ?? 1
+            let isEditingThisNode = topicEdit?.node == node
             host.configure(nodeFrame: rect, presentation: presentation, depth: depth, side: next.sides[node] ?? 1,
                 colors: colors, active: activeNode == node, folded: collapsed.contains(node),
-                children: tree.children[node, default: []].count, details: nodeDetails(node), allowsChild: node != .unassigned && !isCard(node))
+                children: tree.children[node, default: []].count, details: nodeDetails(node),
+                allowsChild: node != .unassigned && !isCard(node),
+                isEditingInline: isEditingThisNode,
+                frameOnly: isAnimatingTransition)
             if !isAnimatingTransition, let button = host.content as? OverviewActionButton {
                 button.alignment = .left; button.font = OverviewTypography.font(presentation == .outline || depth == 1 ? 16 : 14, map: presentation == .mindMap)
                 button.cell?.wraps = true; button.cell?.usesSingleLineMode = false; button.lineBreakMode = .byWordWrapping
@@ -109,10 +112,15 @@ extension LibraryOverviewView {
                     card.preview.alphaValue = sourceAlpha + (targetAlpha - sourceAlpha) * transition.progress
                 } else { card.preview.alphaValue = targetAlpha }
                 card.setAccessibilityValue(expandedCardIDs.contains(id) ? (presentation == .outline ? "正文已展开" : "内容卡片") : "标题")
-                card.setAccessibilityHelp("单击展开或收起，双击标题编辑；右键查看关联与归属")
+                card.setAccessibilityHelp("单击展开或收起，双击标题编辑；右键查看关联与删除")
                 card.nodeActive = activeNode == node; card.needsLayout = true; card.needsDisplay = true
-                host.bullet.setAccessibilityLabel("打开笔记")
-            } else { host.bullet.setAccessibilityLabel("进入主题 " + nodeTitle(node)) }
+                host.bullet.setAccessibilityLabel("编辑笔记 " + card.heading.stringValue)
+                host.bullet.toolTip = "编辑笔记"
+            } else {
+                let topicName = nodeTitle(node)
+                host.bullet.setAccessibilityLabel("进入主题 " + topicName)
+                host.bullet.toolTip = "进入「\(topicName)」"
+            }
         }
         canvas.lines = []; canvas.isOutline = presentation == .outline
         canvas.strokeColor = presentation == .outline ? colors.guide : colors.mapLine
@@ -146,7 +154,7 @@ extension LibraryOverviewView {
             for (node, rect) in next.frames where node != next.root && !collapsed.contains(node) {
                 let bottom = subtreeBottoms[node] ?? rect.maxY
                 if bottom > rect.maxY {
-                    let x = rect.minX + 12
+                    let x = rect.minX + OverviewTopicHost.outlineGuideCenterX
                     canvas.lines.append(([NSPoint(x: x, y: rect.maxY), NSPoint(x: x, y: bottom)], true))
                 }
             }

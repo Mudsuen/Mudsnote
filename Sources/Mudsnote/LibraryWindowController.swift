@@ -40,6 +40,8 @@ final class LibraryWindowController: NSWindowController,
     var overviewHost: OverviewContentHost?
     var regularEditorView: NSView?
     var isShowingOverview = false
+    var overviewNeedsRefresh = false
+    var presentationCachePersistWorkItem: DispatchWorkItem?
 
 
     var floatingNotePaths: Set<String> = []
@@ -83,59 +85,15 @@ final class LibraryWindowController: NSWindowController,
 
     var attachmentManagerWindowController: LibraryAttachmentManagerWindowController?
 
-    var knowledgeGraphWindowController: KnowledgeGraphWindowController?
-
-    static let homeOverviewToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.home")
-
     static let navigationGroupToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.navigation")
     static let pageTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.page-title")
     let toolbarPageTitle = ToolbarPageTitleView(text: "总览")
 
     static let toolbarIdentifier = NSToolbar.Identifier("mudsnote.library.toolbar")
 
-    static let toggleSidebarToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.toggle-sidebar")
-
-    static let navigationBackToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.navigation-back")
-
-    static let navigationForwardToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.navigation-forward")
-
     static let sourceTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-separator")
 
-    static let noteTrackingSeparatorToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-separator")
-
-    static let noteListTitleToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.note-list-title")
-
     static let documentTabsToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.document-tabs")
-
-    static let newNoteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.new-note")
-
-    static let openSeparateToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.open-separate")
-
-    static let moveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.move")
-
-    static let saveToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.save")
-
-    static let deleteToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.delete")
-
-    static let restoreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.restore")
-
-    static let editorToolsToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.editor-tools")
-
-    static let formatToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.format")
-
-    static let checklistToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.checklist")
-
-    static let linkToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.link")
-
-    static let sidebarPresentationToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.sidebar-presentation")
-
-    static let sourceModeToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.source-mode")
-
-    static let revealToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.reveal")
-
-    static let exportToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.export")
-
-    static let moreToolbarItemIdentifier = NSToolbarItem.Identifier("mudsnote.library.toolbar.more")
 
 
     enum EditorStatusKind {
@@ -264,18 +222,7 @@ final class LibraryWindowController: NSWindowController,
 
     var noteLinksRefreshGeneration = 0
 
-    var noteRelationsCache: [URL: (body: String, relations: KnowledgeRelations)] = [:]
-
-    var knowledgeSynthesisTask: Task<Void, Never>?
-
-    var knowledgeSynthesisGeneration = 0
-
-    var knowledgeBackStack: [URL] = []
-
-    var knowledgeForwardStack: [URL] = []
-
-    var sidebarPresentationButtons: [NSButton] = []
-
+    var noteRelationsCache: [URL: (body: String, relations: NoteLinkRelations)] = [:]
 
     var searchResultsGeneration = 0
 
@@ -302,8 +249,6 @@ final class LibraryWindowController: NSWindowController,
     var pendingDeletionWaiters: [CheckedContinuation<Void, Never>] = []
 
     var sourceInboxDirectory: URL?
-
-    var noteListToolbarTitleLeadingConstraint: NSLayoutConstraint?
 
     var hasPendingSearchReload = false
 

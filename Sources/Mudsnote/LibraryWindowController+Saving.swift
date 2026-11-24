@@ -238,7 +238,6 @@ extension LibraryWindowController {
             return
         }
 
-        remapOverviewAfterSave(previousURL: snapshot.previousURL, savedURL: success.savedURL)
         setSelectedURLForLibrary(success.savedURL)
         activeDocumentTab.url = success.savedURL
         activeDocumentTab.title = snapshot.title.isEmpty
@@ -677,12 +676,25 @@ extension LibraryWindowController {
         persistCurrentLibraryPresentationCache()
     }
 
-    func persistCurrentLibraryPresentationCache() {
-        let snapshot = sourceCountSnapshot
-        let noteStore = noteStore
-        launchNoteCacheQueue.async {
-            noteStore.cacheLibraryPresentationSnapshot(snapshot)
+    func persistCurrentLibraryPresentationCache(immediate: Bool = false) {
+        presentationCachePersistWorkItem?.cancel()
+        presentationCachePersistWorkItem = nil
+        let write = { [weak self] in
+            guard let self else { return }
+            self.presentationCachePersistWorkItem = nil
+            let snapshot = self.sourceCountSnapshot
+            let noteStore = self.noteStore
+            self.launchNoteCacheQueue.async {
+                noteStore.cacheLibraryPresentationSnapshot(snapshot)
+            }
         }
+        if immediate {
+            write()
+            return
+        }
+        let workItem = DispatchWorkItem(block: write)
+        presentationCachePersistWorkItem = workItem
+        DispatchQueue.main.asyncAfter(deadline: .now() + .seconds(2), execute: workItem)
     }
 
     @discardableResult

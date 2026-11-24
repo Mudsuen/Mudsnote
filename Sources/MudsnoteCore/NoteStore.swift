@@ -21,10 +21,14 @@ public final class NoteStore: @unchecked Sendable {
     let appSupportDirectory: URL
     let searchIndexLock = NSLock()
     let searchIndexBuildLock = NSLock()
-    let knowledgeDerivedIndexLock = NSLock()
-    var cachedKnowledgeDerivedIndex: KnowledgeDerivedIndex?
-    public var ignoredKnowledgeTags: Set<String> = NoteStore.defaultIgnoredKnowledgeTags
+    let noteLinkIndexLock = NSLock()
+    var cachedNoteLinkIndex: NoteLinkIndex?
+    let settingsCacheLock = NSLock()
+    var cachedPinnedSnapshot: PinnedNotePathsCacheSnapshot?
+    var hasPerformedPinnedNoteMigration = false
+    var cachedFolderIconNames: [String: String]?
     var searchIndexSnapshot: NoteSearchIndexSnapshot?
+    var lastDiskLoadedSearchIndexSnapshot: NoteSearchIndexSnapshot?
     var dirtySearchIndexPaths = Set<String>()
     var searchIndexRequiresFullRefresh = false
     var searchIndexRevision: UInt64 = 0
@@ -41,11 +45,6 @@ public final class NoteStore: @unchecked Sendable {
             .appendingPathComponent("SearchIndex", isDirectory: true)
             .appendingPathComponent("index-v2.sqlite", isDirectory: false)
     }
-
-    public static let defaultIgnoredKnowledgeTags: Set<String> = [
-        "层级/点", "层级/线", "层级/面", "层级/体",
-        "layer/point", "layer/line", "layer/plane", "layer/body"
-    ]
 
     public init(
         defaults: UserDefaults = .standard,
@@ -112,6 +111,19 @@ enum NoteUpdateCommitCheckpoint {
     case afterReferenceWrite
 }
 
+struct PinnedNoteFileStamp: Equatable {
+    let exists: Bool
+    let modifiedAt: Date?
+    let fileSize: UInt64?
+}
+
+struct PinnedNotePathsCacheSnapshot {
+    let rootPaths: [String]
+    let localPaths: [String]
+    let fileStamps: [String: PinnedNoteFileStamp]
+    let resolvedPaths: [String]
+}
+
 struct NoteSearchIndexSnapshot: Codable {
     let rootsKey: [String]
     let fileSignatures: [String: NoteSearchFileSignature]
@@ -135,8 +147,7 @@ struct NoteSearchIndexEntry: Codable {
     let createdAt: Date
     let tags: [String]
     let tagsLower: [String]
-    let knowledgeLayer: KnowledgeLayer?
-    let knowledgeLinkTargets: [KnowledgeLinkTarget]
+    let linkTargets: [NoteLinkTarget]
     let hasAttachments: Bool
     let thumbnailURL: URL?
     let isContentIndexed: Bool
@@ -156,7 +167,7 @@ struct NoteSearchIndexEntry: Codable {
 }
 
 struct NoteSearchIndexDiskCache: Codable {
-    static let currentSchemaVersion = 10
+    static let currentSchemaVersion = 11
 
     let schemaVersion: Int
     let snapshot: NoteSearchIndexSnapshot
@@ -174,7 +185,6 @@ enum NoteStoreDefaultsKey {
     static let spellCheckingEnabled = "mudsnote.spellCheckingEnabled"
     static let themeColorIdentifier = "mudsnote.themeColorIdentifier"
     static let searchDefaultScope = "mudsnote.search.defaultScope"
-    static let includesArchivedNotesInKnowledge = "mudsnote.knowledge.includesArchivedNotes"
     static let includesArchivedNotesInSearch = "mudsnote.search.includesArchivedNotes"
     static let aiMemoryDailySyncEnabled = "mudsnote.aiMemory.dailySyncEnabled"
     static let aiMemoryLastSyncDate = "mudsnote.aiMemory.lastSyncDate"
@@ -185,7 +195,6 @@ enum NoteStoreDefaultsKey {
     static let libraryNoteViewMode = "mudsnote.library.noteViewMode"
     static let libraryOverviewMode = "mudsnote.library.overviewMode"
     static let libraryOverviewAppearance = "mudsnote.library.overviewAppearance"
-    static let libraryOverviewMapStyle = "mudsnote.library.overviewMapStyle"
     static let libraryOverviewMapStructure = "mudsnote.library.overviewMapStructure"
     static let libraryOverviewCollapsedNodes = "mudsnote.library.overviewCollapsedNodes"
     static let libraryIncludesSubfolderNotes = "mudsnote.library.includesSubfolderNotes"

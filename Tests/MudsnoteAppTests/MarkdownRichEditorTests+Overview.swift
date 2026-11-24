@@ -519,4 +519,126 @@ extension MarkdownRichEditorTests {
         #expect(store.libraryOverviewModeRawValue == 0)
         #expect(try store.loadOverview() == model)
     }
+
+    @Test func overviewOutlineIconsSeparateTopicAndNoteAvoidGuideCollisionAndSplitClicks() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.overview-outline-icons." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let noteURL = try store.saveNewNote(title: "复盘笔记", body: "交易记录")
+        var model = NoteOverview(); model.areas = []; model.seeded = true
+        let parent = NoteOverview.Area(title: "投资")
+        let child = NoteOverview.Area(title: "交易与复盘", parentID: parent.id)
+        let grandchild = NoteOverview.Area(title: "日内复盘", parentID: child.id)
+        model.areas = [parent, child, grandchild]
+        let cardID = model.add(noteURL, areaID: child.id)
+        try store.saveOverview(model)
+
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus(startsInOverview: true)
+        #expect(controller.isShowingOverview)
+        #expect(!controller.isLoadingInitialNote)
+        #expect(controller.hasReleasedDeferredLaunchWork)
+
+        let overview = try #require(controller.overviewView)
+        overview.setPresentation(.outline)
+        overview.collapsed = [.area(child.id)]
+        overview.needsLayout = true
+        overview.layoutSubtreeIfNeeded()
+
+        let parentFrame = try #require(overview.plan?.frames[.area(parent.id)])
+        _ = try #require(overview.plan?.frames[.area(child.id)])
+        let parentHost = try #require(overview.hosts[.area(parent.id)])
+        let childHost = try #require(overview.hosts[.area(child.id)])
+
+        // Parent vertical guide drops from parent icon center (+25) and stays clear of child chevron (child.minX + 0..16).
+        let parentGuideX = parentFrame.minX + OverviewTopicHost.outlineGuideCenterX
+        let childChevronInCanvas = childHost.convert(childHost.fold.frame, to: overview.canvas)
+        #expect(parentGuideX < childChevronInCanvas.minX)
+
+        // Expanded parent hides chevron at rest; collapsed child always shows chevron.
+        #expect(parentHost.fold.isHidden)
+        #expect(!childHost.fold.isHidden)
+        parentHost.hovered = true
+        parentHost.updateActions()
+        #expect(!parentHost.fold.isHidden)
+        #expect(!parentHost.addChild.isHidden && !parentHost.deleteButton.isHidden && !parentHost.more.isHidden)
+        #expect(parentHost.contentRect.contains(parentHost.deleteButton.frame))
+        #expect(parentHost.contentRect.contains(parentHost.more.frame))
+
+        // Topic button has no intrusive title tooltip; icon carries concise focus tooltip.
+        #expect(overview.areas[child.id]?.toolTip == nil)
+        #expect(childHost.bullet.toolTip == "进入「交易与复盘」")
+        #expect(!childHost.bullet.isNote)
+
+        // Expand child to inspect note row icon distinction.
+        overview.toggleBranch(.area(child.id))
+        let cardHost = try #require(overview.hosts[.card(cardID)])
+        #expect(cardHost.bullet.isNote)
+        #expect(cardHost.bullet.toolTip == "编辑笔记")
+        cardHost.hovered = true
+        cardHost.updateActions()
+        #expect(!cardHost.deleteButton.isHidden && !cardHost.more.isHidden && cardHost.addChild.isHidden)
+
+        // Single-click topic title edits inline; clicking left topic icon focuses into topic.
+        overview.areas[child.id]?.performClick(nil)
+        #expect(overview.topicEdit?.node == .area(child.id))
+        #expect(overview.commitTopicEditing())
+        childHost.bullet.performClick(nil)
+        #expect(overview.focusedRoot == .area(child.id))
+    }
+
+    @Test func overviewDirectDeletionTrashesNotesAndHandlesTopicsSafely() throws {
+        let root = FileManager.default.temporaryDirectory.appendingPathComponent(UUID().uuidString)
+        let suite = "mudsnote.overview-direct-delete." + UUID().uuidString
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        let store = NoteStore(defaults: defaults, legacyDefaults: nil, appSupportDirectory: root.appendingPathComponent("Support"))
+        store.notesDirectory = root.appendingPathComponent("Notes")
+        let directDeleteURL = try store.saveNewNote(title: "Direct Delete", body: "Move to trash")
+        let keptNoteURL = try store.saveNewNote(title: "Keep Note", body: "Keep on disk")
+        let topicDeleteNoteURL = try store.saveNewNote(title: "Topic Note", body: "Trash with topic")
+
+        var model = NoteOverview(); model.areas = []; model.seeded = true
+        let emptyArea = NoteOverview.Area(title: "空主题")
+        let keepArea = NoteOverview.Area(title: "仅删主题")
+        let trashArea = NoteOverview.Area(title: "连笔记删除")
+        let trashChildArea = NoteOverview.Area(title: "子主题", parentID: trashArea.id)
+        model.areas = [emptyArea, keepArea, trashArea, trashChildArea]
+        let directCardID = model.add(directDeleteURL)
+        let keptCardID = model.add(keptNoteURL, areaID: keepArea.id)
+        let topicCardID = model.add(topicDeleteNoteURL, areaID: trashChildArea.id)
+        try store.saveOverview(model)
+
+        let controller = LibraryWindowController(noteStore: store, onOpenInSeparateWindow: { _ in }, onSave: { _ in }, onClose: {})
+        defer { controller.close(); defaults.removePersistentDomain(forName: suite); try? FileManager.default.removeItem(at: root) }
+        controller.showWindowAndFocus(startsInOverview: true)
+        let overview = try #require(controller.overviewView)
+
+        // 1. Direct note deletion moves file to Mudsnote Trash and removes card from Overview.
+        #expect(controller.deleteOverviewCard(directCardID))
+        #expect(!FileManager.default.fileExists(atPath: directDeleteURL.path))
+        #expect(overview.state.cards.contains { $0.id == directCardID } == false)
+        #expect(store.listTrashedNotes(limit: 10).contains { $0.title == "Direct Delete" })
+
+        // 2. Empty topic deletes immediately without alert and supports Cmd+Z undo.
+        controller.confirmDeleteOverviewTopic(.area(emptyArea.id))
+        #expect(overview.state.areas.contains { $0.id == emptyArea.id } == false)
+        overview.structuralUndo.undo()
+        #expect(overview.state.areas.contains { $0.id == emptyArea.id })
+
+        // 3. Topic deletion keeping notes removes topic branch but preserves note file.
+        #expect(controller.deleteOverviewTopic(.area(keepArea.id), deleteContainedNotes: false))
+        #expect(overview.state.areas.contains { $0.id == keepArea.id } == false)
+        #expect(overview.state.cards.contains { $0.id == keptCardID } == false)
+        #expect(FileManager.default.fileExists(atPath: keptNoteURL.path))
+
+        // 4. Topic deletion with notes moves descendant notes to Trash and removes entire branch.
+        #expect(controller.deleteOverviewTopic(.area(trashArea.id), deleteContainedNotes: true))
+        #expect(overview.state.areas.contains { $0.id == trashArea.id || $0.id == trashChildArea.id } == false)
+        #expect(overview.state.cards.contains { $0.id == topicCardID } == false)
+        #expect(!FileManager.default.fileExists(atPath: topicDeleteNoteURL.path))
+        #expect(store.listTrashedNotes(limit: 10).contains { $0.title == "Topic Note" })
+    }
 }

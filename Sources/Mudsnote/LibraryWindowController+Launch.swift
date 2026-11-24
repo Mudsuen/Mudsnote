@@ -6,9 +6,14 @@ import MudsnoteCore
 import UniformTypeIdentifiers
 
 extension LibraryWindowController {
-    func showWindowAndFocus() {
+    func showWindowAndFocus(startsInOverview: Bool = false) {
         isWindowClosed = false
         hasRequestedWindowPresentation = true
+        if startsInOverview {
+            hasHydratedInitialNoteList = true
+            isLoadingInitialNote = false
+            showOverview()
+        }
         showWindow(nil)
         guard let window else { return }
         if !hasCenteredWindow {
@@ -54,14 +59,18 @@ extension LibraryWindowController {
         NSApp.activate(ignoringOtherApps: true)
         window.makeKeyAndOrderFront(nil)
         window.orderFrontRegardless()
-        if noteListViewMode == .gallery {
+        if startsInOverview {
+            if let overviewView { window.makeFirstResponder(overviewView) }
+        } else if noteListViewMode == .gallery {
             window.makeFirstResponder(galleryCollectionView)
         } else if selectedURL == nil {
             window.makeFirstResponder(tableView)
         } else {
             editorTextView.window?.makeFirstResponder(editorTextView)
         }
-        hydrateInitialNoteListIfNeeded()
+        if !startsInOverview {
+            hydrateInitialNoteListIfNeeded()
+        }
         releaseDeferredLaunchWorkIfReady()
         startLibraryFileSystemMonitorIfNeeded()
     }
@@ -405,8 +414,6 @@ extension LibraryWindowController {
         attachmentQuickLookController.dismiss()
         attachmentManagerWindowController?.close()
         attachmentManagerWindowController = nil
-        knowledgeGraphWindowController?.close()
-        knowledgeGraphWindowController = nil
         cancelSourceSnapshotValidation()
         sourceCountRefreshTask?.cancel()
         sourceCountRefreshTask = nil
@@ -417,15 +424,15 @@ extension LibraryWindowController {
         editorMetricsRefreshTask = nil
         editorSearchHighlightRefreshTask?.cancel()
         editorSearchHighlightRefreshTask = nil
-        knowledgeSynthesisTask?.cancel()
-        knowledgeSynthesisTask = nil
-        knowledgeSynthesisGeneration += 1
         cancelActiveSearchResultReload()
         hasPendingSearchReload = false
         splitLayoutPersistenceWorkItem?.cancel()
         splitLayoutPersistenceWorkItem = nil
         windowFramePersistenceWorkItem?.cancel()
         windowFramePersistenceWorkItem = nil
+        if presentationCachePersistWorkItem != nil {
+            persistCurrentLibraryPresentationCache(immediate: true)
+        }
         persistLibraryWindowFrameForLibrary()
         persistLibrarySplitLayoutForLibrary()
         onClose()
@@ -435,17 +442,11 @@ extension LibraryWindowController {
         scheduleLibraryWindowFramePersistence()
     }
 
-    func windowDidBecomeKey(_ notification: Notification) {
-        refreshToolbarEditorTextButtonFocus(isWindowFocused: true)
-    }
-
-    func windowDidResignKey(_ notification: Notification) {
-        refreshToolbarEditorTextButtonFocus(isWindowFocused: false)
-    }
-
     func windowDidResize(_ notification: Notification) {
         scheduleLibraryWindowFramePersistence()
-        layoutEditorStatusLabel()
+        if !isShowingOverview {
+            layoutEditorStatusLabel()
+        }
     }
 
     func windowDidEndLiveResize(_ notification: Notification) {

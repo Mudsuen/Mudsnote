@@ -2400,6 +2400,7 @@ struct MarkdownRichEditorTests {
             onClose: {}
         )
         defer { controller.close() }
+        controller.showWindowAndFocus()
 
         try controller.openMarkdownDocumentForLibrary(at: targetURL)
         await controller.waitForNoteLinksRefreshForLibrary()
@@ -2437,12 +2438,12 @@ struct MarkdownRichEditorTests {
 
     @MainActor
     @Test
-    func knowledgeRelationNavigationStaysInOneWindowAndSupportsBack() async throws {
-        let suiteName = "mudsnote.knowledge-navigation-tests.\(UUID().uuidString)"
+    func bidirectionalLinkNavigationStaysInOneWindowAndUsesPageHistory() async throws {
+        let suiteName = "mudsnote.link-navigation-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mudsnote-knowledge-navigation-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("mudsnote-link-navigation-\(UUID().uuidString)", isDirectory: true)
         try FileManager.default.createDirectory(at: root, withIntermediateDirectories: true)
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -2459,13 +2460,11 @@ struct MarkdownRichEditorTests {
         let sourceURL = try store.saveNewNote(
             title: "Source",
             body: "Source body",
-            tags: ["层级/点"],
             in: notesDirectory
         )
         let targetURL = try store.saveNewNote(
             title: "Target",
             body: "[Source](\(sourceURL.lastPathComponent))",
-            tags: ["层级/线"],
             in: notesDirectory
         )
         let controller = LibraryWindowController(
@@ -2475,6 +2474,7 @@ struct MarkdownRichEditorTests {
             onClose: {}
         )
         defer { controller.close() }
+        controller.showWindowAndFocus()
 
         try controller.openMarkdownDocumentForLibrary(at: targetURL)
         await controller.waitForNoteLinksRefreshForLibrary()
@@ -2483,145 +2483,44 @@ struct MarkdownRichEditorTests {
             .first { $0.title == "Source" })
         sourceButton.performClick(nil)
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == sourceURL.standardizedFileURL)
-        // No action from the old note may remain clickable while the new
-        // note's background relations are being resolved.
-        #expect(controller.noteLinksView.knowledgeRelations == .empty)
+        // No stale link from the old note may remain clickable while the new
+        // note's background links are being resolved.
+        #expect(controller.noteLinksView.linkRelations == .empty)
 
-        let backButton = try #require(controller.noteLinksView.allSubviews
-            .compactMap { $0 as? NSButton }
-            .first { $0.title == "‹" })
-        #expect(backButton.isEnabled)
-        backButton.performClick(nil)
+        await controller.waitForNoteLinksRefreshForLibrary()
+        #expect(controller.noteLinksView.linkRelations.incoming.map(\.url) == [targetURL.standardizedFileURL])
+
+        controller.navigateLibraryBack()
         #expect(controller.selectedMarkdownFileURLForLibrary()?.standardizedFileURL == targetURL.standardizedFileURL)
     }
 
     @MainActor
     @Test
-    func knowledgeRelationsViewHidesWithoutExistingRelations() {
+    func noteLinksViewDisplaysOutgoingAndIncomingAndHidesWhenEmpty() {
         let view = NoteLinksView(frame: .zero)
         #expect(view.isHidden)
-        var requestedLayer: KnowledgeLayer?
-        var requestedGraph = false
-        view.onGenerateHigherLayer = { requestedLayer = $0 }
-        view.onShowGraph = { requestedGraph = true }
 
-        view.update(KnowledgeRelations(
-            currentLayer: .point,
-            parents: [],
-            children: [],
-            related: [KnowledgeRelationItem(
-                url: URL(fileURLWithPath: "/tmp/source.md"),
-                title: "Source"
-            )],
-            suggested: [KnowledgeRelationItem(
-                url: URL(fileURLWithPath: "/tmp/suggested.md"),
-                title: "Suggested",
-                reason: "共同标签：数据治理"
-            )]
+        var openedURL: URL?
+        view.onOpen = { openedURL = $0 }
+        let outgoingURL = URL(fileURLWithPath: "/tmp/outgoing.md")
+        let incomingURL = URL(fileURLWithPath: "/tmp/incoming.md")
+
+        view.update(NoteLinkRelations(
+            incoming: [NoteLinkItem(url: incomingURL, title: "Incoming")],
+            outgoing: [NoteLinkItem(url: outgoingURL, title: "Outgoing")]
         ))
         #expect(!view.isHidden)
         let buttonTitles = view.allSubviews.compactMap { ($0 as? NSButton)?.title }
-        #expect(buttonTitles.contains("生成线层草案"))
-        let relationLabels = view.allSubviews
-            .compactMap { ($0 as? NSTextField)?.stringValue }
-        #expect(relationLabels.contains("共同标签：数据治理"))
+        #expect(buttonTitles.contains("Outgoing"))
+        #expect(buttonTitles.contains("Incoming"))
         view.allSubviews
             .compactMap { $0 as? NSButton }
-            .first { $0.title == "生成线层草案" }?
+            .first { $0.title == "Outgoing" }?
             .performClick(nil)
-        #expect(requestedLayer == .line)
-        let graphButton = view.allSubviews
-            .compactMap { $0 as? NSButton }
-            .first { $0.accessibilityLabel() == "打开当前笔记知识图谱" }
-        graphButton?.performClick(nil)
-        #expect(requestedGraph)
+        #expect(openedURL == outgoingURL)
 
         view.update(.empty)
         #expect(view.isHidden)
-    }
-
-    @MainActor
-    @Test
-    func knowledgeGraphCanvasFiltersNavigationFromGraphPresentation() {
-        let pointURL = URL(fileURLWithPath: "/tmp/Point.md")
-        let lineURL = URL(fileURLWithPath: "/tmp/Line.md")
-        let canvas = KnowledgeGraphCanvasView(frame: NSRect(x: 0, y: 0, width: 720, height: 480))
-        let window = NSWindow(
-            contentRect: canvas.frame,
-            styleMask: [.titled],
-            backing: .buffered,
-            defer: false
-        )
-        window.contentView = canvas
-        canvas.update(KnowledgeGraphSnapshot(
-            nodes: [
-                KnowledgeGraphNode(url: pointURL, title: "Point", layer: .point, linkCount: 1),
-                KnowledgeGraphNode(url: lineURL, title: "Line", layer: .line, linkCount: 1)
-            ],
-            edges: [
-                KnowledgeGraphEdge(
-                    sourceURL: pointURL,
-                    targetURL: lineURL,
-                    kind: .hierarchy
-                )
-            ],
-            focusedURL: lineURL
-        ))
-
-        #expect(canvas.accessibilityLabel()?.contains("2 个节点") == true)
-        let accessibleNodes = canvas.accessibilityChildren()?
-            .compactMap { $0 as? NSAccessibilityElement } ?? []
-        #expect(accessibleNodes.count == 2)
-        #expect(accessibleNodes.allSatisfy { $0.accessibilityRole() == .button })
-        #expect(accessibleNodes.contains {
-            $0.accessibilityLabel()?.contains("Point，点层") == true
-        })
-        canvas.zoom(by: 100)
-        canvas.zoom(by: 0.0001)
-        canvas.fitGraph()
-        #expect(canvas.acceptsFirstResponder)
-    }
-
-    @MainActor
-    @Test
-    func knowledgeGraphWindowKeepsControlsAboveTheCanvasAtMinimumSize() throws {
-        let suiteName = "mudsnote.knowledge-graph-window-tests.\(UUID().uuidString)"
-        let defaults = try #require(UserDefaults(suiteName: suiteName))
-        defaults.removePersistentDomain(forName: suiteName)
-        let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mudsnote-knowledge-graph-window-\(UUID().uuidString)", isDirectory: true)
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-            try? FileManager.default.removeItem(at: root)
-        }
-        let store = NoteStore(
-            defaults: defaults,
-            legacyDefaults: nil,
-            appSupportDirectory: root.appendingPathComponent("AppSupport", isDirectory: true)
-        )
-        let controller = KnowledgeGraphWindowController(noteStore: store, rootsProvider: { [] })
-        defer { controller.close() }
-        controller.window?.setContentSize(NSSize(width: 820, height: 460))
-        controller.window?.contentView?.layoutSubtreeIfNeeded()
-
-        let content = try #require(controller.window?.contentView)
-        let scope = try #require(content.allSubviews.first {
-            $0.identifier?.rawValue == "KnowledgeGraphScopeControl"
-        })
-        let canvas = try #require(content.allSubviews.first {
-            $0.identifier?.rawValue == "KnowledgeGraphCanvas"
-        })
-        let toolbar = try #require(content.allSubviews.first {
-            $0.identifier?.rawValue == "KnowledgeGraphToolbar"
-        })
-        let scopeFrame = content.convert(scope.bounds, from: scope)
-        let canvasFrame = content.convert(canvas.bounds, from: canvas)
-        let toolbarFrame = content.convert(toolbar.bounds, from: toolbar)
-        #expect(toolbarFrame.height == 44)
-        #expect(!toolbarFrame.intersects(canvasFrame))
-        #expect(!scopeFrame.intersects(canvasFrame))
-        #expect(scopeFrame.minX >= content.bounds.minX)
-        #expect(scopeFrame.maxX <= content.bounds.maxX)
     }
 
     @MainActor

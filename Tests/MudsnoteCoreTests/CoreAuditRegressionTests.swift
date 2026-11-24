@@ -166,7 +166,7 @@ struct CoreAuditRegressionTests {
         #expect(env.store.searchNotes(query: "增量索引", limit: 5).first?.url.standardizedFileURL == aURL.standardizedFileURL)
     }
 
-    @Test func cachedKnowledgeDerivedIndexReturnsConsistentBacklinksAndSuggestions() throws {
+    @Test func cachedNoteLinkIndexReturnsConsistentBacklinks() throws {
         let env = try makeStore()
         defer { env.cleanup() }
         let targetURL = try env.store.saveNewNote(
@@ -180,17 +180,58 @@ struct CoreAuditRegressionTests {
             body: "See [[\(targetStem)]] for details.",
             tags: ["work"]
         )
-        let relatedURL = try env.store.saveNewNote(
-            title: "Storage Plan",
-            body: "SQLite FTS5 indexing benchmark notes",
-            tags: ["storage"]
-        )
 
-        let first = env.store.knowledgeRelations(for: targetURL)
-        let second = env.store.knowledgeRelations(for: targetURL)
+        let first = env.store.linkRelations(for: targetURL)
+        let second = env.store.linkRelations(for: targetURL)
         #expect(first == second)
         #expect(first.incoming.map(\.url) == [linkerURL.standardizedFileURL])
-        #expect(first.suggested.contains { $0.url == relatedURL.standardizedFileURL })
+    }
+
+    @Test func pinnedNotePathsCacheServesRepeatedReadsAndDetectsExternalDiskChanges() throws {
+        let env = try makeStore()
+        defer { env.cleanup() }
+        let firstURL = try env.store.saveNewNote(title: "Pinned One", body: "One")
+        let secondURL = try env.store.saveNewNote(title: "Pinned Two", body: "Two")
+
+        env.store.setLibraryNotePinned(true, at: firstURL)
+        #expect(env.store.libraryPinnedNotePaths == [firstURL.standardizedFileURL.path])
+        #expect(env.store.libraryPinnedNotePaths == [firstURL.standardizedFileURL.path])
+
+        // External write to .mudsnote/pins.json must invalidate the stat-backed cache.
+        let pinsFile = env.store.notesDirectory.appendingPathComponent(".mudsnote/pins.json")
+        let updatedData = try JSONEncoder().encode([firstURL.lastPathComponent, secondURL.lastPathComponent].sorted())
+        try updatedData.write(to: pinsFile, options: .atomic)
+        let bumpedDate = Date().addingTimeInterval(5)
+        try FileManager.default.setAttributes([.modificationDate: bumpedDate], ofItemAtPath: pinsFile.path)
+
+        let reloaded = Set(env.store.libraryPinnedNotePaths)
+        #expect(reloaded == Set([firstURL.standardizedFileURL.path, secondURL.standardizedFileURL.path]))
+    }
+
+    @Test func cachedNotesSeedsDiskSnapshotSoValidationAvoidsSecondDecode() throws {
+        let env = try makeStore()
+        defer { env.cleanup() }
+        let notesDirectory = env.store.notesDirectory
+        _ = try env.store.saveNewNote(title: "Launch Alpha", body: "Alpha body")
+        _ = try env.store.saveNewNote(title: "Launch Beta", body: "Beta body")
+        #expect(env.store.prewarmSearchIndex(roots: [notesDirectory]) == 2)
+
+        let relaunched = NoteStore(
+            defaults: env.store.defaults,
+            legacyDefaults: nil,
+            appSupportDirectory: env.store.appSupportDirectory
+        )
+        relaunched.configurePreferredDirectories([notesDirectory], defaultDirectory: notesDirectory)
+        let cached = relaunched.cachedNotes(limit: 50, roots: [notesDirectory])
+        #expect(cached?.count == 2)
+        #expect(relaunched.lastDiskLoadedSearchIndexSnapshot != nil)
+        #expect(relaunched.searchIndexSnapshot == nil)
+
+        let validated = relaunched.listNotesRefreshingIndex(limit: 50, roots: [notesDirectory])
+        #expect(validated.count == 2)
+        #expect(relaunched.searchIndexEntryReadCountForTesting == 0)
+        #expect(relaunched.lastDiskLoadedSearchIndexSnapshot == nil)
+        #expect(relaunched.searchIndexSnapshot != nil)
     }
 
     @Test func codexProcessExecutionEnforcesTimeoutAndTerminatesHungChild() async throws {

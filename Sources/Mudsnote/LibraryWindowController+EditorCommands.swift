@@ -332,108 +332,128 @@ extension LibraryWindowController {
         let prefix = string.substring(with: prefixRange)
         editorSlashSuggestionInspectionLengthForLibrary = prefixRange.length
 
-        let tagPattern = startsAtParagraphBoundary ? #"(^|\s)#([^\s#]*)$"# : #"\s#([^\s#]*)$"#
-        if let match = prefix.range(of: tagPattern, options: .regularExpression),
-           let hash = prefix[match].firstIndex(of: "#") {
-            scheduleDeferredSourceTagLoad(forEditor: true)
-            let token = String(prefix[hash..<match.upperBound])
-            let query = String(token.dropFirst())
-            let range = NSRange(hash..<match.upperBound, in: prefix)
-            let replacementRange = NSRange(location: prefixStart + range.location, length: range.length)
-            var tags = sourceTagNames.filter { tag in
-                !selectedTags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
-                    && (query.isEmpty || tag.localizedCaseInsensitiveContains(query))
-            }.sorted {
-                let lhsPrefix = $0.lowercased().hasPrefix(query.lowercased())
-                let rhsPrefix = $1.lowercased().hasPrefix(query.lowercased())
-                return lhsPrefix != rhsPrefix ? lhsPrefix : $0.localizedStandardCompare($1) == .orderedAscending
+        let hasTriggerCharacter = prefix.utf8.contains { $0 == 35 || $0 == 64 || $0 == 47 } // #, @, /
+        if !hasTriggerCharacter {
+            if editorSlashSuggestion != nil || editorTagSuggestion != nil || editorNoteSuggestion != nil {
+                dismissEditorSlashSuggestions()
             }
-            if !query.isEmpty,
-               !tags.contains(where: { $0.localizedCaseInsensitiveCompare(query) == .orderedSame }),
-               !selectedTags.contains(where: { $0.localizedCaseInsensitiveCompare(query) == .orderedSame }) {
-                tags.insert(query, at: 0)
-            }
-            tags = Array(tags.prefix(8))
-            editorTagSuggestion = (replacementRange, tags)
-            editorSlashSuggestion = nil
-            editorNoteSuggestion = nil
-            hostEditorSuggestionView(in: host)
-            editorSuggestionController.updateItems(tags.isEmpty
-                ? [SuggestionItem(title: "输入标签名称", subtitle: nil, symbolName: "number", isSelectable: false)]
-                : tags.map { tag in
-                    SuggestionItem(title: "#\(tag)", subtitle: sourceTagNames.contains(tag) ? "标签" : "新建标签", symbolName: "number")
-                })
-            let size = editorSuggestionController.preferredContentSize
-            let anchor = editorTextView.convert(caretRectInWindow(for: editorTextView, at: replacementRange.location), to: host)
-            let origin = NSPoint(
-                x: min(max(anchor.minX, 4), max(host.bounds.width - size.width - 4, 4)),
-                y: min(max(anchor.minY - size.height - 6, 4), max(host.bounds.height - size.height - 4, 4))
-            )
-            editorSuggestionController.view.frame = NSRect(origin: origin, size: size)
-            editorSuggestionController.view.isHidden = false
-            slashCommandInputSourceSession.end()
+            editorSlashSuggestionLastInput = (caret, prefixStart, prefix)
             return
         }
-        editorTagSuggestion = nil
 
-        let mentionPattern = startsAtParagraphBoundary
-            ? #"(^|\s)@([^@\n]*)$"#
-            : #"\s@([^@\n]*)$"#
-        if let match = prefix.range(of: mentionPattern, options: .regularExpression) {
-            let matchedText = String(prefix[match])
-            if let atIndex = matchedText.firstIndex(of: "@") {
-                let token = String(matchedText[atIndex...])
+        if let previousInput = editorSlashSuggestionLastInput,
+           previousInput.caret == caret,
+           previousInput.prefixStart == prefixStart,
+           previousInput.prefix == prefix,
+           editorNoteSuggestion == nil {
+            return
+        }
+
+        if prefix.utf8.contains(35) { // '#'
+            let tagPattern = startsAtParagraphBoundary ? #"(^|\s)#([^\s#]*)$"# : #"\s#([^\s#]*)$"#
+            if let match = prefix.range(of: tagPattern, options: .regularExpression),
+               let hash = prefix[match].firstIndex(of: "#") {
+                scheduleDeferredSourceTagLoad(forEditor: true)
+                let token = String(prefix[hash..<match.upperBound])
                 let query = String(token.dropFirst())
-                let matchRange = NSRange(match, in: prefix)
-                let tokenOffset = matchedText[..<atIndex].utf16.count
-                let replacementRange = NSRange(
-                    location: prefixStart + matchRange.location + tokenOffset,
-                    length: token.utf16.count
-                )
-                if editorNoteSuggestionQuery != query {
-                    scheduleEditorNoteSuggestions(query: query)
-                    dismissEditorSlashSuggestions()
-                    return
+                let range = NSRange(hash..<match.upperBound, in: prefix)
+                let replacementRange = NSRange(location: prefixStart + range.location, length: range.length)
+                var tags = sourceTagNames.filter { tag in
+                    !selectedTags.contains { $0.localizedCaseInsensitiveCompare(tag) == .orderedSame }
+                        && (query.isEmpty || tag.localizedCaseInsensitiveContains(query))
+                }.sorted {
+                    let lhsPrefix = $0.lowercased().hasPrefix(query.lowercased())
+                    let rhsPrefix = $1.lowercased().hasPrefix(query.lowercased())
+                    return lhsPrefix != rhsPrefix ? lhsPrefix : $0.localizedStandardCompare($1) == .orderedAscending
                 }
-                guard !editorNoteSuggestions.isEmpty else {
-                    dismissEditorSlashSuggestions()
-                    return
+                if !query.isEmpty,
+                   !tags.contains(where: { $0.localizedCaseInsensitiveCompare(query) == .orderedSame }),
+                   !selectedTags.contains(where: { $0.localizedCaseInsensitiveCompare(query) == .orderedSame }) {
+                    tags.insert(query, at: 0)
                 }
+                tags = Array(tags.prefix(8))
+                editorTagSuggestion = (replacementRange, tags)
                 editorSlashSuggestion = nil
-                editorNoteSuggestion = (
-                    replacementRange,
-                    editorNoteSuggestions
-                )
+                editorNoteSuggestion = nil
+                editorSlashSuggestionLastInput = (caret, prefixStart, prefix)
                 hostEditorSuggestionView(in: host)
-                editorSuggestionController.updateItems(editorNoteSuggestions.map {
-                    SuggestionItem(
-                        title: $0.title,
-                        subtitle: $0.url.deletingLastPathComponent().lastPathComponent,
-                        symbolName: "note.text"
-                    )
-                })
+                editorSuggestionController.updateItems(tags.isEmpty
+                    ? [SuggestionItem(title: "输入标签名称", subtitle: nil, symbolName: "number", isSelectable: false)]
+                    : tags.map { tag in
+                        SuggestionItem(title: "#\(tag)", subtitle: sourceTagNames.contains(tag) ? "标签" : "新建标签", symbolName: "number")
+                    })
                 let size = editorSuggestionController.preferredContentSize
-                let tokenRect = editorTextView.convert(
-                    caretRectInWindow(for: editorTextView, at: replacementRange.location),
-                    to: host
+                let anchor = editorTextView.convert(caretRectInWindow(for: editorTextView, at: replacementRange.location), to: host)
+                let origin = NSPoint(
+                    x: min(max(anchor.minX, 4), max(host.bounds.width - size.width - 4, 4)),
+                    y: min(max(anchor.minY - size.height - 6, 4), max(host.bounds.height - size.height - 4, 4))
                 )
-                var origin = NSPoint(x: tokenRect.minX, y: tokenRect.minY - size.height - 6)
-                origin.x = min(max(origin.x, 4), max(host.bounds.width - size.width - 4, 4))
-                origin.y = min(max(origin.y, 4), max(host.bounds.height - size.height - 4, 4))
                 editorSuggestionController.view.frame = NSRect(origin: origin, size: size)
                 editorSuggestionController.view.isHidden = false
                 slashCommandInputSourceSession.end()
                 return
             }
         }
+        editorTagSuggestion = nil
 
-        if let previousInput = editorSlashSuggestionLastInput,
-           previousInput.caret == caret,
-           previousInput.prefixStart == prefixStart,
-           previousInput.prefix == prefix {
+        if prefix.utf8.contains(64) { // '@'
+            let mentionPattern = startsAtParagraphBoundary
+                ? #"(^|\s)@([^@\n]*)$"#
+                : #"\s@([^@\n]*)$"#
+            if let match = prefix.range(of: mentionPattern, options: .regularExpression) {
+                let matchedText = String(prefix[match])
+                if let atIndex = matchedText.firstIndex(of: "@") {
+                    let token = String(matchedText[atIndex...])
+                    let query = String(token.dropFirst())
+                    let matchRange = NSRange(match, in: prefix)
+                    let tokenOffset = matchedText[..<atIndex].utf16.count
+                    let replacementRange = NSRange(
+                        location: prefixStart + matchRange.location + tokenOffset,
+                        length: token.utf16.count
+                    )
+                    if editorNoteSuggestionQuery != query {
+                        scheduleEditorNoteSuggestions(query: query)
+                        dismissEditorSlashSuggestions()
+                        return
+                    }
+                    guard !editorNoteSuggestions.isEmpty else {
+                        dismissEditorSlashSuggestions()
+                        return
+                    }
+                    editorSlashSuggestion = nil
+                    editorNoteSuggestion = (
+                        replacementRange,
+                        editorNoteSuggestions
+                    )
+                    hostEditorSuggestionView(in: host)
+                    editorSuggestionController.updateItems(editorNoteSuggestions.map {
+                        SuggestionItem(
+                            title: $0.title,
+                            subtitle: $0.url.deletingLastPathComponent().lastPathComponent,
+                            symbolName: "note.text"
+                        )
+                    })
+                    let size = editorSuggestionController.preferredContentSize
+                    let tokenRect = editorTextView.convert(
+                        caretRectInWindow(for: editorTextView, at: replacementRange.location),
+                        to: host
+                    )
+                    var origin = NSPoint(x: tokenRect.minX, y: tokenRect.minY - size.height - 6)
+                    origin.x = min(max(origin.x, 4), max(host.bounds.width - size.width - 4, 4))
+                    origin.y = min(max(origin.y, 4), max(host.bounds.height - size.height - 4, 4))
+                    editorSuggestionController.view.frame = NSRect(origin: origin, size: size)
+                    editorSuggestionController.view.isHidden = false
+                    slashCommandInputSourceSession.end()
+                    return
+                }
+            }
+        }
+
+        editorSlashSuggestionLastInput = (caret, prefixStart, prefix)
+        guard prefix.utf8.contains(47) else { // '/'
+            dismissEditorSlashSuggestions()
             return
         }
-        editorSlashSuggestionLastInput = (caret, prefixStart, prefix)
 
         let pattern = startsAtParagraphBoundary
             ? #"(^|\s)/([^\s/]*)$"#
@@ -510,7 +530,7 @@ extension LibraryWindowController {
             let item = suggestion.items[index]
             let sourceURL = selectedURL
                 ?? targetDirectoryForNewNote().appendingPathComponent("Untitled.md")
-            let markdown = noteStore.markdownKnowledgeLink(
+            let markdown = noteStore.markdownNoteLink(
                 from: sourceURL,
                 to: item.url,
                 title: item.title

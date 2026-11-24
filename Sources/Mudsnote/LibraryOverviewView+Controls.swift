@@ -242,7 +242,12 @@ extension LibraryOverviewView {
             }
             if node != .unassigned {
                 menu.addItem(.separator())
-                menu.addItem(OverviewMenuItem("从总览移除整支，保留笔记") { [weak self] in self?.removeTopic(node) })
+                let hasDescendantCards = contentIndex.tree.descendants(of: node).contains {
+                    if case .card = $0 { return true }
+                    return false
+                }
+                let deleteTitle = hasDescendantCards ? "删除主题…" : "删除主题"
+                menu.addItem(OverviewMenuItem(deleteTitle) { [weak self] in self?.requestDeleteNode(node) })
             }
         }
         let host = node == focusedRoot ? rootHost : hosts[node]

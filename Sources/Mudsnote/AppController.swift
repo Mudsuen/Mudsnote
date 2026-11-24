@@ -22,6 +22,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     ]
 
     private var statusItem: NSStatusItem?
+    private var statusMenu: NSMenu?
     private var quickCaptureController: EditorWindowController?
     private var floatingNoteController: EditorWindowController?
     private var editorControllers: [UUID: EditorWindowController] = [:]
@@ -32,7 +33,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private var pendingExternalMarkdownURLs: [URL] = []
     private var hasFinishedLaunching = false
     private var hasPendingReopen = false
-    private var statusMenuRefreshTask: Task<Void, Never>?
     private lazy var applicationUpdates = ApplicationUpdateController(arguments: launchArguments)
     private var updateStatusMenuItem: NSMenuItem?
 
@@ -308,8 +308,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             button.imageScaling = .scaleProportionallyDown
             button.toolTip = MudsnoteBrand.appName
         }
+        let menu = NSMenu()
+        menu.delegate = self
+        item.menu = menu
+        statusMenu = menu
         statusItem = item
-        rebuildMenu()
     }
 
     private func setupMainMenu() {
@@ -493,15 +496,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         sidebarItem.target = self
         sidebarItem.keyEquivalentModifierMask = [.command, .control]
         viewMenu.addItem(sidebarItem)
-
-        let knowledgeGraphItem = NSMenuItem(
-            title: "显示知识图谱",
-            action: #selector(showKnowledgeGraphFromMainMenu),
-            keyEquivalent: "g"
-        )
-        knowledgeGraphItem.target = self
-        knowledgeGraphItem.keyEquivalentModifierMask = [.command, .option]
-        viewMenu.addItem(knowledgeGraphItem)
         viewMenu.addItem(.separator())
 
         let sortItem = NSMenuItem(title: "排序方式", action: nil, keyEquivalent: "")
@@ -554,8 +548,8 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         menu.addItem(item)
     }
 
-    private func rebuildMenu(recentFiles: [NoteFile]? = nil) {
-        let menu = NSMenu()
+    private func populateStatusMenu(_ menu: NSMenu) {
+        menu.removeAllItems()
 
         let newNote = NSMenuItem(title: "快速笔记", action: #selector(showQuickCapture), keyEquivalent: "")
         newNote.target = self
@@ -583,7 +577,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
         menu.addItem(.separator())
 
-        let recent = recentFiles ?? noteStore.listRecentFiles()
+        let recent = noteStore.listRecentFiles()
         if recent.isEmpty {
             let empty = NSMenuItem(title: "暂无最近笔记", action: nil, keyEquivalent: "")
             empty.isEnabled = false
@@ -606,8 +600,11 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         let quit = NSMenuItem(title: "退出 \(MudsnoteBrand.appName)", action: #selector(quitApp), keyEquivalent: "q")
         quit.target = self
         menu.addItem(quit)
+    }
 
-        statusItem?.menu = menu
+    private func rebuildMenu(recentFiles: [NoteFile]? = nil) {
+        guard let statusMenu else { return }
+        populateStatusMenu(statusMenu)
     }
 
     private func registerHotKeysIfNeeded() {
@@ -856,11 +853,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
 
         libraryWindowController = controller
         refreshFloatingNoteClassification()
-        controller.showWindowAndFocus()
+        let startsInOverview = visualQASelectedNoteURL == nil
+            && (!launchArguments.contains("--visual-qa-notes-dir") || launchArguments.contains("--overview"))
+        controller.showWindowAndFocus(startsInOverview: startsInOverview)
         selectVisualQANoteIfNeeded(in: controller)
-        if visualQASelectedNoteURL == nil && (!launchArguments.contains("--visual-qa-notes-dir") || launchArguments.contains("--overview")) {
-            controller.showOverview()
-        }
     }
 
     @objc
@@ -937,6 +933,10 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     func moveSelectedNotesFromMainMenu() {}
 
     func menuNeedsUpdate(_ menu: NSMenu) {
+        if menu === statusMenu {
+            populateStatusMenu(menu)
+            return
+        }
         guard menu === fileMoveNoteMenu else { return }
         menu.removeAllItems()
         guard let sourceMenu = libraryWindowController?.makeMoveNoteMenuForLibrary(),
@@ -962,12 +962,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     func toggleLibrarySidebarFromMainMenu() {
         showLibraryWindow()
         libraryWindowController?.toggleSourceListForLibrary()
-    }
-
-    @objc
-    func showKnowledgeGraphFromMainMenu() {
-        showLibraryWindow()
-        libraryWindowController?.showKnowledgeGraphForLibrary()
     }
 
     @objc
@@ -1009,8 +1003,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             return libraryWindowController?.canDeleteSelectedNotesFromMenuForLibrary ?? false
         case #selector(restoreSelectedNotesFromMainMenu):
             return libraryWindowController?.canRestoreSelectedNotesFromMenuForLibrary ?? false
-        case #selector(showKnowledgeGraphFromMainMenu):
-            return libraryWindowController?.canShowKnowledgeGraphForLibrary ?? false
         case #selector(sortLibraryNotesFromMainMenu(_:)):
             let currentOrder = libraryWindowController?.noteListSortOrder
                 ?? LibraryNoteSortOrder(rawValue: noteStore.libraryNoteSortOrderRawValue)
@@ -1077,7 +1069,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
             libraryIncludesSubfolderNotes: noteStore.libraryIncludesSubfolderNotes,
             searchDefaultScope: noteStore.searchDefaultScope,
             includesArchivedNotesInSearch: noteStore.includesArchivedNotesInSearch,
-            includesArchivedNotesInKnowledge: noteStore.includesArchivedNotesInKnowledge,
             editorContextMenuOptions: noteStore.enabledEditorContextMenuOptions,
             selectionToolbarOptions: noteStore.enabledSelectionToolbarOptions,
             aiEnabled: noteStore.aiEnabled,
@@ -1116,7 +1107,6 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
         noteStore.libraryIncludesSubfolderNotes = settings.libraryIncludesSubfolderNotes
         noteStore.searchDefaultScope = settings.searchDefaultScope
         noteStore.includesArchivedNotesInSearch = settings.includesArchivedNotesInSearch
-        noteStore.includesArchivedNotesInKnowledge = settings.includesArchivedNotesInKnowledge
         noteStore.enabledEditorContextMenuOptions = settings.editorContextMenuOptions
         noteStore.enabledSelectionToolbarOptions = settings.selectionToolbarOptions
         noteStore.aiEnabled = settings.aiEnabled
@@ -1181,19 +1171,7 @@ final class AppController: NSObject, NSApplicationDelegate, NSMenuItemValidation
     private func didSaveNote(at url: URL) {
         refreshFloatingNoteClassification()
         libraryWindowController?.refreshPublishedFloatingNote(at: url)
-        statusMenuRefreshTask?.cancel()
-        let noteStore = noteStore
-        statusMenuRefreshTask = Task { @MainActor [weak self] in
-            try? await Task.sleep(for: .milliseconds(120))
-            guard !Task.isCancelled else { return }
-            let recentFiles = await Task.detached(priority: .utility) {
-                noteStore.listRecentFiles()
-            }.value
-            guard !Task.isCancelled, let self else { return }
-            self.statusMenuRefreshTask = nil
-            self.rebuildMenu(recentFiles: recentFiles)
-            self.cleanupClosedWindows()
-        }
+        cleanupClosedWindows()
     }
 
     private func updateOpenEditorPreferences() {

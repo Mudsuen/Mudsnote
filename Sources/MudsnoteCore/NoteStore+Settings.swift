@@ -16,6 +16,7 @@ extension NoteStore {
         }
         set {
             defaults.set(newValue.path, forKey: NoteStoreDefaultsKey.notesDirectory)
+            invalidatePinnedNotePathsCache(resetsMigration: true)
             migrateLegacyPinnedNotePathsIfPossible()
         }
     }
@@ -81,23 +82,7 @@ extension NoteStore {
 
     public var includesArchivedNotesInSearch: Bool {
         get { defaults.object(forKey: NoteStoreDefaultsKey.includesArchivedNotesInSearch) as? Bool ?? false }
-        set {
-            // Preserve the former combined preference before the two controls diverge.
-            if defaults.object(forKey: NoteStoreDefaultsKey.includesArchivedNotesInKnowledge) == nil {
-                defaults.set(includesArchivedNotesInKnowledge, forKey: NoteStoreDefaultsKey.includesArchivedNotesInKnowledge)
-            }
-            defaults.set(newValue, forKey: NoteStoreDefaultsKey.includesArchivedNotesInSearch)
-        }
-    }
-
-    public var includesArchivedNotesInKnowledge: Bool {
-        get {
-            defaults.object(forKey: NoteStoreDefaultsKey.includesArchivedNotesInKnowledge) as? Bool
-                ?? includesArchivedNotesInSearch
-        }
-        set {
-            defaults.set(newValue, forKey: NoteStoreDefaultsKey.includesArchivedNotesInKnowledge)
-        }
+        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.includesArchivedNotesInSearch) }
     }
 
     public var aiMemoryDailySyncEnabled: Bool {
@@ -113,10 +98,14 @@ extension NoteStore {
     private static let archiveDirectoryNames: Set<String> = ["archive", "archives", "归档"]
 
     public func isArchivedNote(at url: URL) -> Bool {
+        let candidateRoots = knownSearchRoots().map(\.standardizedFileURL)
+        return isArchivedNote(at: url, candidateRoots: candidateRoots)
+    }
+
+    public func isArchivedNote(at url: URL, candidateRoots: [URL]) -> Bool {
         let standardizedURL = url.standardizedFileURL
         let directoryURL = standardizedURL.deletingLastPathComponent()
         let directoryPath = directoryURL.path
-        let candidateRoots = knownSearchRoots().map(\.standardizedFileURL)
         let matchingRoot = candidateRoots
             .filter { root in
                 directoryPath == root.path || directoryPath.hasPrefix(root.path + "/")
@@ -174,10 +163,6 @@ extension NoteStore {
     public var libraryOverviewAppearanceRawValue: Int {
         get { defaults.integer(forKey: NoteStoreDefaultsKey.libraryOverviewAppearance) }
         set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryOverviewAppearance) }
-    }
-    public var libraryOverviewMapStyleRawValue: Int {
-        get { defaults.integer(forKey: NoteStoreDefaultsKey.libraryOverviewMapStyle) }
-        set { defaults.set(newValue, forKey: NoteStoreDefaultsKey.libraryOverviewMapStyle) }
     }
     public var libraryOverviewMapStructureRawValue: Int {
         get { defaults.integer(forKey: NoteStoreDefaultsKey.libraryOverviewMapStructure) }
@@ -262,6 +247,9 @@ extension NoteStore {
             iconNames.removeValue(forKey: path)
         }
         defaults.set(iconNames, forKey: NoteStoreDefaultsKey.libraryFolderIconNames)
+        settingsCacheLock.lock()
+        cachedFolderIconNames = iconNames
+        settingsCacheLock.unlock()
     }
 
     public func replaceLibraryFolderOrderPathPrefix(_ oldDirectory: URL, with newDirectory: URL) {
@@ -285,6 +273,9 @@ extension NoteStore {
             }
         }
         defaults.set(remapped, forKey: NoteStoreDefaultsKey.libraryFolderIconNames)
+        settingsCacheLock.lock()
+        cachedFolderIconNames = remapped
+        settingsCacheLock.unlock()
     }
 
     func removeLibraryFolderIconNames(in directory: URL) {
@@ -293,6 +284,9 @@ extension NoteStore {
             path != directoryPath && !path.hasPrefix(directoryPath + "/")
         }
         defaults.set(remaining, forKey: NoteStoreDefaultsKey.libraryFolderIconNames)
+        settingsCacheLock.lock()
+        cachedFolderIconNames = remaining
+        settingsCacheLock.unlock()
     }
 
     public var libraryFoldersSectionCollapsed: Bool {
@@ -350,16 +344,48 @@ extension NoteStore {
         return true
     }
 
+    public func invalidatePinnedNotePathsCache(resetsMigration: Bool = false) {
+        settingsCacheLock.lock()
+        cachedPinnedSnapshot = nil
+        if resetsMigration {
+            hasPerformedPinnedNoteMigration = false
+        }
+        settingsCacheLock.unlock()
+    }
+
     public var libraryPinnedNotePaths: [String] {
-        consolidateNestedSharedPinnedNotePathsIfPossible()
-        migrateLegacyPinnedNotePathsIfPossible()
-        let localPaths = defaults.stringArray(
+        let roots = preferredDirectories.map(\.standardizedFileURL)
+        let rootPaths = roots.map(\.path)
+        let rawLocalPaths = defaults.stringArray(
             forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths
         ) ?? []
-        var paths = Set(localPaths.map {
+
+        settingsCacheLock.lock()
+        let needsMigration = !hasPerformedPinnedNoteMigration
+        let cached = cachedPinnedSnapshot
+        settingsCacheLock.unlock()
+
+        if !needsMigration,
+           let cached,
+           cached.rootPaths == rootPaths,
+           cached.localPaths == rawLocalPaths,
+           pinnedFileStamps(for: roots) == cached.fileStamps {
+            return cached.resolvedPaths
+        }
+
+        if needsMigration {
+            consolidateNestedSharedPinnedNotePathsIfPossible()
+            migrateLegacyPinnedNotePathsIfPossible()
+        }
+
+        let updatedLocalPaths = defaults.stringArray(
+            forKey: NoteStoreDefaultsKey.libraryPinnedNotePaths
+        ) ?? []
+        var paths = Set(updatedLocalPaths.map {
             URL(fileURLWithPath: $0).standardizedFileURL.path
         })
-        for root in preferredDirectories {
+        let stamps = pinnedFileStamps(for: roots)
+        for root in roots where stamps[root.path]?.exists == true {
             for relativePath in loadSharedPinnedNotePaths(in: root) {
                 paths.insert(
                     root.appendingPathComponent(relativePath)
@@ -368,7 +394,36 @@ extension NoteStore {
                 )
             }
         }
-        return paths.sorted()
+        let sorted = paths.sorted()
+        let snapshot = PinnedNotePathsCacheSnapshot(
+            rootPaths: rootPaths,
+            localPaths: updatedLocalPaths,
+            fileStamps: stamps,
+            resolvedPaths: sorted
+        )
+        settingsCacheLock.lock()
+        cachedPinnedSnapshot = snapshot
+        hasPerformedPinnedNoteMigration = true
+        settingsCacheLock.unlock()
+        return sorted
+    }
+
+    private func pinnedFileStamps(for roots: [URL]) -> [String: PinnedNoteFileStamp] {
+        var stamps: [String: PinnedNoteFileStamp] = [:]
+        stamps.reserveCapacity(roots.count)
+        for root in roots {
+            let pinsURL = root.appendingPathComponent(".mudsnote/pins.json")
+            if let attrs = try? fileManager.attributesOfItem(atPath: pinsURL.path) {
+                stamps[root.path] = PinnedNoteFileStamp(
+                    exists: true,
+                    modifiedAt: attrs[.modificationDate] as? Date,
+                    fileSize: (attrs[.size] as? NSNumber)?.uint64Value
+                )
+            } else {
+                stamps[root.path] = PinnedNoteFileStamp(exists: false, modifiedAt: nil, fileSize: nil)
+            }
+        }
+        return stamps
     }
 
     public func isLibraryNotePinned(at url: URL) -> Bool {
@@ -377,6 +432,7 @@ extension NoteStore {
 
     public func setLibraryNotePinned(_ isPinned: Bool, at url: URL) {
         consolidateNestedSharedPinnedNotePathsIfPossible()
+        defer { invalidatePinnedNotePathsCache() }
         let standardizedURL = url.standardizedFileURL
         let path = standardizedURL.path
         if let root = owningPreferredDirectory(for: standardizedURL),
@@ -727,6 +783,7 @@ extension NoteStore {
             .filter { $0.standardizedFileURL.path != normalizedDefault.path }
             .map(\.path)
         defaults.set(extras, forKey: NoteStoreDefaultsKey.extraDirectories)
+        invalidatePinnedNotePathsCache(resetsMigration: true)
         consolidateNestedSharedPinnedNotePathsIfPossible()
         migrateLegacyPinnedNotePathsIfPossible()
     }
@@ -783,12 +840,23 @@ extension NoteStore {
     }
 
     private var libraryFolderIconNames: [String: String] {
-        (defaults.dictionary(forKey: NoteStoreDefaultsKey.libraryFolderIconNames) ?? [:]).reduce(into: [:]) {
+        settingsCacheLock.lock()
+        if let cached = cachedFolderIconNames {
+            settingsCacheLock.unlock()
+            return cached
+        }
+        settingsCacheLock.unlock()
+
+        let resolved: [String: String] = (defaults.dictionary(forKey: NoteStoreDefaultsKey.libraryFolderIconNames) ?? [:]).reduce(into: [:]) {
             result, entry in
             guard let iconName = entry.value as? String else { return }
             let path = URL(fileURLWithPath: entry.key, isDirectory: true).standardizedFileURL.path
             result[path] = iconName
         }
+        settingsCacheLock.lock()
+        cachedFolderIconNames = resolved
+        settingsCacheLock.unlock()
+        return resolved
     }
 
     private func replacingPathPrefix(_ oldPath: String, with newPath: String, in paths: Set<String>) -> Set<String> {

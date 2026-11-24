@@ -126,8 +126,8 @@ extension LibraryWindowController {
             return cell
         case .inlineFolderEdit(let operation):
             return makeSourceOutlineInlineEditCell(for: operation, item: item)
-        case .scope(let scope):
-            let identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(sourceLegacyTag(for: scope))")
+        case .scope:
+            let identifier = NSUserInterfaceItemIdentifier("LibrarySourceScopeCell")
             let cell: LibrarySourceOutlineCellView
             if let reused = outlineView.makeView(withIdentifier: identifier, owner: nil)
                 as? LibrarySourceOutlineCellView {
@@ -180,17 +180,12 @@ extension LibraryWindowController {
         let foregroundColor = isSelected
             ? selectedThemeColor.foregroundColor
             : LibrarySourceSelectionPalette.unselectedForegroundColor
-        let configuration = NSImage.SymbolConfiguration(
-            pointSize: LibraryNotesLayout.sourceSymbolPointSize,
-            weight: LibraryNotesLayout.sourceSymbolWeight
-        ).applying(NSImage.SymbolConfiguration(paletteColors: [foregroundColor]))
-        let noteImage = NSImage(
-            systemSymbolName: "doc.text",
-            accessibilityDescription: "笔记"
-        )?.withSymbolConfiguration(configuration)
-        noteImage?.isTemplate = false
         icon.identifier = NSUserInterfaceItemIdentifier("LibrarySourceNoteIcon")
-        icon.image = noteImage
+        icon.image = cachedSourceSymbolImage(
+            named: "doc.text",
+            color: foregroundColor,
+            accessibilityDescription: "笔记"
+        )
         icon.contentTintColor = nil
         cell.setAccessibilityLabel(label.stringValue)
         cell.setAccessibilityValue("笔记")
@@ -207,7 +202,7 @@ extension LibraryWindowController {
         let row = sourceOutlineView.row(forItem: item)
         let isSelected = isSourceOutlineItemVisuallySelected(item)
         let legacyTag = sourceLegacyTag(for: scope)
-        cell.identifier = NSUserInterfaceItemIdentifier("LibrarySourceRow-\(legacyTag)")
+        cell.setAccessibilityIdentifier("LibrarySourceRow-\(legacyTag)")
         cell.textField?.identifier = NSUserInterfaceItemIdentifier("LibrarySourceLabel-\(legacyTag)")
         cell.countLabel.identifier = NSUserInterfaceItemIdentifier("LibrarySourceCount-\(legacyTag)")
         cell.textField?.stringValue = title
@@ -223,16 +218,11 @@ extension LibraryWindowController {
         let foregroundColor = isSelected
             ? themeColor.foregroundColor
             : LibrarySourceSelectionPalette.unselectedForegroundColor
-        let sourceImageConfiguration = NSImage.SymbolConfiguration(
-            pointSize: LibraryNotesLayout.sourceSymbolPointSize,
-            weight: LibraryNotesLayout.sourceSymbolWeight
-        ).applying(NSImage.SymbolConfiguration(paletteColors: [foregroundColor]))
-        let sourceImage = NSImage(
-            systemSymbolName: sourceSymbolName(for: scope),
+        cell.imageView?.image = cachedSourceSymbolImage(
+            named: sourceSymbolName(for: scope),
+            color: foregroundColor,
             accessibilityDescription: title
-        )?.withSymbolConfiguration(sourceImageConfiguration)
-        sourceImage?.isTemplate = false
-        cell.imageView?.image = sourceImage
+        )
         cell.imageView?.contentTintColor = nil
         cell.imageView?.needsDisplay = true
         cell.needsDisplay = true
@@ -276,6 +266,38 @@ extension LibraryWindowController {
             return scope.symbolName
         }
         return noteStore.libraryFolderIconName(for: folderURL) ?? "folder.fill"
+    }
+
+    private static var sourceSymbolCache: [String: NSImage] = [:]
+
+    func cachedSourceSymbolImage(
+        named symbolName: String,
+        color: NSColor,
+        accessibilityDescription: String?
+    ) -> NSImage? {
+        let colorKey = color.usingColorSpace(.sRGB).map {
+            String(format: "%.3f:%.3f:%.3f:%.3f", $0.redComponent, $0.greenComponent, $0.blueComponent, $0.alphaComponent)
+        } ?? color.description
+        let cacheKey = "\(symbolName)|\(colorKey)"
+        if let cached = Self.sourceSymbolCache[cacheKey] {
+            return cached
+        }
+        let configuration = NSImage.SymbolConfiguration(
+            pointSize: LibraryNotesLayout.sourceSymbolPointSize,
+            weight: LibraryNotesLayout.sourceSymbolWeight
+        ).applying(NSImage.SymbolConfiguration(paletteColors: [color]))
+        guard let image = NSImage(
+            systemSymbolName: symbolName,
+            accessibilityDescription: accessibilityDescription
+        )?.withSymbolConfiguration(configuration) else {
+            return nil
+        }
+        image.isTemplate = false
+        if Self.sourceSymbolCache.count >= 128 {
+            Self.sourceSymbolCache.removeAll(keepingCapacity: true)
+        }
+        Self.sourceSymbolCache[cacheKey] = image
+        return image
     }
 
     func sourceLegacyTag(for scope: LibraryScope) -> Int {

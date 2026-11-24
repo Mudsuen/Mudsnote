@@ -97,7 +97,6 @@ load_topic() {
         Sources/Mudsnote/LibraryNavigationRail.swift
         Sources/Mudsnote/LibraryOverviewView*.swift
         Sources/Mudsnote/Overview*.swift
-        Sources/Mudsnote/KnowledgeGraphWindowController.swift
         Sources/Mudsnote/LibraryFileSystemMonitor.swift
       )
       TESTS=(Tests/MudsnoteAppTests/MarkdownRichEditorTests*.swift scripts/library_smoke.sh)

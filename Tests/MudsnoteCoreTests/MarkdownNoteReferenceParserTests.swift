@@ -87,34 +87,30 @@ struct MarkdownNoteReferenceParserTests {
     }
 
     @Test
-    func generatedEscapedTitleRoundTripsThroughBothRelationAPIs() throws {
+    func generatedEscapedTitleRoundTripsThroughLinkRelations() throws {
         try withStore { store in
             let target = try store.saveNewNote(title: "Plan ] Details", body: "Target")
             let source = try store.saveNewNote(title: "Source", body: "Source")
-            let link = store.markdownKnowledgeLink(from: source, to: target, title: "Plan ] Details")
+            let link = store.markdownNoteLink(from: source, to: target, title: "Plan ] Details")
             _ = try store.updateNoteInPlace(at: source, title: "Source", body: link)
 
-            #expect(store.knowledgeRelations(for: source).outgoing.map(\.url) == [target])
             #expect(store.linkRelations(for: source).outgoing.map(\.url) == [target])
-            #expect(store.knowledgeRelations(for: target).incoming.map(\.url) == [source])
+            #expect(store.linkRelations(for: target).incoming.map(\.url) == [source])
         }
     }
 
     @Test
-    func codeExamplesCreateNeitherBacklinksNorGraphEdges() throws {
+    func codeExamplesCreateNoBacklinks() throws {
         try withStore { store in
             let target = try store.saveNewNote(title: "Target", body: "Target")
             let source = try store.saveNewNote(title: "Source", body: "Source")
-            let link = store.markdownKnowledgeLink(from: source, to: target, title: "Target")
+            let link = store.markdownNoteLink(from: source, to: target, title: "Target")
             let wiki = "[[\(target.deletingPathExtension().lastPathComponent)]]"
             let codeExamples = "```markdown\n\(link)\n\(wiki)\n```\n\n`\(link)` and `\(wiki)`"
             _ = try store.updateNoteInPlace(at: source, title: "Source", body: codeExamples)
 
-            #expect(store.knowledgeRelations(for: source).outgoing.isEmpty)
-            #expect(store.knowledgeRelations(for: target).incoming.isEmpty)
             #expect(store.linkRelations(for: source).outgoing.isEmpty)
             #expect(store.linkRelations(for: target).incoming.isEmpty)
-            #expect(store.knowledgeGraphSnapshot(scope: .global).edges.isEmpty)
         }
     }
 

@@ -34,6 +34,6 @@ struct OverviewLayoutKey: Equatable {
 struct OverviewBreadcrumbKey: Equatable {
     var path: [OverviewNodeID]
     var titles: [String]
-    var width: CGFloat
+    var widthBucket: Int
     var dark: Bool
 }

@@ -26,7 +26,7 @@ extension LibraryWindowController {
         isRestoringSourceOutlineExpansion = wasRestoring
     }
 
-    func rebuildSourceRows(includeTags: Bool) {
+    func rebuildSourceRows(includeTags: Bool, refreshCounts: Bool = true) {
         sourceTreeNeedsScopeRebuild = false
         sourceTreeProjectionScope = sourceTreeScopeForCurrentSelection
         let wasSynchronizingSelection = isSynchronizingSourceOutlineSelection
@@ -91,7 +91,7 @@ extension LibraryWindowController {
         sourceOutlineRootItems = sidebarPresentation == .tags ? [tagsGroup] : roots
         sourceOutlineView.reloadData()
         restoreSourceOutlineExpansion()
-        if hasLoadedSourceCounts {
+        if refreshCounts, hasLoadedSourceCounts {
             refreshSourceCounts(using: sourceCountSnapshot)
         }
         refreshSourceSelection()

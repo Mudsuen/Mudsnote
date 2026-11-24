@@ -29,7 +29,7 @@ struct NoteLinkRelocationTests {
         #expect(try fixture.read(source) == "[[Attachments/spec]] [[target.v1]]")
         let moved = try fixture.store.moveNote(at: source, to: fixture.root.appendingPathComponent("Moved"))
         #expect(try fixture.read(moved) == "[[../Attachments/spec.md]] [[../Target.v1.md]]")
-        #expect(fixture.store.knowledgeRelations(for: moved).outgoing.contains { $0.url == dotted })
+        #expect(fixture.store.linkRelations(for: moved).outgoing.contains { $0.url == dotted })
     }
 
     @Test func movingSourcePreservesRelativeLinksAndFormatting() throws {
@@ -41,7 +41,7 @@ struct NoteLinkRelocationTests {
         #expect(contents.contains(#"[标题 \] 内容](<../%E7%9B%AE%E6%A0%87%20%E7%AC%94%E8%AE%B0.md#小节> "tooltip")"#))
         #expect(contents.contains("[[../%E7%9B%AE%E6%A0%87%20%E7%AC%94%E8%AE%B0.md|别名]]"))
         #expect(contents.contains("[Web](https://example.com) [Here](#part)"))
-        #expect(fixture.store.knowledgeRelations(for: moved).outgoing.map(\.url) == [target])
+        #expect(fixture.store.linkRelations(for: moved).outgoing.map(\.url) == [target])
     }
 
     @Test func movingTargetUpdatesIncomingLinksButNotCode() throws {
@@ -51,7 +51,7 @@ struct NoteLinkRelocationTests {
         let moved = try fixture.store.moveNote(at: target, to: fixture.root.appendingPathComponent("Nested"))
         let contents = try fixture.read(source)
         #expect(contents == "[B](Nested/B.md#part) [[Nested/B.md|别名]]\n`[Example](B.md)`\n```\n[[B]]\n```")
-        #expect(fixture.store.knowledgeRelations(for: moved).incoming.map(\.url) == [source])
+        #expect(fixture.store.linkRelations(for: moved).incoming.map(\.url) == [source])
     }
 
     @Test func renamingTargetUpdatesUniqueWikiFallbackAndPreservesOtherTitles() throws {
@@ -63,7 +63,7 @@ struct NoteLinkRelocationTests {
         #expect(contents.contains("[Original label](\(renamed.lastPathComponent))"))
         #expect(contents.contains("[[\(renamed.lastPathComponent)|alias]]"))
         #expect(contents.contains("[[\(renamed.lastPathComponent)]]"))
-        #expect(fixture.store.knowledgeRelations(for: source).outgoing.map(\.url) == [renamed])
+        #expect(fixture.store.linkRelations(for: source).outgoing.map(\.url) == [renamed])
         #expect(try fixture.store.loadNote(at: renamed).body == "New")
     }
 

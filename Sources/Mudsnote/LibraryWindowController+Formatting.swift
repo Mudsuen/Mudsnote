@@ -352,7 +352,15 @@ extension LibraryWindowController {
     func applyFormatCommand(_ command: LibraryFormatCommand) {
         guard !isEditorShowingMarkdownSource else { return }
         focusEditorForLibraryAction()
-        let undoSnapshot = libraryFormattingUndoSnapshot()
+        let undoRange = editorTextView.textStorage.map { storage -> NSRange in
+            let selected = editorTextView.selectedRange()
+            let clamped = NSRange(
+                location: min(selected.location, storage.length),
+                length: min(selected.length, max(storage.length - min(selected.location, storage.length), 0))
+            )
+            return (storage.string as NSString).paragraphRange(for: clamped)
+        }
+        let undoSnapshot = libraryFormattingUndoSnapshot(in: undoRange)
         if let paragraphKind = command.paragraphKind {
             setParagraphKind(paragraphKind)
             registerLibraryFormattingUndoIfNeeded(before: undoSnapshot, actionName: command.undoActionName)
@@ -377,12 +385,25 @@ extension LibraryWindowController {
         registerLibraryFormattingUndoIfNeeded(before: undoSnapshot, actionName: command.undoActionName)
     }
 
-    func libraryFormattingUndoSnapshot() -> LibraryFormattingUndoSnapshot? {
+    func libraryFormattingUndoSnapshot(in range: NSRange? = nil) -> LibraryFormattingUndoSnapshot? {
         guard let storage = editorTextView.textStorage else { return nil }
+        if let range,
+           range.location >= 0,
+           NSMaxRange(range) <= storage.length {
+            return LibraryFormattingUndoSnapshot(
+                documentIdentity: documentIdentity,
+                content: NSAttributedString(attributedString: storage.attributedSubstring(from: range)),
+                selection: editorTextView.selectedRange(),
+                range: range,
+                documentLength: storage.length
+            )
+        }
         return LibraryFormattingUndoSnapshot(
             documentIdentity: documentIdentity,
             content: NSAttributedString(attributedString: storage),
-            selection: editorTextView.selectedRange()
+            selection: editorTextView.selectedRange(),
+            range: nil,
+            documentLength: storage.length
         )
     }
 
@@ -391,9 +412,22 @@ extension LibraryWindowController {
         actionName: String
     ) {
         guard let before,
-              let after = libraryFormattingUndoSnapshot(),
-              !before.content.isEqual(to: after.content),
+              let storage = editorTextView.textStorage,
               let undoManager = editorTextView.undoManager else { return }
+        let afterRange: NSRange?
+        if let beforeRange = before.range {
+            let delta = storage.length - before.documentLength
+            let nextLength = beforeRange.length + delta
+            if nextLength >= 0, beforeRange.location + nextLength <= storage.length {
+                afterRange = NSRange(location: beforeRange.location, length: nextLength)
+            } else {
+                afterRange = nil
+            }
+        } else {
+            afterRange = nil
+        }
+        guard let after = libraryFormattingUndoSnapshot(in: afterRange),
+              !before.content.isEqual(to: after.content) else { return }
         undoManager.registerUndo(withTarget: self) { target in
             target.restoreLibraryFormattingSnapshot(before, inverse: after, actionName: actionName)
         }
@@ -412,7 +446,13 @@ extension LibraryWindowController {
         editorTextView.undoManager?.setActionName(actionName)
         guard let storage = editorTextView.textStorage else { return }
         suppressEditorChanges = true
-        storage.setAttributedString(snapshot.content)
+        if let targetRange = inverse.range,
+           targetRange.location >= 0,
+           NSMaxRange(targetRange) <= storage.length {
+            storage.replaceCharacters(in: targetRange, with: snapshot.content)
+        } else {
+            storage.setAttributedString(snapshot.content)
+        }
         suppressEditorChanges = false
         let location = min(snapshot.selection.location, storage.length)
         let length = min(snapshot.selection.length, max(storage.length - location, 0))

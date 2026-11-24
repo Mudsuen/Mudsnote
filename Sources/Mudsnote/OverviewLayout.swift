@@ -161,8 +161,9 @@ struct OverviewLayout {
                 let body = previews[id, default: ""].trimmingCharacters(in: .whitespacesAndNewlines)
                 if presentation == .outline {
                     let w = max(120, available)
-                    let titleHeight = OverviewTypography.textHeight(label(node), width: w - 31, size: 16, lineHeight: 25.6)
-                    let bodyHeight = body.isEmpty ? 0 : min(110, OverviewTypography.textHeight(body, width: w - 31, size: 14, lineHeight: 22))
+                    let textInset = OverviewTopicHost.outlineTextInset
+                    let titleHeight = OverviewTypography.textHeight(label(node), width: w - textInset, size: 16, lineHeight: 25.6)
+                    let bodyHeight = body.isEmpty ? 0 : min(110, OverviewTypography.textHeight(body, width: w - textInset, size: 14, lineHeight: 22))
                     size = CGSize(width: w, height: titleHeight + bodyHeight + (body.isEmpty ? 6 : 14))
                 } else {
                     let w = min(max(120, available), min(320, max(260, width * 0.34)))
@@ -172,10 +173,11 @@ struct OverviewLayout {
                 }
             } else if presentation == .outline {
                 let w = max(120, outlineColumn - CGFloat(max(0, depth - 1)) * 28)
+                let textInset = OverviewTopicHost.outlineTextInset
                 let h: CGFloat
                 if node == root { h = OverviewTypography.textHeight(label(node), width: w, size: 34, lineHeight: 54.4, weight: .semibold) }
                 else if case .card(let id) = node, id == selected { h = editorSize.height }
-                else { h = 6 + OverviewTypography.textHeight(label(node), width: w - 31, size: 16, lineHeight: 25.6) + OverviewTypography.detailHeight(details(node), width: w - 31) }
+                else { h = 6 + OverviewTypography.textHeight(label(node), width: w - textInset, size: 16, lineHeight: 25.6) + OverviewTypography.detailHeight(details(node), width: w - textInset) }
                 size = CGSize(width: w, height: h)
             } else {
                 let fontSize: CGFloat = depth == 0 ? 24 : depth == 1 ? 16 : 14

@@ -272,7 +272,7 @@ final class SearchWindowController: NSWindowController, NSWindowDelegate, NSTabl
     private var selectedSearchRoots: [URL] {
         guard let path = scopePopUp.selectedItem?.representedObject as? String,
               !path.isEmpty else {
-            return noteStore.knownSearchRoots()
+            return noteStore.preferredDirectories
         }
         return [URL(fileURLWithPath: path, isDirectory: true)]
     }

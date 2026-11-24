@@ -533,7 +533,9 @@ enum MarkdownRichTextCodec {
         let trimmed = text.trimmingCharacters(in: .whitespaces)
         guard !trimmed.isEmpty else { return false }
 
-        if firstMatch(#"^\s*[-*+]\s$"#, in: text) != nil {
+        if let first = trimmed.first, first == "-" || first == "*" || first == "+",
+           trimmed.count == 1,
+           text.last?.isWhitespace == true {
             return true
         }
 
@@ -546,7 +548,6 @@ enum MarkdownRichTextCodec {
             || trimmed.hasPrefix("【】")
             || trimmed.hasPrefix("1. ")
             || trimmed.contains(" #")
-            || trimmed.hasPrefix("#")
             || trimmed.contains("**")
             || trimmed.contains("~~")
             || trimmed.contains("`")
@@ -1271,6 +1272,8 @@ enum MarkdownRichTextCodec {
         }
 
         let fragment = attributedString.attributedSubstring(from: range).string
+        // Fast-path: automatic URL/email links always contain '.', '://', or '@'.
+        guard fragment.utf8.contains(where: { $0 == 46 || $0 == 64 || $0 == 58 }) else { return }
         let fragmentRange = NSRange(location: 0, length: (fragment as NSString).length)
         for match in detector.matches(in: fragment, range: fragmentRange) {
             let matchRange = NSRange(

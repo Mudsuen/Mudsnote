@@ -92,7 +92,7 @@ extension LibraryWindowController {
                 URL(fileURLWithPath: $0)
             })
         }
-        knowledgeGraphWindowController?.reload()
+        noteStore.invalidatePinnedNotePathsCache()
         activeSearchSession = nil
 
         for path in markdownPaths {

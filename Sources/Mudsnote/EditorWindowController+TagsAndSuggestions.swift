@@ -378,7 +378,7 @@ extension EditorWindowController {
         let sourceURL = fileURL
             ?? activeFloatingNoteURL
             ?? selectedDirectoryURL.appendingPathComponent("Untitled.md")
-        let link = noteStore.markdownKnowledgeLink(
+        let link = noteStore.markdownNoteLink(
             from: sourceURL,
             to: note.url,
             title: note.title

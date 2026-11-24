@@ -66,12 +66,12 @@ struct SearchPerformanceTests {
     }
 
     @Test
-    func knowledgeRelationsReuseParentRootIndexInsteadOfReplacingLaunchCache() throws {
-        let suiteName = "mudsnote.knowledge-root-cache-tests.\(UUID().uuidString)"
+    func linkRelationsReuseParentRootIndexInsteadOfReplacingLaunchCache() throws {
+        let suiteName = "mudsnote.link-root-cache-tests.\(UUID().uuidString)"
         let defaults = try #require(UserDefaults(suiteName: suiteName))
         defaults.removePersistentDomain(forName: suiteName)
         let root = FileManager.default.temporaryDirectory
-            .appendingPathComponent("mudsnote-knowledge-root-cache-tests-\(UUID().uuidString)", isDirectory: true)
+            .appendingPathComponent("mudsnote-link-root-cache-tests-\(UUID().uuidString)", isDirectory: true)
         let notesDirectory = root.appendingPathComponent("Notes", isDirectory: true)
         let nestedDirectory = notesDirectory.appendingPathComponent("Projects", isDirectory: true)
         let appSupport = root.appendingPathComponent("AppSupport", isDirectory: true)
@@ -97,11 +97,10 @@ struct SearchPerformanceTests {
         store.searchIndexBuildWillReadForTesting = {
             _ = builds.increment()
         }
-        _ = store.knowledgeRelations(
+        _ = store.linkRelations(
             for: noteURL,
             currentBody: "Relation body",
-            roots: [notesDirectory, nestedDirectory],
-            suggestionLimit: 0
+            roots: [notesDirectory, nestedDirectory]
         )
 
         #expect(builds.snapshot() == 0)
@@ -408,8 +407,7 @@ struct SearchPerformanceTests {
                 createdAt: now,
                 tags: [],
                 tagsLower: [],
-                knowledgeLayer: nil,
-                knowledgeLinkTargets: [],
+                linkTargets: [],
                 hasAttachments: false,
                 thumbnailURL: nil,
                 isContentIndexed: true

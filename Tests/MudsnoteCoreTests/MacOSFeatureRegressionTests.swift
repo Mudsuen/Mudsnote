@@ -3,22 +3,6 @@ import Testing
 @testable import MudsnoteCore
 
 struct MacOSFeatureRegressionTests {
-    @Test func archivedSearchPreferencePreservesLegacyChoiceAndSeparatesKnowledge() throws {
-        let (store, root, defaults, suiteName) = try makeStore()
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-            try? FileManager.default.removeItem(at: root)
-        }
-        defaults.set(true, forKey: "mudsnote.search.includesArchivedNotes")
-        #expect(store.includesArchivedNotesInSearch)
-        #expect(store.includesArchivedNotesInKnowledge)
-        store.includesArchivedNotesInSearch = false
-        #expect(store.includesArchivedNotesInKnowledge)
-        store.includesArchivedNotesInKnowledge = false
-        store.includesArchivedNotesInSearch = true
-        #expect(!store.includesArchivedNotesInKnowledge)
-    }
-
     @Test func multiTermSearchMatchesMixedScriptsAcrossFieldsAndKeepsFilters() throws {
         let (store, root, defaults, suiteName) = try makeStore()
         defer {
@@ -97,7 +81,7 @@ struct MacOSFeatureRegressionTests {
     }
 
     @Test
-    func archivedSearchCanBeEnabledWithoutEnablingKnowledgeSuggestions() throws {
+    func archivedSearchPreferenceControlsSearchAndKnownTags() throws {
         let (store, root, defaults, suiteName) = try makeStore()
         defer {
             defaults.removePersistentDomain(forName: suiteName)
@@ -105,7 +89,7 @@ struct MacOSFeatureRegressionTests {
         }
         let notes = store.notesDirectory
         let archive = notes.appendingPathComponent("Archive", isDirectory: true)
-        let active = try store.saveNewNote(
+        _ = try store.saveNewNote(
             title: "Active",
             body: "shared distinctive topic",
             tags: ["active"],
@@ -119,15 +103,11 @@ struct MacOSFeatureRegressionTests {
         )
 
         #expect(store.searchNotes(query: "Archived").isEmpty)
+        #expect(!store.knownTags().contains("archived"))
+
         store.includesArchivedNotesInSearch = true
-        #expect(!store.includesArchivedNotesInKnowledge)
         #expect(store.searchNotes(query: "Archived").map(\.url) == [archived])
         #expect(store.makeSearchSession().searchNotes(query: "Archived").map(\.url) == [archived])
-        #expect(!store.knownTags().contains("archived"))
-        #expect(!store.knowledgeRelations(for: active, roots: [notes]).suggested.map(\.url).contains(archived))
-
-        store.includesArchivedNotesInKnowledge = true
-        #expect(store.searchNotes(query: "Archived").map(\.url).contains(archived))
         #expect(store.knownTags().contains("archived"))
     }
 
@@ -228,40 +208,5 @@ struct MacOSFeatureRegressionTests {
     func wordCountHandlesCJKAndLatinWordsWithoutCountingMarkdownPunctuation() {
         #expect(MarkdownEditorDocument.wordCount(in: "# 标题\n\nHello, world! 中文") == 6)
         #expect(MarkdownEditorDocument.wordCount(in: "   \n\n") == 0)
-    }
-
-    @Test
-    func knowledgeSuggestionsIgnoreLibraryWideBoilerplateTokens() throws {
-        let (store, root, defaults, suiteName) = try makeStore()
-        defer {
-            defaults.removePersistentDomain(forName: suiteName)
-            try? FileManager.default.removeItem(at: root)
-        }
-        let notes = store.notesDirectory
-        let source = try store.saveNewNote(
-            title: "Source",
-            body: "project notes meeting update",
-            in: notes
-        )
-        let unrelated = try store.saveNewNote(
-            title: "Unrelated",
-            body: "project notes meeting update unrelated",
-            in: notes
-        )
-        for index in 0..<4 {
-            _ = try store.saveNewNote(
-                title: "Boilerplate \(index)",
-                body: "project notes meeting update topic\(index)",
-                in: notes
-            )
-        }
-
-        let suggestions = store.knowledgeRelations(
-            for: source,
-            roots: [notes],
-            suggestionLimit: 10
-        ).suggested
-
-        #expect(!suggestions.map(\.url).contains(unrelated))
     }
 }

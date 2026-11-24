@@ -107,11 +107,6 @@ public struct CodexAIProvider: Sendable {
         return try await generate(prompt: prompt)
     }
 
-    public func generate(request: KnowledgeSynthesisRequest) async throws -> String {
-        let prompt = try AIPromptBuilder.prompt(for: request)
-        return try await generate(prompt: prompt)
-    }
-
     private func generate(prompt: String) async throws -> String {
         try Task.checkCancellation()
         let worker = Task.detached(priority: .userInitiated) {

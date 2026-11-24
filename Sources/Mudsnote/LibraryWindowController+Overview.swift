@@ -127,6 +127,8 @@ extension LibraryWindowController {
             host.addSubview(overview)
         }
         cancelActiveNoteLoad()
+        isLoadingInitialNote = false
+        releaseDeferredLaunchWorkIfReady()
         if let id = overviewView?.selectedID { overviewView?.cards[id]?.embed(nil) }
         overviewView?.selectedID = nil
         overviewView?.activeNode = nil
@@ -183,6 +185,8 @@ extension LibraryWindowController {
         overviewView?.restoreEditorAppearance()
         overviewView?.finishCardTransition()
         cancelActiveNoteLoad()
+        isLoadingInitialNote = false
+        releaseDeferredLaunchWorkIfReady()
         if let id = overviewView?.selectedID { overviewView?.cards[id]?.embed(nil) }
         overviewView?.selectedID = nil
         isShowingOverview = false
@@ -198,17 +202,25 @@ extension LibraryWindowController {
 
     func refreshOverview() {
         guard let state = overviewState else { return }
+        guard isShowingOverview else {
+            overviewNeedsRefresh = true
+            return
+        }
+        overviewNeedsRefresh = false
         overviewView?.update(state, notes: sourceCountSnapshot)
     }
 
-    @discardableResult func changeOverview(_ change: (inout NoteOverview) -> Void) -> Bool {
+    @discardableResult func changeOverview(
+        recordUndo: Bool = true,
+        _ change: (inout NoteOverview) -> Void
+    ) -> Bool {
         guard var next = overviewState else { return false }
         let previous = next
         change(&next)
         do { try noteStore.saveOverview(next) }
         catch { presentErrorAlert(message: "无法保存总览", details: error.localizedDescription); return false }
         overviewState = next
-        if next != previous { overviewView?.recordChange(from: previous) }
+        if recordUndo, next != previous { overviewView?.recordChange(from: previous) }
         refreshOverview()
         return true
     }
@@ -318,9 +330,6 @@ extension LibraryWindowController {
         guard let state = overviewState, let anchor = overviewView?.cards[id] else { return }
         let menu = NSMenu()
         menu.addItem(OverviewMenuItem(overviewView?.selectedID == id ? "收起笔记" : "编辑笔记") { [weak self] in self?.toggleOverviewCard(id) })
-        if let url = state.cards.first(where: { $0.id == id })?.url {
-            menu.addItem(OverviewMenuItem("查看局部图谱") { [weak self] in self?.showOverviewKnowledgeGraph(focusedOn: url) })
-        }
         menu.addItem(OverviewMenuItem("关联笔记…") { [weak self] in self?.pickOverviewNote(area: nil, connecting: id) })
         let areaItem = NSMenuItem(title: "归属", action: nil, keyEquivalent: "")
         let areaMenu = NSMenu()
@@ -345,14 +354,170 @@ extension LibraryWindowController {
             let name = state.cards.first { $0.id == other }?.url.deletingPathExtension().lastPathComponent ?? "笔记"
             menu.addItem(OverviewMenuItem("取消关联：" + name) { [weak self] in _ = self?.changeOverview { $0.connections.removeAll { $0 == edge } } })
         }
-        menu.addItem(OverviewMenuItem("从总览移除，保留笔记") { [weak self] in
+        menu.addItem(.separator())
+        menu.addItem(OverviewMenuItem("仅从总览移出") { [weak self] in
             guard let self, self.commitOverviewEditor() else { return }
             if self.overviewView?.selectedID == id { self.toggleOverviewCard(id) }
             _ = self.changeOverview { $0.removeCard(id) }
         })
+        menu.addItem(OverviewMenuItem("删除笔记") { [weak self] in
+            _ = self?.deleteOverviewCard(id)
+        })
         if let event = NSApp.currentEvent, event.type == .rightMouseDown {
             NSMenu.popUpContextMenu(menu, with: event, for: anchor)
         } else { menu.popUp(positioning: nil, at: NSPoint(x: anchor.bounds.width - 130, y: anchor.bounds.height - 32), in: anchor) }
+    }
+
+    @discardableResult
+    func deleteOverviewCard(_ id: UUID) -> Bool {
+        guard let card = overviewState?.cards.first(where: { $0.id == id }),
+              commitOverviewEditor() else { return false }
+        let parentNode = overviewView?.contentIndex.tree.parents[.card(id)] ?? .root
+        if overviewView?.selectedID == id {
+            toggleOverviewCard(id)
+            guard overviewView?.selectedID == nil else { return false }
+        }
+        guard trashOverviewNoteURLs([card.url]) else { return false }
+        let changed = changeOverview(recordUndo: false) { $0.removeCard(id) }
+        if changed {
+            overviewView?.structuralUndo.removeAllActions()
+            overviewView?.activeNode = parentNode
+        }
+        return changed
+    }
+
+    func confirmDeleteOverviewTopic(_ node: OverviewNodeID) {
+        guard case .area = node, let state = overviewState else { return }
+        let tree = OverviewTree(state)
+        let descendantCardCount = tree.descendants(of: node).reduce(into: 0) { count, child in
+            if case .card = child { count += 1 }
+        }
+        if descendantCardCount == 0 {
+            _ = deleteOverviewTopic(node, deleteContainedNotes: false)
+            return
+        }
+        let topicTitle = overviewView?.nodeTitle(node) ?? "未命名主题"
+        let alert = NSAlert()
+        alert.alertStyle = .warning
+        alert.messageText = "删除主题“\(topicTitle)”？"
+        alert.informativeText = "该主题下包含 \(descendantCardCount) 篇笔记。可选择仅删除主题（保留笔记文件），或将其中笔记一并移入“最近删除”。"
+        alert.addButton(withTitle: "仅删除主题")
+        let deleteAllButton = alert.addButton(withTitle: "删除主题和笔记")
+        deleteAllButton.hasDestructiveAction = true
+        alert.addButton(withTitle: "取消")
+        switch alert.runModal() {
+        case .alertFirstButtonReturn:
+            _ = deleteOverviewTopic(node, deleteContainedNotes: false)
+        case .alertSecondButtonReturn:
+            _ = deleteOverviewTopic(node, deleteContainedNotes: true)
+        default:
+            break
+        }
+    }
+
+    @discardableResult
+    func deleteOverviewTopic(_ node: OverviewNodeID, deleteContainedNotes: Bool) -> Bool {
+        guard case .area = node,
+              let state = overviewState,
+              overviewView?.prepareStructureChange() != false else { return false }
+        let tree = OverviewTree(state)
+        let removed = Set([node] + tree.descendants(of: node))
+        let cardIDs = Set(removed.compactMap { node -> UUID? in
+            if case .card(let id) = node { return id }
+            return nil
+        })
+        let parentNode = tree.parents[node] ?? .root
+        if deleteContainedNotes, !cardIDs.isEmpty {
+            let urls = state.cards.filter { cardIDs.contains($0.id) }.map(\.url)
+            guard trashOverviewNoteURLs(urls) else { return false }
+        }
+        let changed = changeOverview(recordUndo: !deleteContainedNotes) { overview in
+            overview.areas.removeAll { removed.contains(.area($0.id)) }
+            overview.cards.removeAll { cardIDs.contains($0.id) }
+            overview.connections.removeAll { cardIDs.contains($0.from) || cardIDs.contains($0.to) }
+        }
+        if changed {
+            if deleteContainedNotes { overviewView?.structuralUndo.removeAllActions() }
+            overviewView?.activeNode = parentNode
+        }
+        return changed
+    }
+
+    private func trashOverviewNoteURLs(_ urls: [URL]) -> Bool {
+        let standardizedURLs = Array(Dictionary(
+            urls.map { ($0.standardizedFileURL.path, $0.standardizedFileURL) },
+            uniquingKeysWith: { first, _ in first }
+        ).values)
+        guard !standardizedURLs.isEmpty else { return true }
+
+        let notesByPath = Dictionary(uniqueKeysWithValues: standardizedURLs.compactMap { url in
+            let path = url.path
+            return sourceCountSnapshot.first { $0.url.standardizedFileURL.path == path }.map { (path, $0) }
+        })
+
+        var trashedSourceURLs: [URL] = []
+        var changedFSURLs: [URL] = []
+        do {
+            for url in standardizedURLs {
+                if FileManager.default.fileExists(atPath: url.path) {
+                    let trashedURL = try noteStore.trashNote(at: url)
+                    changedFSURLs.append(url)
+                    changedFSURLs.append(trashedURL)
+                    if let note = notesByPath[url.path] {
+                        trashedNotesSnapshot.append(note.replacingURL(trashedURL, modifiedAt: Date()))
+                    } else {
+                        trashedNotesSnapshot.append(NoteSearchResult(
+                            url: trashedURL,
+                            title: url.deletingPathExtension().lastPathComponent,
+                            snippet: "",
+                            modifiedAt: Date()
+                        ))
+                    }
+                }
+                trashedSourceURLs.append(url)
+            }
+        } catch {
+            if !changedFSURLs.isEmpty {
+                sortAndTrimTrashSnapshot()
+                recordInternalFileSystemChanges(for: changedFSURLs)
+                removeNotesFromSourceSnapshot(at: trashedSourceURLs)
+                scheduleSourceCountRefresh(using: sourceCountSnapshot)
+            }
+            presentErrorAlert(message: "删除失败", details: error.localizedDescription)
+            return false
+        }
+
+        sortAndTrimTrashSnapshot()
+        if !changedFSURLs.isEmpty {
+            recordInternalFileSystemChanges(for: changedFSURLs)
+        }
+        let removedPaths = Set(trashedSourceURLs.map(\.path))
+        removeNotesFromSourceSnapshot(at: trashedSourceURLs)
+        for path in removedPaths {
+            externallyOpenedDocumentsByPath.removeValue(forKey: path)
+            loadedNoteCache.removeEntry(forKey: path as NSString)
+        }
+        if let selectedURL, removedPaths.contains(selectedURL.standardizedFileURL.path) {
+            clearCurrentDocumentAfterRemoval()
+        }
+        let matchingTabIDs = documentTabs.filter { tab in
+            guard let url = tab.url else { return false }
+            return removedPaths.contains(url.standardizedFileURL.path)
+        }.map(\.id)
+        for tabID in matchingTabIDs {
+            documentTabs.removeAll { $0.id == tabID }
+        }
+        if documentTabs.isEmpty {
+            let emptyTab = LibraryDocumentTab()
+            documentTabs = [emptyTab]
+            activeDocumentTabID = emptyTab.id
+        } else if !documentTabs.contains(where: { $0.id == activeDocumentTabID }) {
+            activeDocumentTabID = documentTabs[0].id
+        }
+        activeSearchSession = nil
+        updateDocumentTabBar()
+        scheduleSourceCountRefresh(using: sourceCountSnapshot)
+        return true
     }
 
     func remapOverviewAfterSave(previousURL: URL?, savedURL: URL) {

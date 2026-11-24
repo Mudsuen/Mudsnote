@@ -607,9 +607,23 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
 
     override func didChangeText() {
         super.didChangeText()
-        updateMetadataTagSpacing(hasTags: !metadataTags.isEmpty || isAddingMetadataTag)
-        layoutMetadataTagBar()
-        window?.invalidateCursorRects(for: self)
+        if !metadataTags.isEmpty || isAddingMetadataTag {
+            updateMetadataTagSpacing(hasTags: true)
+            layoutMetadataTagBar()
+        }
+        scheduleCursorRectInvalidation()
+    }
+
+    private var cursorRectInvalidationScheduled = false
+
+    private func scheduleCursorRectInvalidation() {
+        guard !cursorRectInvalidationScheduled else { return }
+        cursorRectInvalidationScheduled = true
+        DispatchQueue.main.async { [weak self] in
+            guard let self else { return }
+            self.cursorRectInvalidationScheduled = false
+            self.window?.invalidateCursorRects(for: self)
+        }
     }
 
     override func cursorUpdate(with event: NSEvent) {
@@ -1147,7 +1161,7 @@ final class MarkdownTextView: NSTextView, NSMenuDelegate {
               let textContainer else {
             return nil
         }
-        layoutManager.ensureLayout(for: textContainer)
+        layoutManager.ensureLayout(forCharacterRange: reference.range)
         let glyphRange = layoutManager.glyphRange(
             forCharacterRange: reference.range,
             actualCharacterRange: nil

@@ -32,7 +32,6 @@ extension LibraryWindowController {
             lastListScope = selectedScope
         }
         if prepareDocumentTab(for: note) { return }
-        recordNoteNavigation(to: note.url)
         isLoadingInitialNote = false
         persistedLaunchFallbackURL = nil
         isCreatingNewNote = false
